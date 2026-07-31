@@ -46,9 +46,10 @@ func Initialize(
 	ouService oupkg.OrganizationUnitServiceInterface,
 	i18nService i18nmgt.I18nServiceInterface,
 	cryptoSvc kmprovider.RuntimeCryptoProvider,
+	secretCapturer SecretCapturer,
 ) (ApplicationServiceInterface, declarativeresource.ResourceExporter, error) {
 	appService := newApplicationService(
-		inboundClient, entityProvider, ouService, i18nService, cryptoSvc,
+		inboundClient, entityProvider, ouService, i18nService, cryptoSvc, secretCapturer,
 	)
 
 	if err := entityService.LoadIndexedAttributes(getAppIndexedAttributes()); err != nil {

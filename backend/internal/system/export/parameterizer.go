@@ -54,6 +54,10 @@ const (
 // Parameterizer handles the templating logic
 type parameterizer struct {
 	rules templatingRules
+	// resourceType qualifies the variable names emitted for the resource being parameterized. It is
+	// set per call on a copy rather than on the shared instance, so concurrent exports of different
+	// resource types cannot read each other's value.
+	resourceType string
 }
 
 // newParameterizer creates a new Parameterizer instance with the given templating rules
@@ -61,11 +65,22 @@ func newParameterizer(rules templatingRules) *parameterizer {
 	return &parameterizer{rules: rules}
 }
 
+// forResourceType returns a copy bound to the given resource type, leaving the shared instance
+// untouched.
+func (p *parameterizer) forResourceType(resourceType string) *parameterizer {
+	clone := *p
+	clone.resourceType = resourceType
+	return &clone
+}
+
 // ToParameterizedYAML converts an object directly to parameterized YAML.
 // It returns the template string and a map of variable names to their original values.
 func (p *parameterizer) ToParameterizedYAML(ctx context.Context, obj interface{},
 	resourceType string, resourceName string,
 	rules *declarativeresource.ResourceRules) (string, map[string]string, error) {
+	// Every variable name this call emits is qualified by the resource type.
+	p = p.forResourceType(resourceType)
+
 	// Convert imported type to local type for compatibility
 	var localRules *resourceRules
 	if rules != nil {
@@ -655,15 +670,7 @@ func (p *parameterizer) propertyToYAMLNode(propValue reflect.Value, resourceName
 // generatePropertyVarName generates a context-aware variable name for a property
 // e.g., "Export Test IDP" + "client_id" -> "EXPORT_TEST_IDP_CLIENT_ID"
 func (p *parameterizer) generatePropertyVarName(resourceName, propertyName string) string {
-	// Convert resource name: replace spaces with underscores and convert to snake_case
-	resourcePrefix := strings.ReplaceAll(resourceName, " ", "_")
-	resourcePrefix = p.toSnakeCase(resourcePrefix)
-
-	// Convert property name to snake_case
-	propName := p.toSnakeCase(propertyName)
-
-	// Combine them
-	return resourcePrefix + "_" + propName
+	return DeriveVariableName(p.resourceType, resourceName, propertyName)
 }
 
 // handleInterfaceValue handles interface{} types by JSON-encoding them.
@@ -1160,48 +1167,7 @@ func (p *parameterizer) parameterizeNode(node *yaml.Node, rules *resourceRules, 
 func (p *parameterizer) pathToVariableName(appName, path string) string {
 	parts := strings.Split(path, ".")
 	lastPart := parts[len(parts)-1]
-
-	// Convert appName: replace spaces with underscores, convert camelCase to snake_case, then uppercase
-	appPrefix := strings.ReplaceAll(appName, " ", "_")
-	appPrefix = p.toSnakeCase(appPrefix)
-
-	// Convert field name from camelCase/PascalCase to snake_case
-	fieldName := p.toSnakeCase(lastPart)
-
-	// Prepend app prefix to field name
-	return appPrefix + "_" + fieldName
-}
-
-// toSnakeCase converts camelCase/PascalCase to UPPER_SNAKE_CASE
-func (p *parameterizer) toSnakeCase(s string) string {
-	var result strings.Builder
-	runes := []rune(s)
-
-	for i := 0; i < len(runes); i++ {
-		r := runes[i]
-
-		// Add underscore before uppercase letter if:
-		// 1. Not at the beginning (i > 0)
-		// 2. Previous character is lowercase (not underscore or uppercase) OR
-		// 3. Next character exists and is lowercase (handles acronyms like "ClientID" -> "CLIENT_ID")
-		if i > 0 && r >= 'A' && r <= 'Z' {
-			prev := runes[i-1]
-			// Check if previous char is lowercase (skip if it's underscore or uppercase)
-			if prev >= 'a' && prev <= 'z' {
-				result.WriteRune('_')
-			} else if prev != '_' && i+1 < len(runes) {
-				// Previous is uppercase (but not underscore), check next
-				next := runes[i+1]
-				if next >= 'a' && next <= 'z' {
-					result.WriteRune('_')
-				}
-			}
-		}
-
-		result.WriteRune(r)
-	}
-
-	return strings.ToUpper(result.String())
+	return DeriveVariableName(p.resourceType, appName, lastPart)
 }
 
 // replaceNodeValue finds and replaces a scalar value in the node tree

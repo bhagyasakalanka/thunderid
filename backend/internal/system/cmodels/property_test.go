@@ -129,3 +129,26 @@ func (s *PropertyTestSuite) TestSerializeDeserializePropertiesFromJSONObject_Rou
 		s.Equal(original[i].isSecret, deserialized[i].isSecret)
 	}
 }
+
+// A property may hold a reference to a credential kept in a secret provider rather than the credential
+// itself. A caller that only needs to know the property is set must be able to read it on a plane that
+// runs no provider, where resolving is not possible at all.
+func (s *PropertyTestSuite) TestUnresolvedValueLeavesASecretReferenceAsItIs() {
+	prop := Property{name: "client_secret", value: "kv:CONNECTION_A_CLIENT_SECRET", isSecret: true}
+
+	value, err := prop.UnresolvedValue()
+	s.Require().NoError(err)
+	s.Equal("kv:CONNECTION_A_CLIENT_SECRET", value)
+
+	// Reading it as a usable value is what needs a provider, and says so when there is none.
+	_, err = prop.GetValue()
+	s.Error(err)
+}
+
+func (s *PropertyTestSuite) TestUnresolvedValueReturnsAnOrdinaryValueUnchanged() {
+	prop := Property{name: "client_id", value: "my-client", isSecret: false}
+
+	value, err := prop.UnresolvedValue()
+	s.Require().NoError(err)
+	s.Equal("my-client", value)
+}

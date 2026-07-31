@@ -332,7 +332,7 @@ func (s *DeclarativeResourceTestSuite) TestLoadDeclarativeResources_WithDBStore(
 	store := &layoutFileBasedStore{GenericFileBasedStore: genericStore}
 
 	dbStore := newLayoutMgtStoreInterfaceMock(s.T())
-	dbStore.On("IsLayoutExist", "layout-dup").Return(false, nil)
+	dbStore.On("IsLayoutExist", mock.Anything, "layout-dup").Return(false, nil)
 
 	err = loadDeclarativeResources(store, dbStore)
 	s.NoError(err)
@@ -398,7 +398,7 @@ func (s *DeclarativeResourceTestSuite) TestValidateLayoutWrapper_DBStoreDuplicat
 	}
 
 	dbStore := newLayoutMgtStoreInterfaceMock(s.T())
-	dbStore.On("IsLayoutExist", "layout1").Return(true, nil)
+	dbStore.On("IsLayoutExist", mock.Anything, "layout1").Return(true, nil)
 
 	err := validateLayoutWrapper(layout, dbStore)
 	s.Error(err)
@@ -413,7 +413,7 @@ func (s *DeclarativeResourceTestSuite) TestValidateLayoutWrapper_DBStoreError() 
 	}
 
 	dbStore := newLayoutMgtStoreInterfaceMock(s.T())
-	dbStore.On("IsLayoutExist", "layout1").Return(false, errors.New("db error"))
+	dbStore.On("IsLayoutExist", mock.Anything, "layout1").Return(false, errors.New("db error"))
 
 	err := validateLayoutWrapper(layout, dbStore)
 	s.Error(err)

@@ -26,6 +26,7 @@ import {useNavigate, useParams} from 'react-router';
 import useConnection from '../api/useConnection';
 import useConnectionInstances from '../api/useConnectionInstances';
 import useDeleteConnection from '../api/useDeleteConnection';
+import useIsManagedConnection from '../api/useIsManagedConnection';
 import useUpdateConnection from '../api/useUpdateConnection';
 import AttributeMappingSection from '../components/AttributeMappingSection';
 import ConnectionDeleteDialog from '../components/ConnectionDeleteDialog';
@@ -99,6 +100,11 @@ export default function ConnectionDetailPage(): JSX.Element | null {
   const [attrValid, setAttrValid] = useState(true);
   const [attrsKey, setAttrsKey] = useState(0);
   const [deleteOpen, setDeleteOpen] = useState(false);
+
+  const isManagedConnection = useIsManagedConnection();
+  // Owned by the control plane: a change made here would be replaced by the next apply, and the
+  // server refuses it with 403, so the controls are not offered at all.
+  const isManaged: boolean = isManagedConnection(resolvedId);
 
   const updateMutation = useUpdateConnection(connectionType, resolvedId ?? '');
   const deleteMutation = useDeleteConnection(connectionType);
@@ -187,6 +193,15 @@ export default function ConnectionDetailPage(): JSX.Element | null {
         <Alert severity="error">{t('error.loadFailed')}</Alert>
       ) : (
         <>
+          {isManaged && (
+            <Alert severity="info" sx={{mb: 2}}>
+              {t('common:managedResource.body', {
+                defaultValue:
+                  'This resource was applied from the control plane and is read only here. Change it there and apply again, otherwise the next apply would replace whatever was changed on this deployment.',
+              })}
+            </Alert>
+          )}
+
           <Stack direction="row" spacing={2} alignItems="flex-start" sx={{mb: 3}}>
             <Box
               sx={{
@@ -250,11 +265,13 @@ export default function ConnectionDetailPage(): JSX.Element | null {
                   hasStoredSecret
                   vendorDisplayName={meta.displayName}
                   showNameField={isCustom}
+                  isReadOnly={isManaged}
                   onFieldChange={(name, value) => setEditedValues((prev) => ({...prev, [name]: value}))}
                   onSecretReplacingChange={setSecretReplacing}
                 />
               </SettingsCard>
 
+              {!isManaged && (
               <SettingsCard title={t('detail.dangerZone.title')} description={t('detail.dangerZone.description')}>
                 <Typography variant="h6" gutterBottom color="error">
                   {t('detail.dangerZone.delete.title')}
@@ -272,6 +289,7 @@ export default function ConnectionDetailPage(): JSX.Element | null {
                   {t('form.actions.delete')}
                 </Button>
               </SettingsCard>
+              )}
             </Stack>
           </TabPanel>
 
@@ -288,7 +306,7 @@ export default function ConnectionDetailPage(): JSX.Element | null {
             </TabPanel>
           )}
 
-          {dirty && (
+          {dirty && !isManaged && (
             <UnsavedChangesBar
               message={t('detail.saveBar.unsaved')}
               resetLabel={t('detail.saveBar.discard')}

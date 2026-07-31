@@ -46,6 +46,11 @@ import (
 	"github.com/thunder-id/thunderid/internal/entity"
 	"github.com/thunder-id/thunderid/internal/entityprovider"
 	"github.com/thunder-id/thunderid/internal/entitytype"
+	"github.com/thunder-id/thunderid/internal/environmentvariable"
+	"github.com/thunder-id/thunderid/internal/envmgr"
+	"github.com/thunder-id/thunderid/internal/envmgr/model"
+	envmgrservice "github.com/thunder-id/thunderid/internal/envmgr/service"
+	"github.com/thunder-id/thunderid/internal/envmgr/thunder"
 	flowconfig "github.com/thunder-id/thunderid/internal/flow/config"
 	flowcore "github.com/thunder-id/thunderid/internal/flow/core"
 	"github.com/thunder-id/thunderid/internal/flow/executor"
@@ -90,10 +95,12 @@ import (
 var observabilitySvc observability.ObservabilityServiceInterface
 
 // registerServices registers the Control Plane management services with the provided HTTP
-// multiplexer. It also returns the import service so the bootstrap subcommand can create default
-// resources in-process through the same service instances.
+// multiplexer. It also returns the import and export services so the bootstrap and export
+// subcommands can create or read resources in-process through the same service instances.
 func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterface) (
-	jwt.JWTServiceInterface, kmprovider.RuntimeCryptoProvider, importer.ImportServiceInterface) {
+	jwt.JWTServiceInterface, kmprovider.RuntimeCryptoProvider,
+	importer.ImportServiceInterface, export.ExportServiceInterface, envmgrRegistry,
+	environmentvariable.EnvironmentVariableServiceInterface) {
 	logger := log.GetLogger()
 
 	// Service registration runs during application startup, outside any request.
@@ -107,6 +114,21 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 
 	runtimeCryptoSvc, _, err := kmprovider.Initialize(pkiService)
 	fatalOnError(ctx, logger, err, "Failed to initialize key manager provider")
+
+	envVarService, err := environmentvariable.Initialize(mux)
+	fatalOnError(ctx, logger, err, "Failed to initialize EnvironmentVariableService")
+
+	// Promotion between deployments is a control plane concern, so the environment manager is wired
+	// only here. It stays disabled unless a data directory is configured, which leaves a deployment
+	// using the standalone service untouched.
+	//
+	// It is initialized before the capturer because it is where a captured credential goes when this
+	// server hosts it.
+	envManager := initEnvironmentManager(ctx, logger, mux, config.GetServerRuntime().Config)
+
+	// A captured credential is handed to the Data Plane's secret service, so the Control Plane holds no
+	// secret at rest and the credential is usable immediately rather than at the next promotion.
+	secretCapturer := selectSecretCapturer(ctx, logger, config.GetServerRuntime().Config, envManager)
 
 	runtime := config.GetServerRuntime()
 	joseCfg := joseconfig.Config{
@@ -160,7 +182,7 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 	entityProvider := entityprovider.InitializeEntityProvider(entityService)
 
 	userService, ouUserResolver, userExporter, err := user.Initialize(
-		mux, entityService, ouService, entityTypeService, ouAuthzService,
+		mux, entityService, ouService, entityTypeService, ouAuthzService, secretCapturer,
 	)
 	fatalOnError(ctx, logger, err, "Failed to initialize UserService")
 	exporters = append(exporters, userExporter)
@@ -196,7 +218,7 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 
 	// Register the /connections API as a thin layer over the identity-provider and
 	// notification-sender management services.
-	connectionExporter, err := connection.Initialize(mux, idpService, notifSenderMgtSvc)
+	connectionExporter, err := connection.Initialize(mux, idpService, notifSenderMgtSvc, secretCapturer)
 	fatalOnError(ctx, logger, err, "Failed to initialize connection declarative resources")
 	exporters = append(exporters, connectionExporter)
 
@@ -287,12 +309,12 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 	// TODO: Remove entityService dependency after finalizing declarative resource loading pattern
 	applicationService, applicationExporter, err := application.Initialize(
 		mux, mcpServer, entityProvider, entityService, inboundClientService, ouService, i18nService,
-		runtimeCryptoSvc)
+		runtimeCryptoSvc, secretCapturer)
 	fatalOnError(ctx, logger, err, "Failed to initialize ApplicationService")
 	exporters = append(exporters, applicationExporter)
 
 	agentService, agentExporter, err := agent.Initialize(mux, entityService, inboundClientService, ouService,
-		roleService)
+		roleService, secretCapturer)
 	fatalOnError(ctx, logger, err, "Failed to initialize AgentService")
 	exporters = append(exporters, agentExporter)
 
@@ -314,7 +336,7 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 		ouService, ouUserResolver, ouGroupResolver, resourceService)
 
 	// Initialize export service with collected exporters
-	_ = export.Initialize(mux, exporters)
+	exportService := export.Initialize(mux, exporters)
 
 	// Initialize import service
 	importService := importer.Initialize(
@@ -339,11 +361,21 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 		serverConfigService,
 	)
 
+	// A promotion writes the promoted configuration into the destination environment's own tenant. That
+	// tenant is generally not the caller's, so the write is handed to the import service directly rather
+	// than sent over HTTP with the caller's token, which would land it back in the tenant it came from.
+	if envManager != nil {
+		envManager.SetLocalControlPlane(&localControlPlane{
+			importService: importService,
+			baseURL:       localControlPlaneURL(config.GetServerRuntime().Config),
+		})
+	}
+
 	// Register the health service.
 	healthSvc := healthcheckservice.Initialize(dbprovider.GetDBProvider(), dbprovider.GetRedisProvider())
 	services.NewHealthCheckService(mux, healthSvc)
 
-	return jwtService, runtimeCryptoSvc, importService
+	return jwtService, runtimeCryptoSvc, importService, exportService, envManager, envVarService
 }
 
 // dependencyConsumers groups the services that check the dependency registry before deleting their
@@ -434,4 +466,33 @@ func buildHashConfig() (cryptolib.HashConfig, error) {
 	default:
 		return cryptolib.HashConfig{}, fmt.Errorf("unrecognized password hashing algorithm %q", cfg.Algorithm)
 	}
+}
+
+// initEnvironmentManager mounts the in-process environment manager. A failure is logged rather than
+// fatal: promotion is one capability of the control plane, and losing it should not stop the
+// management APIs from serving.
+// It returns the manager when one is mounted, so captured credentials can be routed through it instead
+// of over HTTP; a nil result means promotion is not hosted here.
+func initEnvironmentManager(ctx context.Context, logger *log.Logger, mux *http.ServeMux,
+	cfg config.Config) envmgrRegistry {
+	dataDir := cfg.Server.SecurityConfig.EnvironmentManager.DataDir
+	reg, err := envmgr.Initialize(mux, dataDir, hashSecretForEnvManager)
+	if err != nil {
+		logger.Error(ctx, "Failed to start the in-process environment manager", log.Error(err))
+		return nil
+	}
+	if reg == nil {
+		return nil
+	}
+	logger.Info(ctx, "Serving the environment manager from this server", log.String("dataDir", dataDir))
+	return reg
+}
+
+// envmgrRegistry is what the in-process environment manager exposes to this server: where a captured
+// credential goes, and which control plane a promotion writes into.
+type envmgrRegistry interface {
+	localCaptureRouter
+	SetLocalControlPlane(cp envmgrservice.LocalControlPlane)
+	SeedTenant(ctx context.Context, sourceDeploymentID, targetDeploymentID string) (*thunder.ImportResponse, error)
+	CreateEnvironment(deploymentID string, in envmgrservice.CreateEnvironmentInput) (model.Environment, error)
 }

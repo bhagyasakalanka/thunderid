@@ -56,6 +56,9 @@ const (
 	resourceTypeTheme          = "theme"
 	resourceTypeAgent          = "agent"
 	resourceTypeServerConfig   = "server_config"
+
+	resourceTypePresentationDefinition  = "presentation_definition"
+	resourceTypeCredentialConfiguration = "credential_configuration" //nolint:gosec // a type name
 )
 
 // parameterizerInterface defines the interface for template parameterization.
@@ -135,6 +138,9 @@ func (es *exportService) ExportResources(
 		resourceTypeTheme:          request.Themes,
 		resourceTypeAgent:          request.Agents,
 		resourceTypeServerConfig:   request.ServerConfigs,
+
+		resourceTypePresentationDefinition:  request.PresentationDefinitions,
+		resourceTypeCredentialConfiguration: request.CredentialConfigurations,
 	}
 
 	// Export resources using the registry

@@ -54,6 +54,7 @@ import (
 	"github.com/thunder-id/thunderid/internal/system/middleware"
 	"github.com/thunder-id/thunderid/internal/system/revocationcache"
 	"github.com/thunder-id/thunderid/internal/system/security"
+	"github.com/thunder-id/thunderid/internal/tenant"
 )
 
 // shutdownTimeout defines the timeout duration for graceful shutdown.
@@ -104,7 +105,8 @@ func main() {
 	}
 
 	// Register the Control Plane services.
-	jwtService, runtimeCryptoSvc, importService := registerServices(mux, cacheManager)
+	jwtService, runtimeCryptoSvc, importService, exportService, envManager,
+		envVarService := registerServices(mux, cacheManager)
 
 	// When invoked as the bootstrap one-shot (`cpserver bootstrap`), create the
 	// default resources in-process and exit without starting the HTTP server.
@@ -115,6 +117,41 @@ func main() {
 		}
 		logger.Info(ctx, "In-process bootstrap finished successfully")
 		return
+	}
+
+	// When invoked as the export one-shot (`cpserver export --deployment-id <tenant> --out <dir>`),
+	// export that tenant's configuration as a declarative bundle and exit. This reads through the
+	// same tenant-scoped stores, so it produces exactly the caller tenant's resources.
+	if isExportInvocation() {
+		if err := runExport(ctx, logger, exportService, cacheManager); err != nil {
+			logger.Error(ctx, "In-process export failed; exiting", log.Error(err))
+			os.Exit(1)
+		}
+		logger.Info(ctx, "In-process export finished successfully")
+		return
+	}
+
+	// Register the platform tenant-management APIs (usable only by the system tenant). These reuse the
+	// same import service the bootstrap uses to provision a new tenant's baseline at runtime.
+	tenantService, err := tenant.Initialize(mux, importService, tenant.Config{
+		DefaultsDir:        path.Join(serverHome, "bootstrap"),
+		PublicURL:          config.GetServerURL(&cfg.Server),
+		SystemDeploymentID: cfg.Server.SystemDeploymentID,
+	})
+	if err != nil {
+		logger.Fatal(ctx, "Failed to initialize TenantService", log.Error(err))
+	}
+	// A second environment of an organization is a copy of its first, taken from the environment
+	// manager's record of what that environment holds. Without one hosted here, a new environment is
+	// created empty and the first promotion into it fills it.
+	if envManager != nil {
+		tenantService.SetBaselineSeeder(&environmentSeeder{
+			registry:        envManager,
+			exportSvc:       exportService,
+			importSvc:       importService,
+			controlPlaneURL: localControlPlaneURL(*cfg),
+			envVarService:   envVarService,
+		})
 	}
 
 	// Initialize the Resource Server token-revocation cache. The initial deny-list snapshot is loaded

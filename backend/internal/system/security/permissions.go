@@ -62,96 +62,6 @@ var publicPaths = []string{
 	"/access/**",
 }
 
-// ---- Instance plane / mode ----
-
-// Plane identifies which deployment plane a management route or instance belongs to.
-type Plane string
-
-const (
-	// PlaneControl is the control plane: configuration/design-time management.
-	PlaneControl Plane = "cp"
-	// PlaneData is the data plane: runtime plus live-identity management.
-	PlaneData Plane = "dp"
-	// PlaneHybrid serves both planes (the default).
-	PlaneHybrid Plane = "hybrid"
-)
-
-// ParsePlane maps a configured mode string to a Plane, defaulting to PlaneHybrid for empty or
-// unrecognized values so an unset/typo mode fails open to the full (hybrid) surface.
-func ParsePlane(mode string) Plane {
-	switch Plane(strings.ToLower(strings.TrimSpace(mode))) {
-	case PlaneControl:
-		return PlaneControl
-	case PlaneData:
-		return PlaneData
-	default:
-		return PlaneHybrid
-	}
-}
-
-// planeRoute maps a request-path glob (same syntax as publicPaths) to the plane that owns it.
-type planeRoute struct {
-	pattern string
-	plane   Plane
-}
-
-// managementRoutePlanes classifies the management (non-public) API surface by plane, so an instance
-// running in "cp" or "dp" mode serves only its own routes and returns 404 for the other plane's.
-// Evaluation is first-match-wins, so more specific patterns come first (role assignment before the
-// generic role routes). Public runtime routes (OAuth2, flow execution, gate, well-known, health, the
-// VC/i18n runtime endpoints) are intentionally absent: they are never gated by plane.
-var managementRoutePlanes = []planeRoute{
-	// Data plane: live identities and assignment operations.
-	{"/roles/*/assignments/**", PlaneData},
-	{"/users", PlaneData},
-	{"/users/**", PlaneData},
-	{"/agents", PlaneData},
-	{"/agents/**", PlaneData},
-
-	// Control plane: configuration/design-time resources.
-	{"/roles", PlaneControl},
-	{"/roles/**", PlaneControl},
-	{"/groups", PlaneControl},
-	{"/groups/**", PlaneControl},
-	{"/organization-units", PlaneControl},
-	{"/organization-units/**", PlaneControl},
-	{"/applications", PlaneControl},
-	{"/applications/**", PlaneControl},
-	{"/user-types", PlaneControl},
-	{"/user-types/**", PlaneControl},
-	{"/agent-types", PlaneControl},
-	{"/agent-types/**", PlaneControl},
-	{"/resource-servers", PlaneControl},
-	{"/resource-servers/**", PlaneControl},
-	{"/flows", PlaneControl},
-	{"/flows/**", PlaneControl},
-	{"/design/**", PlaneControl},
-	{"/connections", PlaneControl},
-	{"/connections/**", PlaneControl},
-	{"/openid4vp/presentation-definitions/**", PlaneControl},
-	{"/openid4vci/credential-configurations/**", PlaneControl},
-	{"/server-config", PlaneControl},
-	{"/server-config/**", PlaneControl},
-	{"/i18n/**", PlaneControl},
-	{"/import", PlaneControl},
-	{"/import/**", PlaneControl},
-	{"/export", PlaneControl},
-	{"/export/**", PlaneControl},
-}
-
-// planeSharedRoutes are management routes served on every plane regardless of mode, matched as
-// "METHOD /path" (same glob syntax as apiPermissionEntries). The Data Plane authors no organization
-// units or user types, but it must read them to create and place users, so their reads are shared
-// while their writes stay owned by the Control Plane via managementRoutePlanes. Checked before the
-// path-based classification, so a shared read is never plane-gated even though the same path is
-// otherwise a Control Plane route.
-var planeSharedRoutes = []string{
-	"GET /organization-units",
-	"GET /organization-units/**",
-	"GET /user-types",
-	"GET /user-types/**",
-}
-
 // ---- Resource types ----
 
 // ResourceType defines the category of system resource being acted upon.
@@ -169,6 +79,10 @@ const (
 	ResourceTypeUserType ResourceType = "usertype"
 	// ResourceTypeAgentType identifies an agent-category entity type resource.
 	ResourceTypeAgentType ResourceType = "agenttype"
+	// ResourceTypeEnvironmentVariable identifies a non-secret environment variable resource.
+	ResourceTypeEnvironmentVariable ResourceType = "environmentvariable"
+	// ResourceTypeTenant identifies a tenant resource (platform "system" tenant management).
+	ResourceTypeTenant ResourceType = "tenant"
 )
 
 // ---- Actions ----
@@ -233,6 +147,26 @@ const (
 	ActionDeleteAgentType Action = "agenttype:delete"
 	// ActionListAgentTypes lists agent types.
 	ActionListAgentTypes Action = "agenttype:list"
+
+	// ActionCreateEnvironmentVariable creates a new environment variable.
+	ActionCreateEnvironmentVariable Action = "environmentvariable:create"
+	// ActionReadEnvironmentVariable reads an environment variable.
+	ActionReadEnvironmentVariable Action = "environmentvariable:read"
+	// ActionUpdateEnvironmentVariable updates an environment variable.
+	ActionUpdateEnvironmentVariable Action = "environmentvariable:update"
+	// ActionDeleteEnvironmentVariable deletes an environment variable.
+	ActionDeleteEnvironmentVariable Action = "environmentvariable:delete"
+	// ActionListEnvironmentVariables lists environment variables.
+	ActionListEnvironmentVariables Action = "environmentvariable:list"
+
+	// ActionCreateTenant provisions a new tenant.
+	ActionCreateTenant Action = "tenant:create"
+	// ActionReadTenant reads a tenant.
+	ActionReadTenant Action = "tenant:read"
+	// ActionDeleteTenant deprovisions a tenant.
+	ActionDeleteTenant Action = "tenant:delete"
+	// ActionListTenants lists tenants.
+	ActionListTenants Action = "tenant:list"
 )
 
 // ---- Permissions ----
@@ -251,6 +185,10 @@ type SystemPermissions struct {
 	UserTypeView  string
 	AgentType     string
 	AgentTypeView string
+	EnvVar        string
+	EnvVarView    string
+	Tenant        string
+	TenantView    string
 }
 
 // sysPerms holds the active system permissions, initialized by InitSystemPermissions.
@@ -284,6 +222,10 @@ func InitSystemPermissions(handle string) {
 		UserTypeView:  buildPermission(handle, "system", "usertype", "view"),
 		AgentType:     buildPermission(handle, "system", "agenttype"),
 		AgentTypeView: buildPermission(handle, "system", "agenttype", "view"),
+		EnvVar:        buildPermission(handle, "system", "environmentvariable"),
+		EnvVarView:    buildPermission(handle, "system", "environmentvariable", "view"),
+		Tenant:        buildPermission(handle, "system", "tenant"),
+		TenantView:    buildPermission(handle, "system", "tenant", "view"),
 	}
 	sysPerms = p
 
@@ -323,6 +265,19 @@ func InitSystemPermissions(handle string) {
 		ActionUpdateAgentType: p.AgentType,
 		ActionDeleteAgentType: p.AgentType,
 		ActionListAgentTypes:  p.AgentTypeView,
+
+		// Environment variable actions.
+		ActionCreateEnvironmentVariable: p.EnvVar,
+		ActionReadEnvironmentVariable:   p.EnvVarView,
+		ActionUpdateEnvironmentVariable: p.EnvVar,
+		ActionDeleteEnvironmentVariable: p.EnvVar,
+		ActionListEnvironmentVariables:  p.EnvVarView,
+
+		// Tenant actions (platform "system" tenant management).
+		ActionCreateTenant: p.Tenant,
+		ActionReadTenant:   p.TenantView,
+		ActionDeleteTenant: p.Tenant,
+		ActionListTenants:  p.TenantView,
 	}
 
 	apiPermissionEntries = []apiPermissionEntry{
@@ -374,6 +329,22 @@ func InitSystemPermissions(handle string) {
 		{"GET /agent-types/**", p.AgentTypeView},
 		{"PUT /agent-types/**", p.AgentType},
 		{"DELETE /agent-types/**", p.AgentType},
+
+		// Environment variable APIs. Resolve returns non-secret values that reads already expose, so
+		// the view permission is enough; it still precedes the /environment-variables/** rules.
+		{"GET /environment-variables/resolve", p.EnvVarView},
+		{"GET /environment-variables", p.EnvVarView},
+		{"POST /environment-variables", p.EnvVar},
+		{"GET /environment-variables/**", p.EnvVarView},
+		{"PUT /environment-variables/**", p.EnvVar},
+		{"DELETE /environment-variables/**", p.EnvVar},
+
+		// System tenant-management APIs. The `system` root scope satisfies these; the service
+		// additionally requires the caller to belong to the system tenant.
+		{"GET /system/tenants", p.TenantView},
+		{"POST /system/tenants", p.Tenant},
+		{"GET /system/tenants/**", p.TenantView},
+		{"DELETE /system/tenants/**", p.Tenant},
 
 		// Import APIs.
 		{"POST /import", p.Root},

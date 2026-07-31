@@ -64,31 +64,45 @@ func (e *entityTypeExporter) GetParameterizerType() string {
 	return paramTypEntityType
 }
 
-// GetAllResourceIDs retrieves all user-category entity type IDs.
+// GetAllResourceIDs retrieves the entity type IDs of every category.
 // In composite mode, this excludes declarative (YAML-based) entity types.
+//
+// Agent types are included alongside user types: an agent document names its type, and importing it
+// into a deployment that does not have that type fails schema validation. The exported document
+// carries its category, so the two round-trip through the one resource type.
 func (e *entityTypeExporter) GetAllResourceIDs(ctx context.Context) ([]string, *tidcommon.ServiceError) {
-	response, err := e.service.GetEntityTypeList(ctx, TypeCategoryUser, serverconst.MaxPageSize, 0, false)
-	if err != nil {
-		return nil, err
-	}
-	ids := make([]string, 0, len(response.Types))
-	for _, schema := range response.Types {
-		if !schema.IsReadOnly {
-			ids = append(ids, schema.ID)
+	ids := make([]string, 0)
+	for _, category := range []TypeCategory{TypeCategoryUser, TypeCategoryAgent} {
+		response, err := e.service.GetEntityTypeList(ctx, category, serverconst.MaxPageSize, 0, false)
+		if err != nil {
+			return nil, err
+		}
+		for _, schema := range response.Types {
+			if !schema.IsReadOnly {
+				ids = append(ids, schema.ID)
+			}
 		}
 	}
 	return ids, nil
 }
 
-// GetResourceByID retrieves a user-category entity type by its ID.
+// GetResourceByID retrieves an entity type by its ID, trying each category.
+//
+// The lookup is category-scoped, and an ID alone does not say which category it belongs to, so a
+// miss in the first category is not an error: it means the type is of the other one. Only the last
+// failure is reported, which is what a caller sees for an ID that exists in neither.
 func (e *entityTypeExporter) GetResourceByID(ctx context.Context, id string) (
 	interface{}, string, *tidcommon.ServiceError,
 ) {
-	schema, err := e.service.GetEntityType(ctx, TypeCategoryUser, id, false)
-	if err != nil {
-		return nil, "", err
+	var err *tidcommon.ServiceError
+	for _, category := range []TypeCategory{TypeCategoryUser, TypeCategoryAgent} {
+		var schema *EntityType
+		schema, err = e.service.GetEntityType(ctx, category, id, false)
+		if err == nil {
+			return schema, schema.Name, nil
+		}
 	}
-	return schema, schema.Name, nil
+	return nil, "", err
 }
 
 // ValidateResource validates a entity type resource.

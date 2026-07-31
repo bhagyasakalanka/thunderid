@@ -53,7 +53,7 @@ func (s *ServiceTestSuite) SetupTest() {
 	initConfigWithTestCryptoKey()
 	s.mockIDP = idpmock.NewIDPServiceInterfaceMock(s.T())
 	s.mockNotif = notificationmock.NewNotificationSenderMgtSvcInterfaceMock(s.T())
-	s.svc = newService(s.mockIDP, s.mockNotif)
+	s.svc = newService(s.mockIDP, s.mockNotif, nil)
 }
 
 func (s *ServiceTestSuite) TearDownTest() {

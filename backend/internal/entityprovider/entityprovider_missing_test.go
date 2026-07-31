@@ -19,6 +19,7 @@
 package entityprovider
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 
@@ -39,7 +40,7 @@ func (suite *DefaultEntityProviderTestSuite) TestSearchEntities() {
 	// Test Success
 	suite.mockService.On("SearchEntities", mock.Anything, filters).Return(found, nil).Once()
 
-	result, err := suite.provider.SearchEntities(filters)
+	result, err := suite.provider.SearchEntities(context.Background(), filters)
 	suite.Nil(err)
 	suite.Len(result, 1)
 	suite.Equal(testEntityID, result[0].ID)
@@ -48,7 +49,7 @@ func (suite *DefaultEntityProviderTestSuite) TestSearchEntities() {
 	suite.mockService.On("SearchEntities", mock.Anything, filters).
 		Return(nil, entity.ErrEntityNotFound).Once()
 
-	result, err = suite.provider.SearchEntities(filters)
+	result, err = suite.provider.SearchEntities(context.Background(), filters)
 	suite.Nil(result)
 	suite.NotNil(err)
 	suite.Equal(ErrorCodeEntityNotFound, err.Code)
@@ -57,7 +58,7 @@ func (suite *DefaultEntityProviderTestSuite) TestSearchEntities() {
 	suite.mockService.On("SearchEntities", mock.Anything, filters).
 		Return(nil, errors.New("db error")).Once()
 
-	result, err = suite.provider.SearchEntities(filters)
+	result, err = suite.provider.SearchEntities(context.Background(), filters)
 	suite.Nil(result)
 	suite.NotNil(err)
 	suite.Equal(ErrorCodeSystemError, err.Code)
@@ -70,14 +71,14 @@ func (suite *DefaultEntityProviderTestSuite) TestUpdateAttributes() {
 	suite.mockService.On("UpdateAttributes", mock.Anything, testEntityID, attrs).
 		Return(nil).Once()
 
-	err := suite.provider.UpdateAttributes(testEntityID, attrs)
+	err := suite.provider.UpdateAttributes(context.Background(), testEntityID, attrs)
 	suite.Nil(err)
 
 	// Test Not Found
 	suite.mockService.On("UpdateAttributes", mock.Anything, testEntityID, attrs).
 		Return(entity.ErrEntityNotFound).Once()
 
-	err = suite.provider.UpdateAttributes(testEntityID, attrs)
+	err = suite.provider.UpdateAttributes(context.Background(), testEntityID, attrs)
 	suite.NotNil(err)
 	suite.Equal(ErrorCodeEntityNotFound, err.Code)
 
@@ -85,7 +86,7 @@ func (suite *DefaultEntityProviderTestSuite) TestUpdateAttributes() {
 	suite.mockService.On("UpdateAttributes", mock.Anything, testEntityID, attrs).
 		Return(entity.ErrBadAttributesInRequest).Once()
 
-	err = suite.provider.UpdateAttributes(testEntityID, attrs)
+	err = suite.provider.UpdateAttributes(context.Background(), testEntityID, attrs)
 	suite.NotNil(err)
 	suite.Equal(ErrorCodeInvalidRequestFormat, err.Code)
 
@@ -93,7 +94,7 @@ func (suite *DefaultEntityProviderTestSuite) TestUpdateAttributes() {
 	suite.mockService.On("UpdateAttributes", mock.Anything, testEntityID, attrs).
 		Return(errors.New("db error")).Once()
 
-	err = suite.provider.UpdateAttributes(testEntityID, attrs)
+	err = suite.provider.UpdateAttributes(context.Background(), testEntityID, attrs)
 	suite.NotNil(err)
 	suite.Equal(ErrorCodeSystemError, err.Code)
 }
@@ -105,7 +106,7 @@ func (suite *DefaultEntityProviderTestSuite) TestGetEntityListCount() {
 	suite.mockService.On("GetEntityListCount", mock.Anything, providers.EntityCategory("user"), filters).
 		Return(42, nil).Once()
 
-	count, err := suite.provider.GetEntityListCount(providers.EntityCategoryUser, filters)
+	count, err := suite.provider.GetEntityListCount(context.Background(), providers.EntityCategoryUser, filters)
 	suite.Nil(err)
 	suite.Equal(42, count)
 
@@ -113,7 +114,7 @@ func (suite *DefaultEntityProviderTestSuite) TestGetEntityListCount() {
 	suite.mockService.On("GetEntityListCount", mock.Anything, providers.EntityCategory("user"), filters).
 		Return(0, errors.New("db error")).Once()
 
-	count, err = suite.provider.GetEntityListCount(providers.EntityCategoryUser, filters)
+	count, err = suite.provider.GetEntityListCount(context.Background(), providers.EntityCategoryUser, filters)
 	suite.Equal(0, count)
 	suite.NotNil(err)
 	suite.Equal(ErrorCodeSystemError, err.Code)
@@ -130,7 +131,7 @@ func (suite *DefaultEntityProviderTestSuite) TestGetEntityList() {
 	suite.mockService.On("GetEntityList", mock.Anything, providers.EntityCategory("user"), 10, 0, filters).
 		Return(entities, nil).Once()
 
-	result, err := suite.provider.GetEntityList(providers.EntityCategoryUser, 10, 0, filters)
+	result, err := suite.provider.GetEntityList(context.Background(), providers.EntityCategoryUser, 10, 0, filters)
 	suite.Nil(err)
 	suite.Len(result, 2)
 	suite.Equal("id1", result[0].ID)
@@ -139,7 +140,7 @@ func (suite *DefaultEntityProviderTestSuite) TestGetEntityList() {
 	suite.mockService.On("GetEntityList", mock.Anything, providers.EntityCategory("user"), 10, 0, filters).
 		Return(nil, entity.ErrEntityNotFound).Once()
 
-	result, err = suite.provider.GetEntityList(providers.EntityCategoryUser, 10, 0, filters)
+	result, err = suite.provider.GetEntityList(context.Background(), providers.EntityCategoryUser, 10, 0, filters)
 	suite.Nil(result)
 	suite.NotNil(err)
 	suite.Equal(ErrorCodeEntityNotFound, err.Code)
@@ -148,7 +149,7 @@ func (suite *DefaultEntityProviderTestSuite) TestGetEntityList() {
 	suite.mockService.On("GetEntityList", mock.Anything, providers.EntityCategory("user"), 10, 0, filters).
 		Return(nil, errors.New("db error")).Once()
 
-	result, err = suite.provider.GetEntityList(providers.EntityCategoryUser, 10, 0, filters)
+	result, err = suite.provider.GetEntityList(context.Background(), providers.EntityCategoryUser, 10, 0, filters)
 	suite.Nil(result)
 	suite.NotNil(err)
 	suite.Equal(ErrorCodeSystemError, err.Code)
@@ -157,24 +158,24 @@ func (suite *DefaultEntityProviderTestSuite) TestGetEntityList() {
 // ----- DisabledEntityProvider — previously uncovered methods -----
 
 func (suite *DisabledEntityProviderTestSuite) TestSearchEntities() {
-	result, err := suite.provider.SearchEntities(map[string]interface{}{})
+	result, err := suite.provider.SearchEntities(context.Background(), map[string]interface{}{})
 	suite.Nil(result)
 	suite.Equal(errNotImplemented, err)
 }
 
 func (suite *DisabledEntityProviderTestSuite) TestUpdateAttributes() {
-	err := suite.provider.UpdateAttributes("entity-id", json.RawMessage{})
+	err := suite.provider.UpdateAttributes(context.Background(), "entity-id", json.RawMessage{})
 	suite.Equal(errNotImplemented, err)
 }
 
 func (suite *DisabledEntityProviderTestSuite) TestGetEntityListCount() {
-	count, err := suite.provider.GetEntityListCount(providers.EntityCategoryUser, nil)
+	count, err := suite.provider.GetEntityListCount(context.Background(), providers.EntityCategoryUser, nil)
 	suite.Equal(0, count)
 	suite.Equal(errNotImplemented, err)
 }
 
 func (suite *DisabledEntityProviderTestSuite) TestGetEntityList() {
-	result, err := suite.provider.GetEntityList(providers.EntityCategoryUser, 10, 0, nil)
+	result, err := suite.provider.GetEntityList(context.Background(), providers.EntityCategoryUser, 10, 0, nil)
 	suite.Nil(result)
 	suite.Equal(errNotImplemented, err)
 }

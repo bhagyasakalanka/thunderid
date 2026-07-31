@@ -57,10 +57,40 @@ type SecurityConfig struct {
 	TrustedIssuer          TrustedIssuerConfig   `yaml:"trusted_issuer"           json:"trusted_issuer"`
 	SystemPermissionPrefix string                `yaml:"system_permission_prefix" json:"system_permission_prefix"`
 	TokenRevocation        TokenRevocationConfig `yaml:"token_revocation"         json:"token_revocation"`
+	SecretProvider         SecretProviderConfig  `yaml:"secret_provider"          json:"secret_provider"`
 	// DirectAuthSecret gates the Direct API endpoints (/auth/**, /register/passkey/**, /access/**).
 	// When set, callers must present this value in the Direct-Auth-Secret header; when empty, those
 	// endpoints are blocked (secure by default).
 	DirectAuthSecret string `yaml:"direct_auth_secret" json:"direct_auth_secret"`
+	// EnvironmentManager configures the in-process environment manager. Disabled when unset.
+	EnvironmentManager EnvironmentManagerConfig `yaml:"environment_manager" json:"environment_manager"`
+}
+
+// SecretProviderConfig configures the external service that supplies the secret values referenced by
+// configuration. Configuration promoted from a Control Plane stores a reference such as
+// "kv:MY_APP_CLIENT_SECRET" rather than the secret itself, and this is where those are resolved from.
+//
+// Setting URL activates the feature: every secret is loaded into memory at startup, and a reference
+// that is not held is looked up individually. When URL is empty, resolution is disabled and a value
+// stored as a reference cannot be used.
+type SecretProviderConfig struct {
+	URL   string `yaml:"url"   json:"url"`
+	Token string `yaml:"token" json:"token"`
+	// TimeoutSeconds bounds a call to the provider. A non-positive value falls back to the default.
+	TimeoutSeconds int `yaml:"timeout_seconds" json:"timeout_seconds"`
+	// FilePath, when set, serves the secret store from this server under /secret-store instead of
+	// requiring the standalone provider service. URL still points at whichever provider this
+	// deployment resolves from, which may be this one.
+	FilePath string `yaml:"file_path" json:"file_path"`
+}
+
+// EnvironmentManagerConfig configures the in-process environment manager, which promotes
+// configuration between deployments. It is a control plane concern and is ignored elsewhere.
+//
+// DataDir is where environments and captured versions are kept. Leaving it empty disables the
+// module, which is what a deployment using the standalone environment manager service wants.
+type EnvironmentManagerConfig struct {
+	DataDir string `yaml:"data_dir" json:"data_dir"`
 }
 
 // TokenRevocationConfig configures the Resource Server's token-revocation enforcement: an in-memory
@@ -133,11 +163,43 @@ type ServerConfig struct {
 	// configuration management such as applications, IdPs, flows, roles, groups, OUs), or "dp"
 	// (data plane only: runtime plus data-plane management such as users, agents, role assignment).
 	// It gates only the management HTTP surface; public runtime endpoints are always served.
-	Mode           string         `yaml:"mode"       json:"mode"`
-	PublicURL      string         `yaml:"public_url" json:"public_url"`
-	Identifier     string         `yaml:"identifier" json:"identifier"`
-	SecurityConfig SecurityConfig `yaml:"security"   json:"security"`
+	Mode      string `yaml:"mode"       json:"mode"`
+	PublicURL string `yaml:"public_url" json:"public_url"`
+	// ControlPlaneManaged marks this deployment as receiving its configuration from a control plane.
+	// The import records every resource it writes, and this deployment's own management APIs then
+	// refuse to change those: an edit made here would survive only until the next promotion overwrote
+	// it. Resources created on this deployment are unaffected and stay editable. Off by default, which
+	// is what a standalone server with no control plane in front of it wants.
+	ControlPlaneManaged bool `yaml:"control_plane_managed" json:"control_plane_managed"`
+	// Identifier is the deployment id that scopes all persisted resources when DeploymentIDSource is
+	// "server". For a single-tenant instance it is the only value stores partition by.
+	Identifier string `yaml:"identifier" json:"identifier"`
+	// DeploymentIDSource selects where the per-request deployment id (the value stores partition by)
+	// comes from. It is an exclusive switch:
+	//   "server" (default) - always use Identifier; any deployment claim in the token is ignored.
+	//   "token"            - always use the DeploymentIDClaim from the authenticated caller's token;
+	//                        Identifier is never consulted for requests, and an authenticated request
+	//                        whose token lacks the claim is rejected. This is what makes a single
+	//                        instance multi-tenant over one database.
+	DeploymentIDSource string `yaml:"deployment_id_source" json:"deployment_id_source"`
+	// DeploymentIDClaim is the name of the token claim carrying the per-request deployment id. It is
+	// required when DeploymentIDSource is "token" and unused otherwise.
+	DeploymentIDClaim string `yaml:"deployment_id_claim" json:"deployment_id_claim"`
+	// SystemDeploymentID is the reserved deployment id of the platform "system" tenant - the single
+	// tenant allowed to manage other tenants via the /system APIs. Defaults to "root" when empty.
+	SystemDeploymentID string         `yaml:"system_deployment_id" json:"system_deployment_id"`
+	SecurityConfig     SecurityConfig `yaml:"security"            json:"security"`
 }
+
+// Deployment id source modes for ServerConfig.DeploymentIDSource.
+const (
+	// DeploymentIDSourceServer scopes persistence by the configured Identifier and ignores any
+	// deployment claim in the token. It is the default when DeploymentIDSource is empty.
+	DeploymentIDSourceServer = "server"
+	// DeploymentIDSourceToken scopes persistence by the token's deployment claim and never falls
+	// back to the configured Identifier for requests.
+	DeploymentIDSourceToken = "token"
+)
 
 // GateClientConfig holds the client configuration details.
 type GateClientConfig struct {
