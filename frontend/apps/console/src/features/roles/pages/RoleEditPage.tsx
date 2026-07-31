@@ -40,6 +40,7 @@ import {useState, useCallback, useMemo} from 'react';
 import type {ReactNode, SyntheticEvent, JSX} from 'react';
 import {useTranslation} from 'react-i18next';
 import {Link, useNavigate, useParams} from 'react-router';
+import {useIsManagedResource, ManagedResourceNotice} from '../../managed-resources';
 import useGetRole from '../api/useGetRole';
 import useUpdateRole, {ROLE_MUTATION_KEY} from '../api/useUpdateRole';
 import EditAssignmentsSettings from '../components/edit-role/assignments-settings/EditAssignmentsSettings';
@@ -71,12 +72,23 @@ function TabPanel({children = null, value, index, ...other}: TabPanelProps): JSX
 
 export default function RoleEditPage(): JSX.Element {
   const {roleId} = useParams<{roleId: string}>();
+  // A role applied from the control plane can only be changed there, so this view is read
+  // only for it in the same way a declarative resource is.
+  const isManagedRole = useIsManagedResource('role');
+  const isManaged: boolean = isManagedRole(roleId ?? '');
   const navigate = useNavigate();
   const {t} = useTranslation();
   const logger = useLogger('RoleEditPage');
   const {showToast} = useToast();
 
-  const {data: role, isLoading, error: fetchError, refetch} = useGetRole(roleId ?? '');
+  const {data: fetchedRole, isLoading, error: fetchError, refetch} = useGetRole(roleId ?? '');
+  // A resource the control plane owns is read only here, and saying so on the object
+  // itself is what makes every section of this page and its children treat it that way,
+  // rather than each one having to learn about ownership separately.
+  const role = useMemo(
+    () => (isManaged && fetchedRole ? {...fetchedRole, isReadOnly: true} : fetchedRole),
+    [fetchedRole, isManaged],
+  );
   const updateRole = useUpdateRole();
   const isRoleUpdating = useIsMutating({mutationKey: ROLE_MUTATION_KEY}) > 0;
 
@@ -196,7 +208,9 @@ export default function RoleEditPage(): JSX.Element {
 
   return (
     <PageContent>
-      {role.isReadOnly && (
+      {/* A managed resource says where it can be changed; a declarative one has no such place. */}
+      {isManaged && <ManagedResourceNotice />}
+      {role.isReadOnly && !isManaged && (
         <Alert severity="info" sx={{mb: 2}}>
           {t('common:messages.readOnlyResource', 'This resource is read-only and cannot be modified.')}
         </Alert>
@@ -233,7 +247,7 @@ export default function RoleEditPage(): JSX.Element {
             ) : (
               <>
                 <Typography variant="h3">{editedRole.name ?? role.name}</Typography>
-                {!role.isReadOnly && (
+                {!((role.isReadOnly === true || isManaged) || isManaged) && (
                   <IconButton
                     size="small"
                     aria-label={t('roles:edit.page.editName')}
@@ -285,7 +299,7 @@ export default function RoleEditPage(): JSX.Element {
                 <Typography component="span" variant="body2" color="text.secondary">
                   {effectiveDescription || t('roles:edit.page.description.empty')}
                 </Typography>
-                {!role.isReadOnly && (
+                {!((role.isReadOnly === true || isManaged) || isManaged) && (
                   <IconButton
                     size="small"
                     aria-label={t('roles:edit.page.editDescription')}
@@ -331,7 +345,7 @@ export default function RoleEditPage(): JSX.Element {
         <TabPanel value={activeTab} index={0}>
           <EditGeneralSettings
             role={role}
-            onDeleteClick={role.isReadOnly ? undefined : () => setDeleteDialogOpen(true)}
+            onDeleteClick={(role.isReadOnly === true || isManaged) ? undefined : () => setDeleteDialogOpen(true)}
           />
         </TabPanel>
 
@@ -339,12 +353,12 @@ export default function RoleEditPage(): JSX.Element {
           <EditPermissionsSettings
             permissions={editedRole.permissions ?? serverPermissions}
             onPermissionsChange={handlePermissionsChange}
-            isReadOnly={role.isReadOnly}
+            isReadOnly={(role.isReadOnly === true || isManaged)}
           />
         </TabPanel>
 
         <TabPanel value={activeTab} index={2}>
-          <EditAssignmentsSettings roleId={role.id} isReadOnly={role.isReadOnly} />
+          <EditAssignmentsSettings roleId={role.id} isReadOnly={(role.isReadOnly === true || isManaged)} />
         </TabPanel>
       </>
 
@@ -412,7 +426,7 @@ export default function RoleEditPage(): JSX.Element {
                   /* noop */
                 });
               }}
-              disabled={updateRole.isPending || isRoleUpdating || role.isReadOnly === true}
+              disabled={updateRole.isPending || isRoleUpdating || (role.isReadOnly === true || isManaged)}
             >
               {updateRole.isPending ? t('roles:edit.page.saving') : t('roles:edit.page.save')}
             </Button>

@@ -35,6 +35,7 @@ import (
 	"github.com/thunder-id/thunderid/internal/flow/interceptor"
 	"github.com/thunder-id/thunderid/internal/system/config"
 	"github.com/thunder-id/thunderid/internal/system/log"
+	"github.com/thunder-id/thunderid/internal/system/managedresource"
 	"github.com/thunder-id/thunderid/internal/system/resourcedependency"
 	"github.com/thunder-id/thunderid/internal/system/transaction"
 	"github.com/thunder-id/thunderid/internal/system/utils"
@@ -138,6 +139,8 @@ func (s *flowMgtService) ListFlows(ctx context.Context, limit, offset int, flowT
 		s.logger.Error(ctx, "Failed to list flows", log.Error(err))
 		return nil, &tidcommon.InternalServerError
 	}
+
+	markManagedFlows(ctx, flows)
 
 	listResponse := &FlowListResponse{
 		TotalResults: totalCount,
@@ -402,6 +405,11 @@ func (s *flowMgtService) GetFlowByHandle(ctx context.Context, handle string, flo
 // Old versions are retained up to the configured max_version_history limit.
 func (s *flowMgtService) UpdateFlow(ctx context.Context, flowID string, flowDef *FlowDefinition) (
 	*providers.CompleteFlowDefinition, *tidcommon.ServiceError) {
+	// A resource applied from the control plane is owned there. Changing it here would last only
+	// until the next promotion overwrote it, so the change is refused instead.
+	if svcErr := managedresource.Guard(ctx, managedresource.TypeFlow, flowID); svcErr != nil {
+		return nil, svcErr
+	}
 	if flowID == "" {
 		return nil, &ErrorMissingFlowID
 	}
@@ -492,6 +500,11 @@ func (s *flowMgtService) UpdateFlow(ctx context.Context, flowID string, flowDef 
 
 // DeleteFlow deletes a flow definition and all its version history.
 func (s *flowMgtService) DeleteFlow(ctx context.Context, flowID string) *tidcommon.ServiceError {
+	// A resource applied from the control plane is owned there. Changing it here would last only
+	// until the next promotion overwrote it, so the change is refused instead.
+	if svcErr := managedresource.Guard(ctx, managedresource.TypeFlow, flowID); svcErr != nil {
+		return svcErr
+	}
 	if flowID == "" {
 		return &ErrorMissingFlowID
 	}
@@ -784,4 +797,18 @@ func (s *flowMgtService) hasPasskeyRegistrationModes(flowDef *FlowDefinition) bo
 	}
 
 	return hasRegStart && hasRegFinish
+}
+
+// markManagedFlows reports the control plane owned flows as read only, which is what a client renders
+// its edit and delete controls from.
+func markManagedFlows(ctx context.Context, flows []BasicFlowDefinition) {
+	managed := managedresource.Default().ManagedIDs(ctx, managedresource.TypeFlow)
+	if len(managed) == 0 {
+		return
+	}
+	for i := range flows {
+		if managed[flows[i].ID] {
+			flows[i].IsReadOnly = true
+		}
+	}
 }

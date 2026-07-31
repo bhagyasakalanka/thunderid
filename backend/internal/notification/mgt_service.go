@@ -29,6 +29,7 @@ import (
 	"github.com/thunder-id/thunderid/internal/notification/common"
 	declarativeresource "github.com/thunder-id/thunderid/internal/system/declarative_resource"
 	"github.com/thunder-id/thunderid/internal/system/log"
+	"github.com/thunder-id/thunderid/internal/system/managedresource"
 	"github.com/thunder-id/thunderid/internal/system/resourcedependency"
 	"github.com/thunder-id/thunderid/internal/system/transaction"
 	sysutils "github.com/thunder-id/thunderid/internal/system/utils"
@@ -218,6 +219,12 @@ func (s *notificationSenderMgtService) UpdateSender(ctx context.Context, id stri
 	logger := log.GetLogger().With(log.String(log.LoggerKeyComponentName, "NotificationSenderMgtService"))
 	logger.Debug(ctx, "Updating notification sender", log.String("id", id), log.String("name", sender.Name))
 
+	// A sender applied from the control plane is owned there. Changing it here would last only until
+	// the next promotion overwrote it, so the change is refused instead.
+	if svcErr := managedresource.Guard(ctx, managedresource.TypeConnection, id); svcErr != nil {
+		return nil, svcErr
+	}
+
 	if err := declarativeresource.CheckDeclarativeUpdate(); err != nil {
 		return nil, err
 	}
@@ -297,6 +304,10 @@ func (s *notificationSenderMgtService) UpdateSender(ctx context.Context, id stri
 func (s *notificationSenderMgtService) DeleteSender(ctx context.Context, id string) *tidcommon.ServiceError {
 	logger := log.GetLogger().With(log.String(log.LoggerKeyComponentName, "NotificationSenderMgtService"))
 	logger.Debug(ctx, "Deleting notification sender", log.String("id", id))
+
+	if svcErr := managedresource.Guard(ctx, managedresource.TypeConnection, id); svcErr != nil {
+		return svcErr
+	}
 
 	if err := declarativeresource.CheckDeclarativeDelete(); err != nil {
 		return err

@@ -65,6 +65,8 @@ export interface VerifiableCredentialFormProps {
   submitLabel: string;
   onSubmit: (data: CreateVerifiableCredentialRequest) => void;
   onDelete?: () => void;
+  /** Show the stored configuration without offering to change it. */
+  isReadOnly?: boolean;
 }
 
 interface TabPanelProps {
@@ -95,6 +97,7 @@ export default function VerifiableCredentialForm({
   submitLabel,
   onSubmit,
   onDelete = undefined,
+  isReadOnly = false,
 }: VerifiableCredentialFormProps): JSX.Element {
   const {t} = useTranslation('verifiable-credentials');
 
@@ -416,7 +419,7 @@ export default function VerifiableCredentialForm({
         <ClaimsEditor claims={claims} onChange={setClaims} />
       </TabPanel>
 
-      {dirty && (
+      {dirty && !isReadOnly && (
         <UnsavedChangesBar
           message={t('form.unsavedChanges')}
           resetLabel={t('common:actions.reset')}

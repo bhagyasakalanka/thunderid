@@ -27,6 +27,7 @@ import (
 	"github.com/thunder-id/thunderid/internal/system/config"
 	dbmodel "github.com/thunder-id/thunderid/internal/system/database/model"
 	"github.com/thunder-id/thunderid/internal/system/database/provider"
+	"github.com/thunder-id/thunderid/internal/system/deployment"
 	"github.com/thunder-id/thunderid/internal/system/log"
 	"github.com/thunder-id/thunderid/internal/system/transaction"
 )
@@ -90,7 +91,7 @@ func (s *notificationStore) createSender(ctx context.Context, sender common.Noti
 	}
 
 	_, err = dbClient.ExecuteContext(ctx, queryCreateNotificationSender, sender.Name, sender.ID,
-		sender.Description, string(sender.Type), string(sender.Provider), propertiesJSON, s.deploymentID)
+		sender.Description, string(sender.Type), string(sender.Provider), propertiesJSON, deployment.Resolve(ctx, s.deploymentID))
 	if err != nil {
 		return fmt.Errorf("failed to execute query: %w", err)
 	}
@@ -100,7 +101,7 @@ func (s *notificationStore) createSender(ctx context.Context, sender common.Noti
 
 // listSenders retrieves all notification senders.
 func (s *notificationStore) listSenders(ctx context.Context) ([]common.NotificationSenderDTO, error) {
-	return s.listSendersWithQuery(ctx, queryGetAllNotificationSenders, s.deploymentID)
+	return s.listSendersWithQuery(ctx, queryGetAllNotificationSenders, deployment.Resolve(ctx, s.deploymentID))
 }
 
 // listSendersByType retrieves all notification senders of the given type (e.g. only
@@ -109,7 +110,7 @@ func (s *notificationStore) listSenders(ctx context.Context) ([]common.Notificat
 func (s *notificationStore) listSendersByType(
 	ctx context.Context, senderType common.NotificationSenderType,
 ) ([]common.NotificationSenderDTO, error) {
-	return s.listSendersWithQuery(ctx, queryGetNotificationSendersByType, string(senderType), s.deploymentID)
+	return s.listSendersWithQuery(ctx, queryGetNotificationSendersByType, string(senderType), deployment.Resolve(ctx, s.deploymentID))
 }
 
 // listSendersWithQuery runs the given query and builds the resulting notification senders,
@@ -177,7 +178,7 @@ func (s *notificationStore) getSender(ctx context.Context, query dbmodel.DBQuery
 		return nil, fmt.Errorf("failed to get database client: %w", err)
 	}
 
-	results, err := dbClient.QueryContext(ctx, query, identifier, s.deploymentID)
+	results, err := dbClient.QueryContext(ctx, query, identifier, deployment.Resolve(ctx, s.deploymentID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute query: %w", err)
 	}
@@ -231,7 +232,7 @@ func (s *notificationStore) updateSender(ctx context.Context, id string, sender 
 	}
 
 	_, err = dbClient.ExecuteContext(ctx, queryUpdateNotificationSender, sender.Name, sender.Description,
-		string(sender.Provider), propertiesJSON, id, string(sender.Type), s.deploymentID)
+		string(sender.Provider), propertiesJSON, id, string(sender.Type), deployment.Resolve(ctx, s.deploymentID))
 	if err != nil {
 		return fmt.Errorf("failed to execute query: %w", err)
 	}
@@ -248,7 +249,7 @@ func (s *notificationStore) deleteSender(ctx context.Context, id string) error {
 		return fmt.Errorf("failed to get database client: %w", err)
 	}
 
-	rowsAffected, err := dbClient.ExecuteContext(ctx, queryDeleteNotificationSender, id, s.deploymentID)
+	rowsAffected, err := dbClient.ExecuteContext(ctx, queryDeleteNotificationSender, id, deployment.Resolve(ctx, s.deploymentID))
 	if err != nil {
 		return fmt.Errorf("failed to execute delete query: %w", err)
 	}

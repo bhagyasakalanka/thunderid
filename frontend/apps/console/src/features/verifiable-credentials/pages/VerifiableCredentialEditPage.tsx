@@ -26,6 +26,7 @@ import useGetVerifiableCredential from '../api/useGetVerifiableCredential';
 import useUpdateVerifiableCredential from '../api/useUpdateVerifiableCredential';
 import VerifiableCredentialDeleteDialog from '../components/VerifiableCredentialDeleteDialog';
 import VerifiableCredentialForm from '../components/VerifiableCredentialForm';
+import {useIsManagedResource, ManagedResourceNotice} from '../../managed-resources';
 import type {UpdateVerifiableCredentialRequest} from '../models/requests';
 
 const LIST_URL = '/verifiable-credentials';
@@ -38,6 +39,10 @@ export default function VerifiableCredentialEditPage(): JSX.Element {
   const {data, isLoading, error} = useGetVerifiableCredential(vcId);
   const updateVC = useUpdateVerifiableCredential();
   const [deleteOpen, setDeleteOpen] = useState<boolean>(false);
+
+  // Owned by the control plane: a change made here would be replaced by the next apply, and the
+  // server refuses it with 403, so the controls are not offered at all.
+  const isManaged: boolean = useIsManagedResource('credential_configuration')(vcId);
 
   const [name, setName] = useState<string>('');
   const [description, setDescription] = useState<string>('');
@@ -210,6 +215,8 @@ export default function VerifiableCredentialEditPage(): JSX.Element {
         </PageTitle.SubHeader>
       </PageTitle>
 
+      {isManaged && <ManagedResourceNotice />}
+
       <VerifiableCredentialForm
         initial={data}
         name={name}
@@ -219,7 +226,8 @@ export default function VerifiableCredentialEditPage(): JSX.Element {
         submitting={updateVC.isPending}
         submitLabel={t('common:actions.save')}
         onSubmit={handleSubmit}
-        onDelete={(): void => setDeleteOpen(true)}
+        isReadOnly={isManaged}
+        onDelete={isManaged ? undefined : (): void => setDeleteOpen(true)}
       />
 
       <VerifiableCredentialDeleteDialog

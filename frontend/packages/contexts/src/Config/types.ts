@@ -146,6 +146,20 @@ export interface GateClientConfig {
 }
 
 /**
+ * Environment manager configuration, pointing at the service that holds environment configuration
+ * versions and drives promotion between environments.
+ *
+ * @public
+ */
+export interface EnvManagerConfig {
+  /**
+   * Full public URL of the environment manager service.
+   * @example "https://localhost:9099"
+   */
+  public_url?: string;
+}
+
+/**
  * Theme configuration interface that defines theming options for applications.
  */
 export interface ThemeConfig {
@@ -302,12 +316,33 @@ export interface ProductConfig {
    */
   gate_client?: GateClientConfig;
 
+  /**
+   * Optional environment manager location. When omitted, the promotion feature reports that it is
+   * not configured instead of calling an unknown host.
+   */
+  env_manager?: EnvManagerConfig;
+
   /** Optional design configuration for theming and UI customization */
   design?: DesignConfig;
 
   /** Optional SDK provider overrides. Values here take precedence over computed defaults. */
   sdk?: SdkConfig;
+
+  /**
+   * Deployment plane this console instance serves. "cp" is the Control Plane authoring console
+   * (create/edit declarative configuration, no runtime views); "dp" is the Data Plane runtime
+   * console; "hybrid" (the default when omitted) shows everything. Drives which navigation entries
+   * and routes are available.
+   */
+  plane?: Plane;
 }
+
+/**
+ * Deployment plane a console instance serves.
+ *
+ * @public
+ */
+export type Plane = 'cp' | 'dp' | 'hybrid';
 
 /**
  * Global window interface extension for runtime configuration.

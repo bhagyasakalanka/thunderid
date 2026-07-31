@@ -34,6 +34,7 @@ import (
 	oupkg "github.com/thunder-id/thunderid/internal/ou"
 	serverconst "github.com/thunder-id/thunderid/internal/system/constants"
 	"github.com/thunder-id/thunderid/internal/system/log"
+	"github.com/thunder-id/thunderid/internal/system/managedresource"
 	"github.com/thunder-id/thunderid/internal/system/resourcedependency"
 	"github.com/thunder-id/thunderid/internal/system/security"
 	"github.com/thunder-id/thunderid/internal/system/sysauthz"
@@ -145,6 +146,8 @@ func (gs *groupService) listAllGroups(ctx context.Context, limit, offset int, in
 	}
 
 	displayQuery := utils.DisplayQueryParam(includeDisplay)
+	markManagedGroups(ctx, groupBasics)
+
 	response := &GroupListResponse{
 		TotalResults: totalCount,
 		Groups:       groupBasics,
@@ -202,6 +205,8 @@ func (gs *groupService) listGroupsByOUIDs(ctx context.Context, ouIDs []string, l
 	if includeDisplay {
 		gs.populateGroupOUHandles(ctx, groupBasics, logger)
 	}
+
+	markManagedGroups(ctx, groupBasics)
 
 	response := &GroupListResponse{
 		TotalResults: totalCount,
@@ -265,6 +270,8 @@ func (gs *groupService) GetGroupsByPath(
 	}
 
 	displayQuery := utils.DisplayQueryParam(includeDisplay)
+	markManagedGroups(ctx, groupBasics)
+
 	response := &GroupListResponse{
 		TotalResults: totalCount,
 		Groups:       groupBasics,
@@ -463,6 +470,11 @@ func (gs *groupService) GetGroup(
 // UpdateGroup updates an existing group.
 func (gs *groupService) UpdateGroup(
 	ctx context.Context, groupID string, request UpdateGroupRequest) (*Group, *tidcommon.ServiceError) {
+	// A resource applied from the control plane is owned there. Changing it here would last only
+	// until the next promotion overwrote it, so the change is refused instead.
+	if svcErr := managedresource.Guard(ctx, managedresource.TypeGroup, groupID); svcErr != nil {
+		return nil, svcErr
+	}
 	logger := log.GetLogger().With(log.String(log.LoggerKeyComponentName, loggerComponentName))
 	logger.Debug(ctx, "Updating group", log.String("id", groupID), log.String("name", request.Name))
 
@@ -582,6 +594,11 @@ func (gs *groupService) SetDependencyRegistry(r resourcedependency.Registry) {
 }
 
 func (gs *groupService) DeleteGroup(ctx context.Context, groupID string) *tidcommon.ServiceError {
+	// A resource applied from the control plane is owned there. Changing it here would last only
+	// until the next promotion overwrote it, so the change is refused instead.
+	if svcErr := managedresource.Guard(ctx, managedresource.TypeGroup, groupID); svcErr != nil {
+		return svcErr
+	}
 	logger := log.GetLogger().With(log.String(log.LoggerKeyComponentName, loggerComponentName))
 	logger.Debug(ctx, "Deleting group", log.String("id", groupID))
 
@@ -804,6 +821,11 @@ func (gs *groupService) resolveMembers(
 // AddGroupMembers adds members to a group.
 func (gs *groupService) AddGroupMembers(
 	ctx context.Context, groupID string, members []Member) (*Group, *tidcommon.ServiceError) {
+	// A resource applied from the control plane is owned there. Changing it here would last only
+	// until the next promotion overwrote it, so the change is refused instead.
+	if svcErr := managedresource.Guard(ctx, managedresource.TypeGroup, groupID); svcErr != nil {
+		return nil, svcErr
+	}
 	log.GetLogger().With(log.String(log.LoggerKeyComponentName, loggerComponentName)).
 		Debug(ctx, "Adding members to group", log.String("id", groupID))
 	return gs.modifyGroupMembers(ctx, groupID, members,
@@ -816,6 +838,11 @@ func (gs *groupService) AddGroupMembers(
 // RemoveGroupMembers removes members from a group.
 func (gs *groupService) RemoveGroupMembers(
 	ctx context.Context, groupID string, members []Member) (*Group, *tidcommon.ServiceError) {
+	// A resource applied from the control plane is owned there. Changing it here would last only
+	// until the next promotion overwrote it, so the change is refused instead.
+	if svcErr := managedresource.Guard(ctx, managedresource.TypeGroup, groupID); svcErr != nil {
+		return nil, svcErr
+	}
 	log.GetLogger().With(log.String(log.LoggerKeyComponentName, loggerComponentName)).
 		Debug(ctx, "Removing members from group", log.String("id", groupID))
 	return gs.modifyGroupMembers(ctx, groupID, members,
@@ -1383,4 +1410,18 @@ func (gs *groupService) CascadeDeleteDependencies(
 		return 0, err
 	}
 	return int(deleted), nil
+}
+
+// markManagedGroups reports the control plane owned entries as read only, which is what a client renders its
+// edit and delete controls from.
+func markManagedGroups(ctx context.Context, items []GroupBasic) {
+	managed := managedresource.Default().ManagedIDs(ctx, managedresource.TypeGroup)
+	if len(managed) == 0 {
+		return
+	}
+	for i := range items {
+		if managed[items[i].ID] {
+			items[i].IsReadOnly = true
+		}
+	}
 }

@@ -117,7 +117,13 @@ func parseBootstrapOptions(serverHome string, args []string) (bootstrap.Options,
 	if dir == "" {
 		dir = path.Join(serverHome, "bootstrap")
 	}
-	return bootstrap.Options{DefaultsDir: dir}, nil
+	// Write the baseline under this server's own deployment id. Several Data Planes may share one
+	// database, and a baseline written under the default id would collide with theirs on the first
+	// fixed-id resource rather than creating this deployment's own copy.
+	return bootstrap.Options{
+		DefaultsDir:  dir,
+		DeploymentID: config.GetServerRuntime().Config.Server.Identifier,
+	}, nil
 }
 
 // setEnv sets an environment variable, ignoring the (practically impossible) error
