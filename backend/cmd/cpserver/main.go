@@ -281,7 +281,7 @@ func loadCertConfig(ctx context.Context, logger *log.Logger, runtimeSvc kmprovid
 // Console frontend path plus any configured extras. Empty and root ("/") entries are dropped because
 // they match every request and would silently disable all access logging.
 func accessLogExcludePaths(configured []string) []string {
-	paths := []string{"/console/"}
+	paths := []string{"/console/", "/cp/connect"}
 	for _, prefix := range configured {
 		if prefix != "" && prefix != "/" {
 			paths = append(paths, prefix)

@@ -136,6 +136,84 @@ func (c *OTPConfig) Validate() error {
 	return nil
 }
 
+// ChannelConfig configures the CP-DP phone-home WebSocket channel. The Server block is used by the
+// Control Plane (cpserver); the Client block by the Data Plane (dpserver).
+type ChannelConfig struct {
+	Server ChannelServerConfig `yaml:"server" json:"server"`
+	Client ChannelClientConfig `yaml:"client" json:"client"`
+}
+
+// ChannelServerConfig configures the Control Plane channel WebSocket server.
+type ChannelServerConfig struct {
+	Enabled bool `yaml:"enabled" json:"enabled"`
+	// Path is the route the WebSocket server is mounted on. Changing it requires updating, in
+	// lockstep, the public-path allowlist (publicPaths in internal/system/security/permissions.go)
+	// and the Control Plane access-log exclusion list (accessLogExcludePaths in cmd/cpserver/main.go).
+	Path              string `yaml:"path"                json:"path"`
+	AuthToken         string `yaml:"auth_token"          json:"auth_token"`
+	ReadLimitBytes    int64  `yaml:"read_limit_bytes"    json:"read_limit_bytes"`
+	RPCTimeoutSeconds int    `yaml:"rpc_timeout_seconds" json:"rpc_timeout_seconds"`
+}
+
+// Validate ensures the Control Plane channel server configuration is usable when enabled. A disabled
+// server is not validated: an empty section is a valid way to leave the channel off.
+func (c *ChannelServerConfig) Validate() error {
+	if !c.Enabled {
+		return nil
+	}
+	if c.AuthToken == "" {
+		return fmt.Errorf("channel.server.auth_token must be set when channel.server.enabled is true")
+	}
+	return nil
+}
+
+// ChannelClientConfig configures the Data Plane channel WebSocket client.
+type ChannelClientConfig struct {
+	Enabled                 bool   `yaml:"enabled"                   json:"enabled"`
+	ID                      string `yaml:"id"                        json:"id"`
+	ControlPlaneURL         string `yaml:"control_plane_url"         json:"control_plane_url"`
+	AuthToken               string `yaml:"auth_token"                json:"auth_token"`
+	ReadLimitBytes          int64  `yaml:"read_limit_bytes"          json:"read_limit_bytes"`
+	PingIntervalSeconds     int    `yaml:"ping_interval_seconds"     json:"ping_interval_seconds"`
+	ReconnectInitialSeconds int    `yaml:"reconnect_initial_seconds" json:"reconnect_initial_seconds"`
+	ReconnectMaxSeconds     int    `yaml:"reconnect_max_seconds"     json:"reconnect_max_seconds"`
+}
+
+// Validate ensures the Data Plane channel client configuration is usable when enabled. A disabled
+// client is not validated: an empty section is a valid way to leave the channel off.
+func (c *ChannelClientConfig) Validate() error {
+	if !c.Enabled {
+		return nil
+	}
+	if c.ID == "" {
+		return fmt.Errorf("channel.client.id must be set when channel.client.enabled is true")
+	}
+	if c.ControlPlaneURL == "" {
+		return fmt.Errorf("channel.client.control_plane_url must be set when channel.client.enabled is true")
+	}
+	parsed, err := url.Parse(c.ControlPlaneURL)
+	if err != nil {
+		return fmt.Errorf("channel.client.control_plane_url is not a valid URL: %w", err)
+	}
+	if parsed.Scheme != "ws" && parsed.Scheme != "wss" {
+		return fmt.Errorf(
+			"channel.client.control_plane_url must use the ws or wss scheme (got %q)", parsed.Scheme)
+	}
+	if c.AuthToken == "" {
+		return fmt.Errorf("channel.client.auth_token must be set when channel.client.enabled is true")
+	}
+	return nil
+}
+
+// Validate checks the channel configuration for correctness, delegating to the server and client
+// sections.
+func (c *ChannelConfig) Validate() error {
+	if err := c.Server.Validate(); err != nil {
+		return err
+	}
+	return c.Client.Validate()
+}
+
 // CryptoConfig holds the cryptographic configuration details.
 type CryptoConfig struct {
 	Encryption      engineconfig.EncryptionConfig `yaml:"encryption"       json:"encryption"`
@@ -604,6 +682,7 @@ type Config struct {
 	Translation          TranslationConfig                `yaml:"translation"           json:"translation"`
 	Email                EmailConfig                      `yaml:"email"                 json:"email"`
 	Notification         NotificationConfig               `yaml:"notification"          json:"notification"`
+	Channel              ChannelConfig                    `yaml:"channel"               json:"channel"`
 }
 
 // LoadConfig loads the configurations from the specified YAML file and applies defaults.
@@ -702,6 +781,9 @@ func LoadConfig(configPath string, defaultPath string, serverHome string) (*Conf
 		return nil, err
 	}
 	if err := cfg.Notification.Validate(); err != nil {
+		return nil, err
+	}
+	if err := cfg.Channel.Validate(); err != nil {
 		return nil, err
 	}
 
