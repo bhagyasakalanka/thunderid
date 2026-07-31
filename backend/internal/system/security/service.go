@@ -24,10 +24,31 @@ import (
 	"net/http"
 	"regexp"
 
+	"github.com/thunder-id/thunderid/internal/system/config"
+	"github.com/thunder-id/thunderid/internal/system/deployment"
 	"github.com/thunder-id/thunderid/internal/system/log"
+	engineconfig "github.com/thunder-id/thunderid/pkg/thunderidengine/config"
 )
 
 const loggerComponentName = "SecurityService"
+
+// deploymentSourceIsToken reports whether the instance takes the per-request deployment id from the
+// token claim (multi-tenant) rather than the configured identifier. False (server mode) when the
+// runtime is not yet initialized.
+func deploymentSourceIsToken() bool {
+	if !config.IsServerRuntimeInitialized() {
+		return false
+	}
+	return config.GetServerRuntime().Config.Server.DeploymentIDSource == engineconfig.DeploymentIDSourceToken
+}
+
+// deploymentIDClaimName returns the configured token claim carrying the per-request deployment id.
+func deploymentIDClaimName() string {
+	if !config.IsServerRuntimeInitialized() {
+		return ""
+	}
+	return config.GetServerRuntime().Config.Server.DeploymentIDClaim
+}
 
 // SecurityServiceInterface defines the contract for security processing services.
 type SecurityServiceInterface interface {
@@ -50,13 +71,6 @@ type securityService struct {
 	logger                 *log.Logger
 	compiledPaths          []*regexp.Regexp
 	compiledAPIPermissions []compiledAPIPermission
-	// mode selects which plane's management routes this instance serves. When it is cp or dp, a
-	// management route classified to the other plane is rejected with 404; hybrid serves both.
-	mode Plane
-	// compiledPlaneRoutes is the pre-compiled per-plane classification of the management surface.
-	compiledPlaneRoutes []compiledPlaneRoute
-	// compiledPlaneSharedRoutes are management routes served on every plane (matched as "METHOD /path").
-	compiledPlaneSharedRoutes []*regexp.Regexp
 }
 
 // newSecurityService creates a new instance of the security service.
@@ -82,27 +96,14 @@ func newSecurityService(authenticators []AuthenticatorInterface, revocationEnfor
 		return nil, err
 	}
 
-	compiledPlanes, err := compilePlaneRoutes(managementRoutePlanes)
-	if err != nil {
-		return nil, err
-	}
-
-	compiledShared, err := compilePathPatterns(planeSharedRoutes)
-	if err != nil {
-		return nil, err
-	}
-
 	logger := log.GetLogger().With(log.String(log.LoggerKeyComponentName, loggerComponentName))
 
 	return &securityService{
-		authenticators:            authenticators,
-		revocationEnforcer:        revocationEnforcer,
-		logger:                    logger,
-		compiledPaths:             compiledPaths,
-		compiledAPIPermissions:    compiledPerms,
-		mode:                      PlaneHybrid,
-		compiledPlaneRoutes:       compiledPlanes,
-		compiledPlaneSharedRoutes: compiledShared,
+		authenticators:         authenticators,
+		revocationEnforcer:     revocationEnforcer,
+		logger:                 logger,
+		compiledPaths:          compiledPaths,
+		compiledAPIPermissions: compiledPerms,
 	}, nil
 }
 
@@ -114,14 +115,6 @@ func (s *securityService) Process(r *http.Request) (context.Context, error) {
 	// Check if the request is options (CORS preflight)
 	if r.Method == http.MethodOptions {
 		return r.Context(), nil
-	}
-
-	// On a single-plane instance (cp or dp), a management route owned by the other plane is not
-	// served here and is reported as 404. Public runtime routes are never plane-gated.
-	if s.mode != PlaneHybrid && !isPublic {
-		if plane, ok := s.classifyPlane(r.Method, r.URL.Path); ok && plane != s.mode {
-			return r.Context(), errManagementDisabled
-		}
 	}
 
 	// Find an authenticator that can process this request
@@ -148,6 +141,19 @@ func (s *securityService) Process(r *http.Request) (context.Context, error) {
 	ctx := r.Context()
 	if securityCtx != nil {
 		ctx = withSecurityContext(ctx, securityCtx)
+
+		// Deployment id source is an exclusive switch. In "token" mode the caller's per-request
+		// deployment id must come from the token: extract the configured claim, reject the request
+		// when it is absent, and carry it in the context so stores scope persistence by it (the
+		// configured identifier is never consulted for requests). In "server" mode (the default) any
+		// token claim is ignored and stores use the configured identifier.
+		if deploymentSourceIsToken() {
+			val, _ := securityCtx.attributes[deploymentIDClaimName()].(string)
+			if val == "" {
+				return s.handleAuthError(ctx, isPublic, errMissingDeploymentID)
+			}
+			ctx = deployment.WithID(ctx, val)
+		}
 
 		// Reject the request when the presented token has been revoked. This runs after successful
 		// authentication and is format-agnostic: it enforces on the token's revocation identifier. A
@@ -198,25 +204,6 @@ func (s *securityService) getRequiredPermissionForAPI(method, path string) strin
 		}
 	}
 	return GetSystemRootPermission()
-}
-
-// classifyPlane returns the plane that owns the given request, or false when it is not a
-// plane-gated management route. Shared routes (matched as "METHOD /path") are served on every plane
-// and return false so they are never gated; otherwise classification is by path. Public/runtime
-// paths and any unlisted path are never plane-gated.
-func (s *securityService) classifyPlane(method, requestPath string) (Plane, bool) {
-	key := method + " " + requestPath
-	for _, re := range s.compiledPlaneSharedRoutes {
-		if re.MatchString(key) {
-			return "", false
-		}
-	}
-	for _, r := range s.compiledPlaneRoutes {
-		if r.re.MatchString(requestPath) {
-			return r.plane, true
-		}
-	}
-	return "", false
 }
 
 // isPublicPath checks if the given request path matches any of the configured public path patterns.

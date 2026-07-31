@@ -20,16 +20,20 @@ import {useConfig} from '@thunderid/contexts';
 import {useThunderID} from '@thunderid/react';
 import {useEffect, type JSX} from 'react';
 import {useLocation, useNavigate} from 'react-router';
+import {isControlPlane, usePlane} from '../../../lib/plane';
 import getWelcomeDismissedStorageKey from '../utils/getWelcomeDismissedStorageKey';
 
 export default function WelcomeRedirect(): JSX.Element | null {
   const {isSignedIn} = useThunderID();
   const {config} = useConfig();
+  const plane = usePlane();
   const navigate = useNavigate();
   const location = useLocation();
 
   useEffect(() => {
-    if (!isSignedIn || location.pathname.startsWith('/welcome')) return;
+    // The onboarding/welcome flow is a Data Plane runtime concern; the Control Plane authoring
+    // console never auto-redirects into it (and PlaneRouteGuard blocks direct navigation there).
+    if (!isSignedIn || isControlPlane(plane) || location.pathname.startsWith('/welcome')) return;
 
     const productName = config.brand.product_name;
     const dismissed = sessionStorage.getItem(getWelcomeDismissedStorageKey(productName)) === 'true';
@@ -38,7 +42,7 @@ export default function WelcomeRedirect(): JSX.Element | null {
       sessionStorage.setItem(getWelcomeDismissedStorageKey(productName), 'true');
       void navigate('/welcome', {replace: true});
     }
-  }, [isSignedIn, navigate, config.brand.product_name, location.pathname]);
+  }, [isSignedIn, plane, navigate, config.brand.product_name, location.pathname]);
 
   return null;
 }

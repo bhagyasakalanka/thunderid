@@ -25,6 +25,7 @@ import {ToastProvider} from '@thunderid/contexts';
 import {ProtectedRoute} from '@thunderid/react-router';
 import {lazy, Suspense, type JSX} from 'react';
 import {BrowserRouter, Navigate, Outlet, Route, Routes} from 'react-router';
+import PlaneRouteGuard from './components/PlaneRouteGuard';
 import AgentCreateProvider from './features/agents/contexts/AgentCreate/AgentCreateProvider';
 import ApplicationCreateProvider from './features/applications/contexts/ApplicationCreate/ApplicationCreateProvider';
 import LayoutBuilderProvider from './features/design/contexts/LayoutBuilder/LayoutBuilderProvider';
@@ -126,6 +127,18 @@ const CreateRolePage = lazy(() => import('./features/roles/pages/CreateRolePage'
 const RoleEditPage = lazy(() => import('./features/roles/pages/RoleEditPage'));
 const RolesListPage = lazy(() => import('./features/roles/pages/RolesListPage'));
 const SettingsPage = lazy(() => import('./features/settings/pages/SettingsPage'));
+const PromotionsListPage = lazy(() => import('./features/promotions/pages/PromotionsListPage'));
+const EnvironmentDetailPage = lazy(() => import('./features/promotions/pages/EnvironmentDetailPage'));
+const EnvironmentSecretsPage = lazy(() => import('./features/promotions/pages/EnvironmentSecretsPage'));
+const EnvironmentVariablesListPage = lazy(
+  () => import('./features/environment-variables/pages/EnvironmentVariablesListPage'),
+);
+const EnvironmentVariableEditPage = lazy(
+  () => import('./features/environment-variables/pages/EnvironmentVariableEditPage'),
+);
+const CreateEnvironmentVariablePage = lazy(
+  () => import('./features/environment-variables/pages/CreateEnvironmentVariablePage'),
+);
 const TrustedIssuerDetailPage = lazy(() => import('./features/trusted-issuers/pages/TrustedIssuerDetailPage'));
 const VerifiablePresentationsListPage = lazy(
   () => import('./features/verifiable-presentations/pages/VerifiablePresentationsListPage'),
@@ -162,6 +175,7 @@ export default function App(): JSX.Element {
     <BrowserRouter basename={import.meta.env.BASE_URL}>
       <ToastProvider>
         <WelcomeRedirect />
+        <PlaneRouteGuard />
         <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route
@@ -200,6 +214,11 @@ export default function App(): JSX.Element {
               <Route path="resource-servers" element={<ResourceServersListPage />} />
               <Route path="resource-servers/:resourceServerId" element={<ResourceServerEditPage />} />
               <Route path="settings" element={<SettingsPage />} />
+              <Route path="promotions" element={<PromotionsListPage />} />
+              <Route path="promotions/:envId" element={<EnvironmentDetailPage />} />
+              <Route path="promotions/:envId/secrets" element={<EnvironmentSecretsPage />} />
+              <Route path="environment-variables" element={<EnvironmentVariablesListPage />} />
+              <Route path="environment-variables/:environmentVariableId" element={<EnvironmentVariableEditPage />} />
             </Route>
             {/* Organization Units - wrapped in OrganizationUnitProvider to preserve tree state across navigation */}
             <Route
@@ -343,6 +362,16 @@ export default function App(): JSX.Element {
               }
             >
               <Route index element={<CreateResourceServerPage />} />
+            </Route>
+            <Route
+              path="/environment-variables/create"
+              element={
+                <ProtectedRoute>
+                  <FullScreenLayout />
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<CreateEnvironmentVariablePage />} />
             </Route>
             <Route
               path="/flows/create"

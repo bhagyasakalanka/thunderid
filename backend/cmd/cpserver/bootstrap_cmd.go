@@ -89,6 +89,8 @@ func parseBootstrapOptions(serverHome string, args []string) (bootstrap.Options,
 	consoleRedirectURIs := fs.String("console-redirect-uris", "",
 		"Comma-separated extra redirect URIs for the Console application")
 	defaultsDir := fs.String("defaults", "", "Path to the bootstrap resource definitions directory")
+	deploymentID := fs.String("deployment-id", "",
+		"Deployment id (tenant) to scope the seeded resources to; empty seeds the server default")
 	// Flags are best-effort; unknown flags must not abort bootstrap.
 	_ = fs.Parse(args)
 
@@ -117,7 +119,7 @@ func parseBootstrapOptions(serverHome string, args []string) (bootstrap.Options,
 	if dir == "" {
 		dir = path.Join(serverHome, "bootstrap")
 	}
-	return bootstrap.Options{DefaultsDir: dir}, nil
+	return bootstrap.Options{DefaultsDir: dir, DeploymentID: *deploymentID}, nil
 }
 
 // setEnv sets an environment variable, ignoring the (practically impossible) error

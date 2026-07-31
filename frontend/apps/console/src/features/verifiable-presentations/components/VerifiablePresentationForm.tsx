@@ -72,6 +72,8 @@ export interface VerifiablePresentationFormProps {
   onSubmit: (data: CreateVerifiablePresentationRequest) => void;
   /** When provided (edit mode), renders a Danger Zone delete action in the General tab. */
   onDelete?: () => void;
+  /** Show the stored configuration without offering to change it. */
+  isReadOnly?: boolean;
 }
 
 interface TabPanelProps {
@@ -102,6 +104,7 @@ export default function VerifiablePresentationForm({
   submitLabel,
   onSubmit,
   onDelete = undefined,
+  isReadOnly = false,
 }: VerifiablePresentationFormProps): JSX.Element {
   const {t} = useTranslation('verifiable-presentations');
 
@@ -502,7 +505,7 @@ export default function VerifiablePresentationForm({
         </SettingsCard>
       </TabPanel>
 
-      {dirty && (
+      {dirty && !isReadOnly && (
         <UnsavedChangesBar
           message={t('form.unsavedChanges')}
           resetLabel={t('common:actions.reset')}

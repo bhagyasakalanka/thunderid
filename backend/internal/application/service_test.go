@@ -149,14 +149,14 @@ func (suite *ServiceTestSuite) setupTestService() (
 	epNotFound := entityprovider.NewEntityProviderError(
 		entityprovider.ErrorCodeEntityNotFound, "not found", "")
 	var noEPErr *entityprovider.EntityProviderError
-	mockEntityProvider.On("IdentifyEntity", mock.Anything).Maybe().Return((*string)(nil), epNotFound)
-	mockEntityProvider.On("GetEntity", mock.Anything).Maybe().Return((*providers.Entity)(nil), epNotFound)
-	mockEntityProvider.On("GetEntitiesByIDs", mock.Anything).Maybe().Return([]providers.Entity{}, noEPErr)
-	mockEntityProvider.On("CreateEntity", mock.Anything, mock.Anything).
+	mockEntityProvider.On("IdentifyEntity", mock.Anything, mock.Anything).Maybe().Return((*string)(nil), epNotFound)
+	mockEntityProvider.On("GetEntity", mock.Anything, mock.Anything).Maybe().Return((*providers.Entity)(nil), epNotFound)
+	mockEntityProvider.On("GetEntitiesByIDs", mock.Anything, mock.Anything).Maybe().Return([]providers.Entity{}, noEPErr)
+	mockEntityProvider.On("CreateEntity", mock.Anything, mock.Anything, mock.Anything).
 		Maybe().Return(&providers.Entity{}, noEPErr)
-	mockEntityProvider.On("DeleteEntity", mock.Anything).Maybe().Return(noEPErr)
-	mockEntityProvider.On("UpdateSystemAttributes", mock.Anything, mock.Anything).Maybe().Return(noEPErr)
-	mockEntityProvider.On("UpdateSystemCredentials", mock.Anything, mock.Anything).Maybe().Return(noEPErr)
+	mockEntityProvider.On("DeleteEntity", mock.Anything, mock.Anything).Maybe().Return(noEPErr)
+	mockEntityProvider.On("UpdateSystemAttributes", mock.Anything, mock.Anything, mock.Anything).Maybe().Return(noEPErr)
+	mockEntityProvider.On("UpdateSystemCredentials", mock.Anything, mock.Anything, mock.Anything).Maybe().Return(noEPErr)
 	mockStore.On("Validate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Maybe().Return(nil)
 	mockStore.On("ResolveInboundAuthProfileHandles", mock.Anything, mock.Anything).Maybe().Return(nil)
 	mockOUService := oumock.NewOrganizationUnitServiceInterfaceMock(suite.T())
@@ -269,7 +269,7 @@ func mockLoadFullApplication(
 	}
 	sysAttrsJSON, _ := json.Marshal(sysAttrs)
 	ep := resetEntityProviderMethod(service, "GetEntity")
-	ep.On("GetEntity", dto.ID).Return(
+	ep.On("GetEntity", mock.Anything, dto.ID).Return(
 		&providers.Entity{
 			ID:               dto.ID,
 			Category:         providers.EntityCategoryApp,
@@ -319,7 +319,7 @@ func (suite *ServiceTestSuite) TestGetOAuthApplication_Success() {
 		Return(&providers.OAuthClient{ClientID: "client123", ID: "app123"}, nil)
 	resetEntityProviderMethod(service, "GetEntity")
 	service.entityProvider.(*entityprovidermock.EntityProviderInterfaceMock).
-		On("GetEntity", "app123").Return(
+		On("GetEntity", mock.Anything, "app123").Return(
 		&providers.Entity{ID: "app123", Category: providers.EntityCategoryApp},
 		(*entityprovider.EntityProviderError)(nil))
 
@@ -339,7 +339,7 @@ func (suite *ServiceTestSuite) TestGetOAuthApplication_AgentEntity() {
 		Return(&providers.OAuthClient{ClientID: "agent-client", ID: "agent-id"}, nil)
 	resetEntityProviderMethod(service, "GetEntity")
 	service.entityProvider.(*entityprovidermock.EntityProviderInterfaceMock).
-		On("GetEntity", "agent-id").Return(
+		On("GetEntity", mock.Anything, "agent-id").Return(
 		&providers.Entity{ID: "agent-id", Category: providers.EntityCategoryAgent},
 		(*entityprovider.EntityProviderError)(nil))
 
@@ -372,7 +372,7 @@ func (suite *ServiceTestSuite) TestGetOAuthApplication_EntityLoadError() {
 	mockStore.EXPECT().GetOAuthClientByClientID(mock.Anything, "client-y").
 		Return(&providers.OAuthClient{ClientID: "client-y", ID: "app-y"}, nil)
 	ep := resetEntityProviderMethod(service, "GetEntity")
-	ep.On("GetEntity", "app-y").Return(
+	ep.On("GetEntity", mock.Anything, "app-y").Return(
 		(*providers.Entity)(nil),
 		entityprovider.NewEntityProviderError("INTERNAL_ERROR", "boom", ""))
 
@@ -442,7 +442,7 @@ func (suite *ServiceTestSuite) TestGetApplication_AgentEntity() {
 	mockStore.On("GetInboundClientByEntityID", mock.Anything, testServiceAppID).
 		Return(&inboundmodel.InboundClient{ID: testServiceAppID}, nil)
 	ep := resetEntityProviderMethod(service, "GetEntity")
-	ep.On("GetEntity", testServiceAppID).Return(
+	ep.On("GetEntity", mock.Anything, testServiceAppID).Return(
 		&providers.Entity{ID: testServiceAppID, Category: providers.EntityCategoryAgent},
 		(*entityprovider.EntityProviderError)(nil))
 
@@ -519,11 +519,11 @@ func (suite *ServiceTestSuite) TestGetApplicationList_Success() {
 	cfg2 := inboundmodel.InboundClient{ID: "app2"}
 
 	ep := resetEntityProviderMethod(service, "GetEntityList")
-	ep.On("GetEntityList", providers.EntityCategoryApp,
+	ep.On("GetEntityList", mock.Anything, providers.EntityCategoryApp,
 		mock.AnythingOfType("int"), mock.AnythingOfType("int"), mock.Anything).
 		Return(entities, (*entityprovider.EntityProviderError)(nil))
 	resetEntityProviderMethod(service, "GetEntityListCount").
-		On("GetEntityListCount", providers.EntityCategoryApp, mock.Anything).
+		On("GetEntityListCount", mock.Anything, providers.EntityCategoryApp, mock.Anything).
 		Return(2, (*entityprovider.EntityProviderError)(nil))
 
 	mockStore.On("GetInboundClientList", mock.Anything).
@@ -542,11 +542,11 @@ func (suite *ServiceTestSuite) TestGetApplicationList_ListError() {
 	service, _ := suite.setupTestService()
 
 	resetEntityProviderMethod(service, "GetEntityListCount").
-		On("GetEntityListCount", providers.EntityCategoryApp, mock.Anything).
+		On("GetEntityListCount", mock.Anything, providers.EntityCategoryApp, mock.Anything).
 		Return(0, (*entityprovider.EntityProviderError)(nil))
 	ep := resetEntityProviderMethod(service, "GetEntityList")
 	epErr := &entityprovider.EntityProviderError{Code: "INTERNAL_ERROR"}
-	ep.On("GetEntityList", providers.EntityCategoryApp,
+	ep.On("GetEntityList", mock.Anything, providers.EntityCategoryApp,
 		mock.AnythingOfType("int"), mock.AnythingOfType("int"), mock.Anything).
 		Return(([]providers.Entity)(nil), epErr)
 
@@ -563,10 +563,10 @@ func (suite *ServiceTestSuite) TestGetApplicationList_InboundFetchError() {
 		{ID: "app1", Category: providers.EntityCategoryApp},
 	}
 	resetEntityProviderMethod(service, "GetEntityListCount").
-		On("GetEntityListCount", providers.EntityCategoryApp, mock.Anything).
+		On("GetEntityListCount", mock.Anything, providers.EntityCategoryApp, mock.Anything).
 		Return(1, (*entityprovider.EntityProviderError)(nil))
 	ep := resetEntityProviderMethod(service, "GetEntityList")
-	ep.On("GetEntityList", providers.EntityCategoryApp,
+	ep.On("GetEntityList", mock.Anything, providers.EntityCategoryApp,
 		mock.AnythingOfType("int"), mock.AnythingOfType("int"), mock.Anything).
 		Return(entities, (*entityprovider.EntityProviderError)(nil))
 
@@ -614,7 +614,7 @@ func (suite *ServiceTestSuite) TestValidateApplication_ExistingName() {
 
 	mockEP := resetIdentifyEntity(service)
 	existingID := "existing-id"
-	mockEP.On("IdentifyEntity",
+	mockEP.On("IdentifyEntity", mock.Anything,
 		map[string]interface{}{"name": "Existing App"}).
 		Return(
 			&existingID, (*entityprovider.EntityProviderError)(nil))
@@ -784,15 +784,15 @@ func (suite *ServiceTestSuite) TestValidateApplicationForUpdate_NameConflict() {
 	mockStore.On("GetOAuthProfileByEntityID", mock.Anything, testServiceAppID).
 		Return((*providers.OAuthProfile)(nil), nil)
 	mockEP := resetIdentifyEntity(service)
-	mockEP.On("GetEntity", testServiceAppID).Unset()
-	mockEP.On("GetEntity", testServiceAppID).Return(
+	mockEP.On("GetEntity", mock.Anything, testServiceAppID).Unset()
+	mockEP.On("GetEntity", mock.Anything, testServiceAppID).Return(
 		&providers.Entity{
 			ID:               testServiceAppID,
 			Category:         providers.EntityCategoryApp,
 			SystemAttributes: sysAttrs,
 		}, (*entityprovider.EntityProviderError)(nil))
 	conflictingID := testConflictingAppID
-	mockEP.On("IdentifyEntity",
+	mockEP.On("IdentifyEntity", mock.Anything,
 		map[string]interface{}{"name": "New Name"}).
 		Return(
 			&conflictingID, (*entityprovider.EntityProviderError)(nil))
@@ -831,7 +831,7 @@ func (suite *ServiceTestSuite) TestValidateApplicationForUpdate_NameCheckStoreEr
 	mockStore.On("IsDeclarative", mock.Anything, testServiceAppID).Maybe().Return(false)
 	mockLoadFullApplication(mockStore, service, existingApp)
 	mockEP := resetIdentifyEntity(service)
-	mockEP.On("IdentifyEntity",
+	mockEP.On("IdentifyEntity", mock.Anything,
 		map[string]interface{}{"name": "New Name"}).
 		Return((*string)(nil),
 			entityprovider.NewEntityProviderError(
@@ -1054,7 +1054,7 @@ func (suite *ServiceTestSuite) TestDeleteApplication_AgentEntity() {
 
 	service, _ := suite.setupTestService()
 	ep := resetEntityProviderMethod(service, "GetEntity")
-	ep.On("GetEntity", testServiceAppID).Return(
+	ep.On("GetEntity", mock.Anything, testServiceAppID).Return(
 		&providers.Entity{ID: testServiceAppID, Category: providers.EntityCategoryAgent},
 		(*entityprovider.EntityProviderError)(nil))
 
@@ -1074,7 +1074,7 @@ func (suite *ServiceTestSuite) TestDeleteApplication_EntityLoadError() {
 
 	service, _ := suite.setupTestService()
 	ep := resetEntityProviderMethod(service, "GetEntity")
-	ep.On("GetEntity", testServiceAppID).Return(
+	ep.On("GetEntity", mock.Anything, testServiceAppID).Return(
 		(*providers.Entity)(nil),
 		entityprovider.NewEntityProviderError("INTERNAL_ERROR", "boom", ""))
 
@@ -1334,7 +1334,7 @@ func (suite *ServiceTestSuite) TestValidateApplication_StoreErrorNonNotFound() {
 
 	// Return an entity provider error that's not EntityNotFound
 	mockEP := resetIdentifyEntity(service)
-	mockEP.On("IdentifyEntity",
+	mockEP.On("IdentifyEntity", mock.Anything,
 		map[string]interface{}{"name": "Test App"}).
 		Return((*string)(nil),
 			entityprovider.NewEntityProviderError(
@@ -1529,7 +1529,7 @@ func (suite *ServiceTestSuite) TestUpdateApplication_StoreErrorWhenCheckingName(
 	mockLoadFullApplication(mockStore, service, existingApp)
 	// Return an entity provider error when checking name uniqueness
 	mockEP := resetIdentifyEntity(service)
-	mockEP.On("IdentifyEntity",
+	mockEP.On("IdentifyEntity", mock.Anything,
 		map[string]interface{}{"name": "New App"}).
 		Return((*string)(nil),
 			entityprovider.NewEntityProviderError(
@@ -1588,7 +1588,7 @@ func (suite *ServiceTestSuite) TestUpdateApplication_StoreErrorWhenCheckingClien
 	mockLoadFullApplication(mockStore, service, existingApp)
 	// Return an entity provider error when checking client ID uniqueness
 	mockEP := resetIdentifyEntity(service)
-	mockEP.On("IdentifyEntity",
+	mockEP.On("IdentifyEntity", mock.Anything,
 		map[string]interface{}{"clientId": "new-client-id"}).
 		Return((*string)(nil),
 			entityprovider.NewEntityProviderError(
@@ -1861,9 +1861,9 @@ func (suite *ServiceTestSuite) TestCreateApplication_IssuesFlowSecretForEmbedded
 
 	var capturedCreds json.RawMessage
 	ep := resetEntityProviderMethod(service, "CreateEntity")
-	ep.On("CreateEntity", mock.Anything, mock.Anything).
+	ep.On("CreateEntity", mock.Anything, mock.Anything, mock.Anything).
 		Run(func(args mock.Arguments) {
-			capturedCreds = args.Get(1).(json.RawMessage)
+			capturedCreds = args.Get(2).(json.RawMessage)
 		}).
 		Return(&providers.Entity{}, (*entityprovider.EntityProviderError)(nil))
 	mockStore.On("CreateInboundClient",
@@ -1911,9 +1911,9 @@ func (suite *ServiceTestSuite) TestCreateApplication_NoFlowSecretForM2MClient() 
 
 	var capturedCreds json.RawMessage
 	ep := resetEntityProviderMethod(service, "CreateEntity")
-	ep.On("CreateEntity", mock.Anything, mock.Anything).
+	ep.On("CreateEntity", mock.Anything, mock.Anything, mock.Anything).
 		Run(func(args mock.Arguments) {
-			capturedCreds = args.Get(1).(json.RawMessage)
+			capturedCreds = args.Get(2).(json.RawMessage)
 		}).
 		Return(&providers.Entity{}, (*entityprovider.EntityProviderError)(nil))
 	mockStore.On("CreateInboundClient",
@@ -1968,9 +1968,9 @@ func (suite *ServiceTestSuite) TestCreateApplication_NoFlowSecretForRedirectClie
 
 	var capturedCreds json.RawMessage
 	ep := resetEntityProviderMethod(service, "CreateEntity")
-	ep.On("CreateEntity", mock.Anything, mock.Anything).
+	ep.On("CreateEntity", mock.Anything, mock.Anything, mock.Anything).
 		Run(func(args mock.Arguments) {
-			capturedCreds = args.Get(1).(json.RawMessage)
+			capturedCreds = args.Get(2).(json.RawMessage)
 		}).
 		Return(&providers.Entity{}, (*entityprovider.EntityProviderError)(nil))
 	mockStore.On("CreateInboundClient",
@@ -2024,9 +2024,9 @@ func (suite *ServiceTestSuite) TestCreateApplication_NoFlowSecretForPublicClient
 
 	var capturedCreds json.RawMessage
 	ep := resetEntityProviderMethod(service, "CreateEntity")
-	ep.On("CreateEntity", mock.Anything, mock.Anything).
+	ep.On("CreateEntity", mock.Anything, mock.Anything, mock.Anything).
 		Run(func(args mock.Arguments) {
-			capturedCreds = args.Get(1).(json.RawMessage)
+			capturedCreds = args.Get(2).(json.RawMessage)
 		}).
 		Return(&providers.Entity{}, (*entityprovider.EntityProviderError)(nil))
 	mockStore.On("CreateInboundClient",
@@ -2151,7 +2151,7 @@ func (suite *ServiceTestSuite) TestUpdateApplication_NameConflict() {
 	mockLoadFullApplication(mockStore, service, existingApp)
 	mockEP := resetIdentifyEntity(service)
 	conflictingID := testConflictingAppID
-	mockEP.On("IdentifyEntity",
+	mockEP.On("IdentifyEntity", mock.Anything,
 		map[string]interface{}{"name": "New Name"}).
 		Return(
 			&conflictingID, (*entityprovider.EntityProviderError)(nil))
@@ -2789,7 +2789,7 @@ func (suite *ServiceTestSuite) TestUpdateApplication_OAuthClientIDConflict() {
 	// Mock that another app already has this client ID via entity provider.
 	mockEP := resetIdentifyEntity(service)
 	conflictingEntityID := testConflictingAppID
-	mockEP.On("IdentifyEntity",
+	mockEP.On("IdentifyEntity", mock.Anything,
 		map[string]interface{}{"clientId": "existing-client-id"}).
 		Return(
 			&conflictingEntityID, (*entityprovider.EntityProviderError)(nil))
@@ -3828,7 +3828,7 @@ func (suite *ServiceTestSuite) TestGetResourceDependencies_EntityProviderError()
 
 	ep := resetEntityProviderMethod(service, "GetEntitiesByIDs")
 	epErr := entityprovider.NewEntityProviderError(entityprovider.ErrorCodeEntityNotFound, "error", "")
-	ep.On("GetEntitiesByIDs", []string{"app-1"}).Return([]providers.Entity{}, epErr)
+	ep.On("GetEntitiesByIDs", mock.Anything, []string{"app-1"}).Return([]providers.Entity{}, epErr)
 
 	result, err := service.GetResourceDependencies(
 		context.Background(), resourcedependency.ResourceTypeTheme, "theme-1")
@@ -3846,7 +3846,7 @@ func (suite *ServiceTestSuite) TestGetResourceDependencies_Success() {
 	sysAttrs1, _ := json.Marshal(map[string]interface{}{"name": "Portal App"})
 	sysAttrs2, _ := json.Marshal(map[string]interface{}{"name": "Admin App"})
 	ep := resetEntityProviderMethod(service, "GetEntitiesByIDs")
-	ep.On("GetEntitiesByIDs", []string{"app-1", "app-2"}).Return([]providers.Entity{
+	ep.On("GetEntitiesByIDs", mock.Anything, []string{"app-1", "app-2"}).Return([]providers.Entity{
 		{ID: "app-1", Category: providers.EntityCategoryApp, SystemAttributes: sysAttrs1},
 		{ID: "app-2", Category: providers.EntityCategoryApp, SystemAttributes: sysAttrs2},
 	}, (*entityprovider.EntityProviderError)(nil))
@@ -3873,7 +3873,7 @@ func (suite *ServiceTestSuite) TestGetResourceDependencies_FiltersOutNonAppEntit
 
 	sysAttrs, _ := json.Marshal(map[string]interface{}{"name": "Portal App"})
 	ep := resetEntityProviderMethod(service, "GetEntitiesByIDs")
-	ep.On("GetEntitiesByIDs", []string{"app-1", "agent-1"}).Return([]providers.Entity{
+	ep.On("GetEntitiesByIDs", mock.Anything, []string{"app-1", "agent-1"}).Return([]providers.Entity{
 		{ID: "app-1", Category: providers.EntityCategoryApp, SystemAttributes: sysAttrs},
 		{ID: "agent-1", Category: providers.EntityCategoryAgent},
 	}, (*entityprovider.EntityProviderError)(nil))
@@ -3893,7 +3893,7 @@ func (suite *ServiceTestSuite) TestGetResourceDependencies_NoSystemAttributes() 
 		Return([]string{"app-1"}, 1, nil)
 
 	ep := resetEntityProviderMethod(service, "GetEntitiesByIDs")
-	ep.On("GetEntitiesByIDs", []string{"app-1"}).Return([]providers.Entity{
+	ep.On("GetEntitiesByIDs", mock.Anything, []string{"app-1"}).Return([]providers.Entity{
 		{ID: "app-1", Category: providers.EntityCategoryApp},
 	}, (*entityprovider.EntityProviderError)(nil))
 
@@ -3914,7 +3914,7 @@ func (suite *ServiceTestSuite) TestGetResourceDependencies_SystemAttributesWitho
 
 	sysAttrs, _ := json.Marshal(map[string]interface{}{"description": "some desc"})
 	ep := resetEntityProviderMethod(service, "GetEntitiesByIDs")
-	ep.On("GetEntitiesByIDs", []string{"app-1"}).Return([]providers.Entity{
+	ep.On("GetEntitiesByIDs", mock.Anything, []string{"app-1"}).Return([]providers.Entity{
 		{ID: "app-1", Category: providers.EntityCategoryApp, SystemAttributes: sysAttrs},
 	}, (*entityprovider.EntityProviderError)(nil))
 
@@ -3951,7 +3951,7 @@ func (suite *ServiceTestSuite) TestCreateApplication_CreateInboundClientFailsAnd
 		mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(errors.New("internal server error"))
 
 	ep := resetEntityProviderMethod(service, "DeleteEntity")
-	ep.On("DeleteEntity", mock.Anything).
+	ep.On("DeleteEntity", mock.Anything, mock.Anything).
 		Return(entityprovider.NewEntityProviderError(
 			entityprovider.ErrorCodeSystemError, "delete failed", ""))
 
@@ -3989,7 +3989,7 @@ func (suite *ServiceTestSuite) TestGetApplicationList_CountError() {
 	service, _ := suite.setupTestService()
 
 	resetEntityProviderMethod(service, "GetEntityListCount").
-		On("GetEntityListCount", providers.EntityCategoryApp, mock.Anything).
+		On("GetEntityListCount", mock.Anything, providers.EntityCategoryApp, mock.Anything).
 		Return(0, entityprovider.NewEntityProviderError(
 			entityprovider.ErrorCodeSystemError, "count failed", ""))
 
@@ -4006,10 +4006,10 @@ func (suite *ServiceTestSuite) TestGetApplicationList_EntityWithoutInboundClient
 		{ID: "app1", Category: providers.EntityCategoryApp},
 	}
 	resetEntityProviderMethod(service, "GetEntityListCount").
-		On("GetEntityListCount", providers.EntityCategoryApp, mock.Anything).
+		On("GetEntityListCount", mock.Anything, providers.EntityCategoryApp, mock.Anything).
 		Return(1, (*entityprovider.EntityProviderError)(nil))
 	ep := resetEntityProviderMethod(service, "GetEntityList")
-	ep.On("GetEntityList", providers.EntityCategoryApp,
+	ep.On("GetEntityList", mock.Anything, providers.EntityCategoryApp,
 		mock.AnythingOfType("int"), mock.AnythingOfType("int"), mock.Anything).
 		Return(entities, (*entityprovider.EntityProviderError)(nil))
 
@@ -4029,7 +4029,7 @@ func (suite *ServiceTestSuite) TestUpdateEntityDataForApplicationUpdate_UpdateSy
 	app := &model.ApplicationDTO{Name: "Test App", OUID: testOUID}
 
 	ep := resetEntityProviderMethod(service, "UpdateSystemAttributes")
-	ep.On("UpdateSystemAttributes", mock.Anything, mock.Anything).
+	ep.On("UpdateSystemAttributes", mock.Anything, mock.Anything, mock.Anything).
 		Return(entityprovider.NewEntityProviderError(
 			entityprovider.ErrorCodeSystemError, "update failed", ""))
 
@@ -4044,7 +4044,7 @@ func (suite *ServiceTestSuite) TestUpdateEntityDataForApplicationUpdate_FlowSecr
 	app := &model.ApplicationDTO{Name: "Test App", OUID: testOUID, FlowSecret: "new-app-secret"}
 
 	ep := resetEntityProviderMethod(service, "UpdateSystemCredentials")
-	ep.On("UpdateSystemCredentials", mock.Anything, mock.Anything).
+	ep.On("UpdateSystemCredentials", mock.Anything, mock.Anything, mock.Anything).
 		Return(entityprovider.NewEntityProviderError(
 			entityprovider.ErrorCodeSystemError, "update failed", ""))
 
@@ -4074,7 +4074,7 @@ func (suite *ServiceTestSuite) TestUpdateEntityDataForApplicationUpdate_NoFlowSe
 		context.Background(), testServiceAppID, app, inboundAuthConfig)
 
 	assert.Nil(suite.T(), svcErr)
-	ep.AssertNotCalled(suite.T(), "UpdateSystemCredentials", mock.Anything, mock.Anything)
+	ep.AssertNotCalled(suite.T(), "UpdateSystemCredentials", mock.Anything, mock.Anything, mock.Anything)
 }
 
 func (suite *ServiceTestSuite) TestUpdateEntityDataForApplicationUpdate_UpdateCredentialsError() {
@@ -4090,7 +4090,7 @@ func (suite *ServiceTestSuite) TestUpdateEntityDataForApplicationUpdate_UpdateCr
 	}
 
 	ep := resetEntityProviderMethod(service, "UpdateSystemCredentials")
-	ep.On("UpdateSystemCredentials", mock.Anything, mock.Anything).
+	ep.On("UpdateSystemCredentials", mock.Anything, mock.Anything, mock.Anything).
 		Return(entityprovider.NewEntityProviderError(
 			entityprovider.ErrorCodeSystemError, "update creds failed", ""))
 
@@ -4115,7 +4115,7 @@ func (suite *ServiceTestSuite) TestDeleteApplication_DeleteEntityError() {
 
 	mockStore.On("DeleteInboundClient", mock.Anything, testServiceAppID).Return(nil)
 	ep := resetEntityProviderMethod(service, "DeleteEntity")
-	ep.On("DeleteEntity", testServiceAppID).
+	ep.On("DeleteEntity", mock.Anything, testServiceAppID).
 		Return(entityprovider.NewEntityProviderError(
 			entityprovider.ErrorCodeSystemError, "delete failed", ""))
 
@@ -4131,7 +4131,7 @@ func (suite *ServiceTestSuite) TestGetApplication_GetEntityError() {
 	mockStore.On("GetInboundClientByEntityID", mock.Anything, testServiceAppID).Return(inboundClient, nil)
 
 	ep := resetEntityProviderMethod(service, "GetEntity")
-	ep.On("GetEntity", testServiceAppID).
+	ep.On("GetEntity", mock.Anything, testServiceAppID).
 		Return((*providers.Entity)(nil), entityprovider.NewEntityProviderError(
 			entityprovider.ErrorCodeSystemError, "get failed", ""))
 
@@ -4150,7 +4150,7 @@ func (suite *ServiceTestSuite) TestGetApplication_GetOAuthProfileError() {
 		Return((*providers.OAuthProfile)(nil), errors.New("oauth profile load failed"))
 
 	ep := resetEntityProviderMethod(service, "GetEntity")
-	ep.On("GetEntity", testServiceAppID).
+	ep.On("GetEntity", mock.Anything, testServiceAppID).
 		Return(&providers.Entity{ID: testServiceAppID, Category: providers.EntityCategoryApp},
 			(*entityprovider.EntityProviderError)(nil))
 
@@ -4215,7 +4215,7 @@ func (suite *ServiceTestSuite) TestDeleteApplication_EntityDeleteFailsAfterCasca
 
 	mockStore.On("DeleteInboundClient", mock.Anything, testServiceAppID).Return(nil)
 	ep := resetEntityProviderMethod(service, "DeleteEntity")
-	ep.On("DeleteEntity", mock.Anything).Return(
+	ep.On("DeleteEntity", mock.Anything, mock.Anything).Return(
 		entityprovider.NewEntityProviderError(entityprovider.ErrorCodeSystemError, "delete failed", ""))
 
 	svcErr := service.DeleteApplication(context.Background(), testServiceAppID)
@@ -4224,5 +4224,5 @@ func (suite *ServiceTestSuite) TestDeleteApplication_EntityDeleteFailsAfterCasca
 	assert.Equal(suite.T(), tidcommon.InternalServerError.Code, svcErr.Code)
 	// Dependents were removed even though the application delete did not complete.
 	assert.Equal(suite.T(), 1, cascadeCalls)
-	ep.AssertCalled(suite.T(), "DeleteEntity", mock.Anything)
+	ep.AssertCalled(suite.T(), "DeleteEntity", mock.Anything, mock.Anything)
 }

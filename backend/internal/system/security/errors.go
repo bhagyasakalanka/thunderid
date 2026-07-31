@@ -39,7 +39,8 @@ var (
 	// errMissingAuthHeader indicates that the Authorization header is missing.
 	errMissingAuthHeader = errors.New("missing authorization header")
 
-	// errManagementDisabled indicates the request targets a management route on an instance that has
-	// the management (control-plane) API surface disabled. It is surfaced as a 404.
-	errManagementDisabled = errors.New("management apis disabled")
+	// errMissingDeploymentID indicates the instance resolves the deployment id from the token
+	// (deployment_id_source: token) but the authenticated caller's token carries no deployment
+	// claim. The request is rejected (401) rather than served against the wrong tenant.
+	errMissingDeploymentID = errors.New("missing deployment id claim")
 )

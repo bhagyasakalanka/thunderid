@@ -24,6 +24,7 @@ import {useMemo, useCallback, useState, type JSX} from 'react';
 import {useTranslation} from 'react-i18next';
 import {useNavigate} from 'react-router';
 import RoleDeleteDialog from './RoleDeleteDialog';
+import {useIsManagedResource} from '../../managed-resources';
 import useGetRoles from '../api/useGetRoles';
 import type {RoleSummary} from '../models/role';
 
@@ -32,6 +33,8 @@ import type {RoleSummary} from '../models/role';
  */
 export default function RolesList(): JSX.Element {
   const navigate = useNavigate();
+  // A role applied from the control plane is read only here, the same as a declarative one.
+  const isManagedRole = useIsManagedResource('role');
   const {t} = useTranslation();
   const logger = useLogger('RolesList');
   const dataGridLocaleText = useDataGridLocaleText();
@@ -110,7 +113,7 @@ export default function RolesList(): JSX.Element {
         hideable: false,
         renderCell: (params: DataGrid.GridRenderCellParams<RoleSummary>): JSX.Element => (
           <ListingTable.RowActions>
-            {params.row.isReadOnly ? (
+            {params.row.isReadOnly || isManagedRole(params.row.id) ? (
               <Tooltip title={t('common:status.readOnly', 'Read Only')}>
                 <IconButton size="small" disableRipple sx={{cursor: 'default'}}>
                   <Eye size={16} />
@@ -147,7 +150,7 @@ export default function RolesList(): JSX.Element {
         ),
       },
     ],
-    [handleDeleteClick, handleViewClick, t],
+    [handleDeleteClick, handleViewClick, t, isManagedRole],
   );
 
   if (error) {
