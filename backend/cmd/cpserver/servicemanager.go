@@ -66,6 +66,7 @@ import (
 	"github.com/thunder-id/thunderid/internal/role"
 	"github.com/thunder-id/thunderid/internal/serverconfig"
 	"github.com/thunder-id/thunderid/internal/system/cache"
+	"github.com/thunder-id/thunderid/internal/system/channel"
 	"github.com/thunder-id/thunderid/internal/system/config"
 	"github.com/thunder-id/thunderid/internal/system/cors"
 	"github.com/thunder-id/thunderid/internal/system/cryptolib"
@@ -94,6 +95,10 @@ import (
 
 // observabilitySvc is the observability service instance. This is used for graceful shutdown.
 var observabilitySvc observability.ObservabilityServiceInterface
+
+// channelServer is the CP-DP phone-home WebSocket server. It is held here so unregisterServices can
+// close it during shutdown. Nil when the channel is disabled.
+var channelServer *channel.Server
 
 // registerServices registers the Control Plane management services with the provided HTTP
 // multiplexer. It also returns the import and export services so the bootstrap and export
@@ -382,6 +387,16 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 	healthSvc := healthcheckservice.Initialize(dbprovider.GetDBProvider(), dbprovider.GetRedisProvider())
 	services.NewHealthCheckService(mux, healthSvc)
 
+	// Initialize the CP-DP channel server (phone-home WebSocket). No-op when disabled.
+	chCfg := config.GetServerRuntime().Config.Channel.Server
+	channelServer = channel.InitializeServer(mux, channel.ServerConfig{
+		Enabled:    chCfg.Enabled,
+		Path:       chCfg.Path,
+		AuthToken:  chCfg.AuthToken,
+		ReadLimit:  chCfg.ReadLimitBytes,
+		RPCTimeout: time.Duration(chCfg.RPCTimeoutSeconds) * time.Second,
+	})
+
 	return jwtService, runtimeCryptoSvc, importService, exportService, envManager, envVarService
 }
 
@@ -421,6 +436,9 @@ func registerDependencyRegistry(consumers dependencyConsumers, providers ...reso
 // unregisterServices unregisters all services that require cleanup during shutdown.
 func unregisterServices() {
 	observabilitySvc.Shutdown()
+	if channelServer != nil {
+		channelServer.Close()
+	}
 }
 
 // fatalOnError logs msg and exits the process if err is non-nil.

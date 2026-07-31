@@ -45,6 +45,7 @@ var publicPaths = []string{
 	"/auth/**",
 	"/register/passkey/**",
 	"/access/**",
+	"/cp/connect", // Control Plane phone-home WebSocket; authenticated by a shared token in the channel handler.
 }
 
 // ---- Resource types ----
