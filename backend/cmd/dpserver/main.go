@@ -37,9 +37,11 @@ import (
 	"time"
 
 	"github.com/thunder-id/thunderid/internal/system/cache"
+	"github.com/thunder-id/thunderid/internal/system/channel"
 	"github.com/thunder-id/thunderid/internal/system/config"
 	"github.com/thunder-id/thunderid/internal/system/constants"
 	"github.com/thunder-id/thunderid/internal/system/database/provider"
+	"github.com/thunder-id/thunderid/internal/system/importer"
 	"github.com/thunder-id/thunderid/internal/system/jose/jwt"
 	"github.com/thunder-id/thunderid/internal/system/kmprovider"
 	"github.com/thunder-id/thunderid/internal/system/log"
@@ -115,6 +117,12 @@ func main() {
 	revocationEnforcer, revocationSyncer := initRevocationCache(ctx, logger, cfg)
 	revocationSyncer.Start(ctx)
 
+	// Start the CP-DP channel client (phone-home WebSocket). Nil when disabled.
+	channelClient := initChannelClient(importService)
+	if channelClient != nil {
+		channelClient.Start(ctx)
+	}
+
 	// Register static file handlers for frontend applications.
 	registerStaticFileHandlers(ctx, logger, mux, serverHome)
 
@@ -150,7 +158,7 @@ func main() {
 	// Wait for shutdown signal
 	<-sigChan
 	logger.Info(ctx, "Shutting down server...")
-	gracefulShutdown(ctx, logger, server, cacheManager, revocationSyncer)
+	gracefulShutdown(ctx, logger, server, cacheManager, revocationSyncer, channelClient)
 }
 
 // initRevocationCache builds the Resource Server token-revocation enforcer and its background syncer
@@ -168,6 +176,21 @@ func initRevocationCache(ctx context.Context, logger *log.Logger,
 		logger.Fatal(ctx, "Failed to initialize token revocation cache", log.Error(err))
 	}
 	return enforcer, syncer
+}
+
+// initChannelClient builds the CP-DP channel client from config, or returns nil when disabled.
+func initChannelClient(importService importer.ImportServiceInterface) *channel.Client {
+	c := config.GetServerRuntime().Config.Channel.Client
+	return channel.InitializeClient(channel.ClientConfig{
+		Enabled:          c.Enabled,
+		ID:               c.ID,
+		ControlPlaneURL:  c.ControlPlaneURL,
+		AuthToken:        c.AuthToken,
+		ReadLimit:        c.ReadLimitBytes,
+		PingInterval:     time.Duration(c.PingIntervalSeconds) * time.Second,
+		ReconnectInitial: time.Duration(c.ReconnectInitialSeconds) * time.Second,
+		ReconnectMax:     time.Duration(c.ReconnectMaxSeconds) * time.Second,
+	}, importService)
 }
 
 // getThunderHome retrieves and return the home directory.
@@ -307,6 +330,7 @@ func gracefulShutdown(
 	server *http.Server,
 	cacheManager cache.CacheManagerInterface,
 	revocationSyncer revocationcache.Syncer,
+	channelClient *channel.Client,
 ) {
 	ctx, cancel := context.WithTimeout(ctx, shutdownTimeout)
 	defer cancel()
@@ -320,6 +344,11 @@ func gracefulShutdown(
 
 	// Stop the token-revocation cache syncer.
 	revocationSyncer.Stop()
+
+	// Stop the CP-DP channel client.
+	if channelClient != nil {
+		channelClient.Stop()
+	}
 
 	// Shutdown services
 	unregisterServices()
