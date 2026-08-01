@@ -36,6 +36,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/thunder-id/thunderid/internal/secretstore"
 	"github.com/thunder-id/thunderid/internal/system/cache"
 	"github.com/thunder-id/thunderid/internal/system/channel"
 	"github.com/thunder-id/thunderid/internal/system/config"
@@ -98,7 +99,7 @@ func main() {
 	}
 
 	// Register the services.
-	jwtService, runtimeCryptoSvc, importService := registerServices(mux, cacheManager)
+	jwtService, runtimeCryptoSvc, importService, localSecrets := registerServices(mux, cacheManager)
 
 	// When invoked as the bootstrap one-shot (`dpserver bootstrap`), create the
 	// default resources in-process and exit without starting the HTTP server.
@@ -118,7 +119,7 @@ func main() {
 	revocationSyncer.Start(ctx)
 
 	// Start the CP-DP channel client (phone-home WebSocket). Nil when disabled.
-	channelClient := initChannelClient(importService)
+	channelClient := initChannelClient(importService, localSecrets)
 	if channelClient != nil {
 		channelClient.Start(ctx)
 	}
@@ -179,7 +180,12 @@ func initRevocationCache(ctx context.Context, logger *log.Logger,
 }
 
 // initChannelClient builds the CP-DP channel client from config, or returns nil when disabled.
-func initChannelClient(importService importer.ImportServiceInterface) *channel.Client {
+//
+// The secret store is served over the channel too, so a Control Plane reaches this deployment's
+// credentials the same way it reaches its import: outbound from here, with no inbound endpoint and no
+// credential of its own for this server's management API.
+func initChannelClient(importService importer.ImportServiceInterface,
+	localSecrets *secretstore.Store) *channel.Client {
 	c := config.GetServerRuntime().Config.Channel.Client
 	return channel.InitializeClient(channel.ClientConfig{
 		Enabled:          c.Enabled,
@@ -190,7 +196,16 @@ func initChannelClient(importService importer.ImportServiceInterface) *channel.C
 		PingInterval:     time.Duration(c.PingIntervalSeconds) * time.Second,
 		ReconnectInitial: time.Duration(c.ReconnectInitialSeconds) * time.Second,
 		ReconnectMax:     time.Duration(c.ReconnectMaxSeconds) * time.Second,
-	}, importService)
+	}, importService, secretStoreOrNil(localSecrets))
+}
+
+// secretStoreOrNil converts the store into the channel's interface, keeping a nil store nil rather
+// than a non-nil interface holding a nil pointer, which would register handlers that panic.
+func secretStoreOrNil(store *secretstore.Store) channel.SecretStore {
+	if store == nil {
+		return nil
+	}
+	return store
 }
 
 // getThunderHome retrieves and return the home directory.

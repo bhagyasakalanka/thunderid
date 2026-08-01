@@ -43,9 +43,10 @@ import (
 // environment at all: the id simply does not exist in the store the request is served from. That is
 // the same guarantee the row-scoped resources get, reached differently.
 type registry struct {
-	dataDir string
-	hasher  service.SecretHasher
-	localCP service.LocalControlPlane
+	dataDir    string
+	hasher     service.SecretHasher
+	localCP    service.LocalControlPlane
+	dataPlanes service.DataPlanes
 
 	mu      sync.Mutex
 	servers map[string]*Server
@@ -103,6 +104,7 @@ func (r *registry) serverForID(id string) (*Server, error) {
 	})
 	svc.SetSecretHasher(r.hasher)
 	svc.SetLocalControlPlane(r.localCP)
+	svc.SetDataPlanes(r.dataPlanes)
 	server := New(svc)
 	r.servers[id] = server
 	return server, nil
@@ -164,6 +166,17 @@ func (r *registry) deploymentIDs() ([]string, error) {
 		}
 	}
 	return ids, nil
+}
+
+// SetDataPlanes installs the connections this server reaches data planes over. It is set after the
+// fact because the channel server is built after the environment manager is mounted.
+func (r *registry) SetDataPlanes(planes service.DataPlanes) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.dataPlanes = planes
+	for _, server := range r.servers {
+		server.svc.SetDataPlanes(planes)
+	}
 }
 
 // SetLocalControlPlane installs the control plane a promotion writes into. It is set after the fact

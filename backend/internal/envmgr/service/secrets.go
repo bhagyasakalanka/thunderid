@@ -153,9 +153,11 @@ func (s *Service) SetSecret(ctx context.Context, envID, name, value string) (Sec
 	if err != nil {
 		return SecretEntry{}, err
 	}
-	baseURL, creds, insecure := env.Target.SecretEndpoint()
-	client := s.newClient(baseURL, toCredentials(ctx, creds), insecure)
-	if err := client.PutSecret(ctx, name, body); err != nil {
+	plane, err := s.dataPlaneFor(env)
+	if err != nil {
+		return SecretEntry{}, err
+	}
+	if err := plane.PutSecret(ctx, name, body); err != nil {
 		return SecretEntry{}, fmt.Errorf("failed to store the secret on %s: %w", env.Name, err)
 	}
 	entry.Held = true
@@ -235,10 +237,13 @@ func (s *Service) describeSecret(envID, name string) SecretEntry {
 // heldSecrets reads the names the data plane's secret service holds. A non-nil error means it could not
 // be reached, so "not held" is not reported as fact.
 func (s *Service) heldSecrets(ctx context.Context, env model.Environment) (map[string]bool, error) {
-	baseURL, creds, insecure := env.Target.SecretEndpoint()
-	names, err := s.newClient(baseURL, toCredentials(ctx, creds), insecure).SecretNames(ctx)
+	plane, err := s.dataPlaneFor(env)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", baseURL, err)
+		return nil, err
+	}
+	names, err := plane.SecretNames(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", env.Name, err)
 	}
 	held := make(map[string]bool, len(names))
 	for _, name := range names {

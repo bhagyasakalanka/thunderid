@@ -120,7 +120,8 @@ var observabilitySvc observability.ObservabilityServiceInterface
 // It also returns the import service so the bootstrap subcommand can create default
 // resources in-process through the same service instances.
 func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterface) (
-	jwt.JWTServiceInterface, kmprovider.RuntimeCryptoProvider, importer.ImportServiceInterface) {
+	jwt.JWTServiceInterface, kmprovider.RuntimeCryptoProvider, importer.ImportServiceInterface,
+	*secretstore.Store) {
 	logger := log.GetLogger()
 
 	// Service registration runs during application startup, outside any request.
@@ -465,7 +466,7 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 	healthSvc := healthcheckservice.Initialize(dbprovider.GetDBProvider(), dbprovider.GetRedisProvider())
 	services.NewHealthCheckService(mux, healthSvc)
 
-	return jwtService, runtimeCryptoSvc, importService
+	return jwtService, runtimeCryptoSvc, importService, localSecrets
 }
 
 // initAttestationProvider initializes the platform attestation provider, terminating server startup

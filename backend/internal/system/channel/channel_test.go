@@ -64,7 +64,7 @@ func wireEndToEnd(t *testing.T, ctx context.Context, runner *fakeImportRunner) *
 		PingInterval:     time.Second,
 		ReconnectInitial: 10 * time.Millisecond,
 		ReconnectMax:     100 * time.Millisecond,
-	}, runner)
+	}, runner, nil)
 	client.Start(ctx)
 
 	t.Cleanup(func() { client.Stop(); s.Close(); hs.Close() })
@@ -131,7 +131,7 @@ func TestServerLastSeenAdvancesOnTransportPing(t *testing.T) {
 		PingInterval:     20 * time.Millisecond,
 		ReconnectInitial: 10 * time.Millisecond,
 		ReconnectMax:     100 * time.Millisecond,
-	}, &fakeImportRunner{})
+	}, &fakeImportRunner{}, nil)
 	client.Start(ctx)
 	t.Cleanup(func() { client.Stop(); s.Close(); hs.Close() })
 
@@ -166,7 +166,7 @@ func TestInitializeServerDisabledReturnsNilAndRegistersNoRoute(t *testing.T) {
 }
 
 func TestInitializeClientDisabledReturnsNil(t *testing.T) {
-	c := InitializeClient(ClientConfig{Enabled: false}, &fakeImportRunner{})
+	c := InitializeClient(ClientConfig{Enabled: false}, &fakeImportRunner{}, nil)
 	assert.Nil(t, c)
 }
 

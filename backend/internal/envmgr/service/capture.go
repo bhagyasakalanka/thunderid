@@ -46,9 +46,11 @@ func (s *Service) CaptureSecretForTenant(ctx context.Context, deploymentID, name
 		if env.Source == nil || env.Source.DeploymentID != deploymentID {
 			continue
 		}
-		baseURL, creds, insecure := env.Target.SecretEndpoint()
-		client := s.newClient(baseURL, toCredentials(ctx, creds), insecure)
-		if err := client.PutSecret(ctx, name, body); err != nil {
+		plane, err := s.dataPlaneFor(env)
+		if err != nil {
+			return delivered, fmt.Errorf("failed to store the secret for %s: %w", env.Name, err)
+		}
+		if err := plane.PutSecret(ctx, name, body); err != nil {
 			return delivered, fmt.Errorf("failed to store the secret for %s: %w", env.Name, err)
 		}
 		delivered++

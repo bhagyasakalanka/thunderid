@@ -46,9 +46,6 @@ type ThunderClient interface {
 	Export(ctx context.Context) (thunder.ExportResult, error)
 	SecretKeys(ctx context.Context) ([]string, error)
 	EnvironmentVariables(ctx context.Context) (map[string]string, error)
-	SecretNames(ctx context.Context) ([]string, error)
-	PutSecret(ctx context.Context, name string, body map[string]interface{}) error
-	GetSecret(ctx context.Context, name string) (kind, value string, found bool, err error)
 	Import(ctx context.Context, req thunder.ImportRequest) (*thunder.ImportResponse, error)
 }
 
@@ -84,6 +81,8 @@ type Service struct {
 	now       func() time.Time
 	// hasher hashes a credential that is only ever verified. It is nil until the server installs one.
 	hasher SecretHasher
+	// dataPlanes reaches the data planes connected to this control plane.
+	dataPlanes DataPlanes
 	// localCP is the control plane hosting this service, when it hosts one. It is how a promote reaches
 	// a tenant other than the caller's own.
 	localCP LocalControlPlane
@@ -144,8 +143,8 @@ func (s *Service) CreateEnvironment(in CreateEnvironmentInput) (model.Environmen
 	if strings.TrimSpace(in.Name) == "" {
 		return model.Environment{}, fmt.Errorf("%w: name is required", ErrValidation)
 	}
-	if strings.TrimSpace(in.Target.BaseURL) == "" {
-		return model.Environment{}, fmt.Errorf("%w: target.baseUrl is required", ErrValidation)
+	if strings.TrimSpace(in.Target.DataPlaneID) == "" {
+		return model.Environment{}, fmt.Errorf("%w: target.dataPlaneId is required", ErrValidation)
 	}
 	rank := s.store.NextRank()
 	if in.Rank != nil {
@@ -219,6 +218,10 @@ type EnvironmentSummary struct {
 	PromotedFrom []string `json:"promotedFrom"`
 	// HasPendingChanges reports whether the latest version differs from what is applied.
 	HasPendingChanges bool `json:"hasPendingChanges"`
+	// DataPlane reports whether this environment's data plane is connected. Nothing can be applied or
+	// promoted to one that is not, so it is shown alongside the chain rather than discovered by
+	// starting a promotion that cannot finish.
+	DataPlane model.DataPlaneStatus `json:"dataPlane"`
 }
 
 // ListEnvironmentSummaries returns every environment in promotion order (each one before those it
@@ -255,6 +258,7 @@ func (s *Service) ListEnvironmentSummaries() ([]EnvironmentSummary, error) {
 			PromotesToResolved: resolved,
 			PromotedFrom:       from,
 			HasPendingChanges:  latest > 0 && latest != env.AppliedSeq,
+			DataPlane:          s.DataPlaneStatus(env),
 		})
 	}
 	return out, nil
@@ -445,10 +449,11 @@ func (s *Service) missingSecrets(ctx context.Context, env model.Environment,
 	if len(secretKeys) == 0 {
 		return nil, false
 	}
-	baseURL, creds, insecure := env.Target.SecretEndpoint()
-
-	client := s.newClient(baseURL, toCredentials(ctx, creds), insecure)
-	names, err := client.SecretNames(ctx)
+	plane, err := s.dataPlaneFor(env)
+	if err != nil {
+		return nil, false
+	}
+	names, err := plane.SecretNames(ctx)
 	if err != nil {
 		return nil, false
 	}
@@ -548,8 +553,11 @@ func (s *Service) Apply(ctx context.Context, envID, versionRef string, dryRun bo
 		// refuses local edits to it. Its own resources, written by other means, stay editable.
 		Options: &thunder.ImportOptions{MarkManaged: true},
 	}
-	client := s.newClient(env.Target.BaseURL, toCredentials(ctx, env.Target.Credentials), env.Target.InsecureSkipVerify)
-	resp, err := client.Import(ctx, req)
+	plane, err := s.dataPlaneFor(env)
+	if err != nil {
+		return ApplyResult{}, err
+	}
+	resp, err := plane.Import(ctx, req)
 	if err != nil {
 		return ApplyResult{}, fmt.Errorf("import failed: %w", err)
 	}
