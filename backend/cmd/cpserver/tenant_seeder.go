@@ -131,14 +131,8 @@ func (s *environmentSeeder) RegisterEnvironment(ctx context.Context,
 		Name: in.Name,
 		Rank: rank,
 		Target: model.Target{
-			BaseURL: in.DataPlane.BaseURL,
-			Credentials: model.Credentials{
-				ClientID:     in.DataPlane.ClientID,
-				ClientSecret: in.DataPlane.ClientSecret,
-				Scope:        in.DataPlane.Scope,
-				Resource:     in.DataPlane.Resource,
-			},
-			InsecureSkipVerify: in.DataPlane.InsecureSkipVerify,
+			DataPlaneID: in.DataPlane.ID,
+			BaseURL:     in.DataPlane.BaseURL,
 		},
 		Source: &model.Source{
 			BaseURL:            s.controlPlaneURL,

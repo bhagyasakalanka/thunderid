@@ -223,7 +223,7 @@ func (s *tenantService) CreateTenant(ctx context.Context,
 // and the environment can be registered once its data plane exists.
 func (s *tenantService) registerEnvironment(ctx context.Context, request CreateTenantRequest,
 	deploymentID string, rank int) (*EnvironmentSummary, *tidcommon.ServiceError) {
-	if request.DataPlane == nil || strings.TrimSpace(request.DataPlane.BaseURL) == "" {
+	if request.DataPlane == nil || strings.TrimSpace(request.DataPlane.ID) == "" {
 		return nil, nil
 	}
 	if s.seeder == nil {

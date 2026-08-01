@@ -39,6 +39,7 @@ import useCheckVariables from '../api/useCheckVariables';
 import useGetEnvironments from '../api/useGetEnvironments';
 import useGetVersions from '../api/useGetVersions';
 import ApplyDialog from '../components/ApplyDialog';
+import DataPlaneStatusChip from '../components/DataPlaneStatusChip';
 import MissingVariablesNotice from '../components/MissingVariablesNotice';
 import PromoteDialog from '../components/PromoteDialog';
 import RevertDialog from '../components/RevertDialog';
@@ -84,7 +85,12 @@ export default function EnvironmentDetailPage(): JSX.Element {
       <PageTitle>
         <PageTitle.Header>{environment?.name ?? t('promotions:detail.title', 'Environment')}</PageTitle.Header>
         <PageTitle.SubHeader>
-          {t('promotions:detail.subtitle', 'Configuration version history. The most recent version is at the top.')}
+          <Stack direction="row" spacing={1} alignItems="center">
+            <span>
+              {t('promotions:detail.subtitle', 'Configuration version history. The most recent version is at the top.')}
+            </span>
+            <DataPlaneStatusChip status={environment?.dataPlane} />
+          </Stack>
         </PageTitle.SubHeader>
         <PageTitle.Actions>
           <Stack direction="row" spacing={1}>

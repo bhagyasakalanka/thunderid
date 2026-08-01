@@ -390,6 +390,13 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 		RPCTimeout: time.Duration(chCfg.RPCTimeoutSeconds) * time.Second,
 	})
 
+	// Data planes are reached over the connections they hold open to this server, so the environment
+	// manager is given those rather than a client for each one's management API. Without a channel
+	// there is no way to reach a data plane at all, and an apply says so rather than failing obscurely.
+	if envManager != nil {
+		envManager.SetDataPlanes(&channelDataPlanes{server: channelServer})
+	}
+
 	return jwtService, runtimeCryptoSvc, importService, exportService, envManager, envVarService
 }
 
@@ -511,6 +518,7 @@ func initEnvironmentManager(ctx context.Context, logger *log.Logger, mux *http.S
 type envmgrRegistry interface {
 	localCaptureRouter
 	SetLocalControlPlane(cp envmgrservice.LocalControlPlane)
+	SetDataPlanes(planes envmgrservice.DataPlanes)
 	SeedTenant(ctx context.Context, sourceDeploymentID, targetDeploymentID string) (*thunder.ImportResponse, error)
 	CreateEnvironment(deploymentID string, in envmgrservice.CreateEnvironmentInput) (model.Environment, error)
 }

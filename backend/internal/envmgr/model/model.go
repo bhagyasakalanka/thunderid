@@ -20,7 +20,6 @@
 package model
 
 import (
-	"strings"
 	"time"
 )
 
@@ -57,45 +56,22 @@ type Credentials struct {
 }
 
 // Target identifies a data plane that a version is applied to.
-type Target struct {
-	BaseURL string `json:"baseUrl"`
-	// Credentials is embedded so its fields stay flat in the stored and API JSON.
-	Credentials
-	// SecretProvider is the service holding the secrets this data plane resolves. Naming it lets an
-	// apply check that every credential the configuration needs is present beforehand, rather than
-	// discovering a missing one when a login fails.
-	SecretProvider     *SecretProviderEndpoint `json:"secretProvider,omitempty"`
-	InsecureSkipVerify bool                    `json:"insecureSkipVerify,omitempty"`
-}
-
-// SecretEndpoint returns where this data plane's secrets are held, along with the credentials and TLS
-// setting for reaching it.
 //
-// A data plane serves its own store, so naming a separate service is only needed when the secrets
-// live somewhere else. With none named, the store on the data plane itself is used, reached with the
-// same credentials an apply already uses: it sits behind that server's management API, so there is no
-// second set to configure.
-func (t Target) SecretEndpoint() (string, Credentials, bool) {
-	if t.SecretProvider != nil && strings.TrimSpace(t.SecretProvider.BaseURL) != "" {
-		return t.SecretProvider.BaseURL,
-			Credentials{Token: t.SecretProvider.Token},
-			t.SecretProvider.InsecureSkipVerify
-	}
-	// The store is a path on the data plane, not a server of its own, so the token endpoint has to be
-	// named explicitly: a client that derived one from the base it is given would ask the store's own
-	// path for a token and be turned away unauthenticated.
-	creds := t.Credentials
-	if creds.ClientID != "" && strings.TrimSpace(creds.TokenURL) == "" {
-		creds.TokenURL = strings.TrimRight(t.BaseURL, "/") + "/oauth2/token"
-	}
-	return strings.TrimRight(t.BaseURL, "/") + "/secret-store", creds, t.InsecureSkipVerify
+// The data plane is named, not addressed. It dials the control plane and holds that connection open,
+// so the control plane reaches it over that channel rather than over its management API: there is no
+// URL to call and no credential to hold. DataPlaneID is the id the data plane presents when it
+// connects, and BaseURL is kept only to show an operator where that deployment serves.
+type Target struct {
+	DataPlaneID string `json:"dataPlaneId"`
+	BaseURL     string `json:"baseUrl,omitempty"`
 }
 
-// SecretProviderEndpoint locates a data plane's secret service.
-type SecretProviderEndpoint struct {
-	BaseURL            string `json:"baseUrl"`
-	Token              string `json:"token,omitempty"`
-	InsecureSkipVerify bool   `json:"insecureSkipVerify,omitempty"`
+// DataPlaneStatus reports whether a data plane is connected to this control plane. It is part of the
+// environment as read, not as stored: an operator about to promote needs to know the destination can
+// be reached, and nothing can be applied to a data plane that is not.
+type DataPlaneStatus struct {
+	Connected bool      `json:"connected"`
+	LastSeen  time.Time `json:"lastSeen,omitempty"`
 }
 
 // Source identifies a control plane that config is captured from.

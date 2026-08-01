@@ -331,7 +331,7 @@ func TestCreateTenant_RegistersTheEnvironmentWithItsRank(t *testing.T) {
 
 	created, svcErr := svc.CreateTenant(systemCtx(), CreateTenantRequest{
 		Org: "acme", Env: "stage", Rank: &rank,
-		DataPlane:    &DataPlane{BaseURL: "https://dp-stage", ClientID: "envmgr"},
+		DataPlane:    &DataPlane{ID: "stage-dp", BaseURL: "https://dp-stage"},
 		ControlPlane: &ControlPlane{InsecureSkipVerify: true},
 	})
 
@@ -340,7 +340,7 @@ func TestCreateTenant_RegistersTheEnvironmentWithItsRank(t *testing.T) {
 	assert.Equal(t, "stage", seeder.registered.Name)
 	assert.Equal(t, "acme:stage", seeder.registered.DeploymentID)
 	assert.Equal(t, 2, seeder.registered.Rank)
-	assert.Equal(t, "https://dp-stage", seeder.registered.DataPlane.BaseURL)
+	assert.Equal(t, "stage-dp", seeder.registered.DataPlane.ID)
 	// Without this a capture cannot read back from a control plane serving its own certificate.
 	assert.True(t, seeder.registered.ControlPlaneInsecureSkipVerify)
 	require.NotNil(t, created.Environment)
@@ -357,7 +357,7 @@ func TestCreateTenant_FirstEnvironmentIsAlwaysRankOne(t *testing.T) {
 
 	_, svcErr := svc.CreateTenant(systemCtx(), CreateTenantRequest{
 		Org: "acme", Env: "dev", Rank: &rank,
-		DataPlane: &DataPlane{BaseURL: "https://dp-dev"},
+		DataPlane: &DataPlane{ID: "dev-dp", BaseURL: "https://dp-dev"},
 	})
 
 	require.Nil(t, svcErr)

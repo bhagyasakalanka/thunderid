@@ -42,13 +42,17 @@ func InitializeServer(mux *http.ServeMux, cfg ServerConfig) *Server {
 	return s
 }
 
-// InitializeClient builds the Data Plane channel client with the Import and Ping handlers
-// registered, or returns nil when disabled. The caller owns Start/Stop.
-func InitializeClient(cfg ClientConfig, runner ImportRunner) *Client {
+// InitializeClient builds the Data Plane channel client with the Import, Ping and secret-store
+// handlers registered, or returns nil when disabled. The caller owns Start/Stop.
+//
+// A nil store registers no secret handlers, so a Data Plane that serves no store of its own answers
+// method-not-found rather than pretending to hold secrets.
+func InitializeClient(cfg ClientConfig, runner ImportRunner, store SecretStore) *Client {
 	if !cfg.Enabled {
 		return nil
 	}
 	router := NewRouter()
 	RegisterDataPlaneMethods(router, runner, cfg.ID)
+	RegisterSecretMethods(router, store)
 	return NewClient(cfg, router)
 }
