@@ -125,11 +125,17 @@ func NewServer(cfg ServerConfig, verifier Verifier) *Server {
 // runs the response read loop until the connection closes or the server shuts down.
 func (s *Server) HandleConnect(w http.ResponseWriter, r *http.Request) {
 	dpID := r.Header.Get(HeaderDataPlaneID)
-	if err := s.verifier.Verify(r); err != nil {
+	authenticated, err := s.verifier.Verify(r)
+	if err != nil {
 		s.logger.Warn(r.Context(), "Rejected data plane handshake",
 			log.String("remoteAddr", r.RemoteAddr), log.String("dpID", dpID), log.Error(err))
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
+	}
+	// A credential that proves an identity decides which Data Plane this is. Only a shared token,
+	// which proves none, leaves the claim in the header to be taken at face value.
+	if authenticated != "" {
+		dpID = authenticated
 	}
 	if dpID == "" {
 		http.Error(w, errMissingDataPlaneID.Error(), http.StatusBadRequest)
@@ -139,7 +145,7 @@ func (s *Server) HandleConnect(w http.ResponseWriter, r *http.Request) {
 	// sc is assigned only after Accept returns, but OnPingReceived can fire as soon as the
 	// connection is accepted, so it must tolerate a nil sc.
 	var sc *serverConn
-	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+	ws, acceptErr := websocket.Accept(w, r, &websocket.AcceptOptions{
 		// The Data Plane is a non-browser client and sends no Origin header, and coder/websocket's
 		// default origin check already passes an absent Origin header, so no override is needed here.
 		OnPingReceived: func(_ context.Context, _ []byte) bool {
@@ -149,7 +155,7 @@ func (s *Server) HandleConnect(w http.ResponseWriter, r *http.Request) {
 			return true
 		},
 	})
-	if err != nil {
+	if acceptErr != nil {
 		return // Accept has already written the error response.
 	}
 	sc = newServerConn(newWSConn(ws, s.cfg.ReadLimit), dpID)
