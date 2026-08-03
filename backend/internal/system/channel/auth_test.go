@@ -30,7 +30,10 @@ func TestTokenVerifierAcceptsMatchingBearer(t *testing.T) {
 	v := newTokenVerifier("s3cret")
 	r := httptest.NewRequest(http.MethodGet, "/cp/connect", nil)
 	r.Header.Set("Authorization", "Bearer s3cret")
-	assert.NoError(t, v.Verify(r))
+	id, err := v.Verify(r)
+	assert.NoError(t, err)
+	// A shared token proves no identity, so the caller falls back to the claimed header.
+	assert.Empty(t, id)
 }
 
 func TestTokenVerifierRejectsWrongOrMissingBearer(t *testing.T) {
@@ -38,15 +41,92 @@ func TestTokenVerifierRejectsWrongOrMissingBearer(t *testing.T) {
 
 	r := httptest.NewRequest(http.MethodGet, "/cp/connect", nil)
 	r.Header.Set("Authorization", "Bearer nope")
-	assert.ErrorIs(t, v.Verify(r), errUnauthorized)
+	_, err := v.Verify(r)
+	assert.ErrorIs(t, err, errUnauthorized)
 
 	r2 := httptest.NewRequest(http.MethodGet, "/cp/connect", nil)
-	assert.ErrorIs(t, v.Verify(r2), errUnauthorized)
+	_, err2 := v.Verify(r2)
+	assert.ErrorIs(t, err2, errUnauthorized)
 }
 
 func TestTokenVerifierRejectsWhenNotConfigured(t *testing.T) {
 	v := newTokenVerifier("")
 	r := httptest.NewRequest(http.MethodGet, "/cp/connect", nil)
 	r.Header.Set("Authorization", "Bearer anything")
-	assert.ErrorIs(t, v.Verify(r), errAuthNotConfigured)
+	_, err := v.Verify(r)
+	assert.ErrorIs(t, err, errAuthNotConfigured)
+}
+
+// A per-Data-Plane token is what makes the handshake know which Data Plane connected, instead of
+// believing the id in the header.
+func TestPerDataPlaneTokenAuthenticatesTheClaimedIdentity(t *testing.T) {
+	v := newPerDataPlaneTokenVerifier(map[string]string{"org1:dev": "dev-token", "org1:stage": "stage-token"})
+
+	r := httptest.NewRequest(http.MethodGet, "/cp/connect", nil)
+	r.Header.Set(HeaderDataPlaneID, "org1:dev")
+	r.Header.Set("Authorization", "Bearer dev-token")
+
+	id, err := v.Verify(r)
+
+	assert.NoError(t, err)
+	assert.Equal(t, "org1:dev", id)
+}
+
+// With a token per Data Plane, holding one is not enough to be another: this is the impersonation a
+// single shared token allows, where any holder can evict a connection and receive its commands.
+func TestPerDataPlaneTokenRefusesAnotherDataPlanesToken(t *testing.T) {
+	v := newPerDataPlaneTokenVerifier(map[string]string{"org1:dev": "dev-token", "org1:stage": "stage-token"})
+
+	r := httptest.NewRequest(http.MethodGet, "/cp/connect", nil)
+	r.Header.Set(HeaderDataPlaneID, "org1:stage")
+	r.Header.Set("Authorization", "Bearer dev-token")
+
+	_, err := v.Verify(r)
+
+	assert.ErrorIs(t, err, errUnauthorized)
+}
+
+func TestPerDataPlaneTokenRefusesAnUnknownDataPlane(t *testing.T) {
+	v := newPerDataPlaneTokenVerifier(map[string]string{"org1:dev": "dev-token"})
+
+	r := httptest.NewRequest(http.MethodGet, "/cp/connect", nil)
+	r.Header.Set(HeaderDataPlaneID, "org9:dev")
+	r.Header.Set("Authorization", "Bearer dev-token")
+
+	_, err := v.Verify(r)
+
+	assert.ErrorIs(t, err, errUnauthorized)
+}
+
+func TestPerDataPlaneTokenRequiresAClaimedIdentity(t *testing.T) {
+	v := newPerDataPlaneTokenVerifier(map[string]string{"org1:dev": "dev-token"})
+
+	r := httptest.NewRequest(http.MethodGet, "/cp/connect", nil)
+	r.Header.Set("Authorization", "Bearer dev-token")
+
+	_, err := v.Verify(r)
+
+	assert.ErrorIs(t, err, errMissingDataPlaneID)
+}
+
+// Per-Data-Plane tokens win when both are configured: the shared token is the weaker of the two, and
+// leaving it in place would keep the impersonation the other form exists to close.
+func TestPerDataPlaneTokensWinOverTheSharedToken(t *testing.T) {
+	v := serverVerifier(ServerConfig{
+		AuthToken:       "shared",
+		DataPlaneTokens: map[string]string{"org1:dev": "dev-token"},
+	})
+
+	shared := httptest.NewRequest(http.MethodGet, "/cp/connect", nil)
+	shared.Header.Set(HeaderDataPlaneID, "org1:dev")
+	shared.Header.Set("Authorization", "Bearer shared")
+	_, err := v.Verify(shared)
+	assert.ErrorIs(t, err, errUnauthorized)
+
+	own := httptest.NewRequest(http.MethodGet, "/cp/connect", nil)
+	own.Header.Set(HeaderDataPlaneID, "org1:dev")
+	own.Header.Set("Authorization", "Bearer dev-token")
+	authenticated, err := v.Verify(own)
+	assert.NoError(t, err)
+	assert.Equal(t, "org1:dev", authenticated)
 }

@@ -383,11 +383,12 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 	// Initialize the CP-DP channel server (phone-home WebSocket). No-op when disabled.
 	chCfg := config.GetServerRuntime().Config.Channel.Server
 	channelServer = channel.InitializeServer(mux, channel.ServerConfig{
-		Enabled:    chCfg.Enabled,
-		Path:       chCfg.Path,
-		AuthToken:  chCfg.AuthToken,
-		ReadLimit:  chCfg.ReadLimitBytes,
-		RPCTimeout: time.Duration(chCfg.RPCTimeoutSeconds) * time.Second,
+		Enabled:         chCfg.Enabled,
+		Path:            chCfg.Path,
+		AuthToken:       chCfg.AuthToken,
+		DataPlaneTokens: chCfg.DataPlaneTokens,
+		ReadLimit:       chCfg.ReadLimitBytes,
+		RPCTimeout:      time.Duration(chCfg.RPCTimeoutSeconds) * time.Second,
 	})
 
 	// Data planes are reached over the connections they hold open to this server, so the environment

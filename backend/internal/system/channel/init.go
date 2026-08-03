@@ -37,9 +37,18 @@ func InitializeServer(mux *http.ServeMux, cfg ServerConfig) *Server {
 	if !strings.HasPrefix(cfg.Path, "/") {
 		cfg.Path = "/" + cfg.Path
 	}
-	s := NewServer(cfg, newTokenVerifier(cfg.AuthToken))
+	s := NewServer(cfg, serverVerifier(cfg))
 	mux.HandleFunc("GET "+cfg.Path, s.HandleConnect)
 	return s
+}
+
+// serverVerifier picks how a handshake is authenticated. Per-Data-Plane tokens win when configured,
+// because they are the only form that tells the server which Data Plane connected.
+func serverVerifier(cfg ServerConfig) Verifier {
+	if len(cfg.DataPlaneTokens) > 0 {
+		return newPerDataPlaneTokenVerifier(cfg.DataPlaneTokens)
+	}
+	return newTokenVerifier(cfg.AuthToken)
 }
 
 // InitializeClient builds the Data Plane channel client with the Import, Ping and secret-store

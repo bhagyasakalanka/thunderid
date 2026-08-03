@@ -149,10 +149,15 @@ type ChannelServerConfig struct {
 	// Path is the route the WebSocket server is mounted on. Changing it requires updating, in
 	// lockstep, the public-path allowlist (publicPaths in internal/system/security/permissions.go)
 	// and the Control Plane access-log exclusion list (accessLogExcludePaths in cmd/cpserver/main.go).
-	Path              string `yaml:"path"                json:"path"`
-	AuthToken         string `yaml:"auth_token"          json:"auth_token"`
-	ReadLimitBytes    int64  `yaml:"read_limit_bytes"    json:"read_limit_bytes"`
-	RPCTimeoutSeconds int    `yaml:"rpc_timeout_seconds" json:"rpc_timeout_seconds"`
+	Path      string `yaml:"path"       json:"path"`
+	AuthToken string `yaml:"auth_token" json:"auth_token"`
+	// DataPlaneTokens maps a Data Plane id to the token issued to that one deployment. It replaces
+	// auth_token when set, and is the only form that tells the server which Data Plane connected: a
+	// claim is accepted only with that Data Plane's own token, so one compromised deployment cannot
+	// take over another's connection.
+	DataPlaneTokens   map[string]string `yaml:"data_plane_tokens" json:"data_plane_tokens"`
+	ReadLimitBytes    int64             `yaml:"read_limit_bytes"    json:"read_limit_bytes"`
+	RPCTimeoutSeconds int               `yaml:"rpc_timeout_seconds" json:"rpc_timeout_seconds"`
 }
 
 // Validate ensures the Control Plane channel server configuration is usable when enabled. A disabled
@@ -161,8 +166,15 @@ func (c *ChannelServerConfig) Validate() error {
 	if !c.Enabled {
 		return nil
 	}
-	if c.AuthToken == "" {
-		return fmt.Errorf("channel.server.auth_token must be set when channel.server.enabled is true")
+	if c.AuthToken == "" && len(c.DataPlaneTokens) == 0 {
+		return fmt.Errorf(
+			"channel.server.auth_token or channel.server.data_plane_tokens must be set when " +
+				"channel.server.enabled is true")
+	}
+	for id, token := range c.DataPlaneTokens {
+		if token == "" {
+			return fmt.Errorf("channel.server.data_plane_tokens[%q] must not be empty", id)
+		}
 	}
 	return nil
 }
