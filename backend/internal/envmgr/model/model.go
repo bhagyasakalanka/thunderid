@@ -37,24 +37,6 @@ const (
 	OriginUploaded Origin = "uploaded"
 )
 
-// Credentials describes how to authenticate to a ThunderID server.
-//
-// Prefer ClientID and ClientSecret: the service exchanges them for an access token through the
-// client_credentials grant (presented as HTTP Basic auth at the token endpoint) and refreshes it as
-// it expires. A static Token is also accepted, but it is only practical for short-lived manual
-// testing because it expires and cannot be renewed.
-type Credentials struct {
-	Token        string `json:"token,omitempty"`
-	ClientID     string `json:"clientId,omitempty"`
-	ClientSecret string `json:"clientSecret,omitempty"`
-	// TokenURL overrides the token endpoint. Defaults to <baseUrl>/oauth2/token.
-	TokenURL string `json:"tokenUrl,omitempty"`
-	Scope    string `json:"scope,omitempty"`
-	// Resource is the RFC 8707 resource indicator naming the resource server the token is for.
-	// ThunderID requires it (or a configured default resource server) to issue a scoped token.
-	Resource string `json:"resource,omitempty"`
-}
-
 // Target identifies a data plane that a version is applied to.
 //
 // The data plane is named, not addressed. It dials the control plane and holds that connection open,
@@ -77,7 +59,6 @@ type DataPlaneStatus struct {
 // Source identifies a control plane that config is captured from.
 type Source struct {
 	BaseURL string `json:"baseUrl"`
-	Credentials
 	// DeploymentID is the tenant this environment's configuration lives in. It is fixed when the
 	// environment is registered and there is no way to change it afterwards, because it is the sole
 	// authority for which tenant a promotion into this environment may write to.
@@ -106,9 +87,16 @@ type Environment struct {
 	// then on. A key here is skipped by both promotion and apply.
 	Excluded []string `json:"excluded,omitempty"`
 	// AppliedSeq is the version sequence last applied to Target (0 when nothing has been applied).
-	AppliedSeq int       `json:"appliedSeq"`
-	CreatedAt  time.Time `json:"createdAt"`
-	UpdatedAt  time.Time `json:"updatedAt"`
+	AppliedSeq int `json:"appliedSeq"`
+	// ControlPlaneSeq is the version sequence last written into this environment's control plane
+	// tenant (0 when this service has written none).
+	//
+	// It is tracked separately from AppliedSeq because the two legitimately diverge: writing a version
+	// to the control plane leaves the data plane alone, and applying leaves the control plane alone.
+	// Comparing against the wrong one is what makes a later write compute the wrong changes.
+	ControlPlaneSeq int       `json:"controlPlaneSeq"`
+	CreatedAt       time.Time `json:"createdAt"`
+	UpdatedAt       time.Time `json:"updatedAt"`
 }
 
 // Version is an immutable snapshot of an environment's declarative configuration. The parameterized

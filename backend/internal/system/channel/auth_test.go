@@ -19,6 +19,7 @@
 package channel
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -57,10 +58,18 @@ func TestTokenVerifierRejectsWhenNotConfigured(t *testing.T) {
 	assert.ErrorIs(t, err, errAuthNotConfigured)
 }
 
-// A per-Data-Plane token is what makes the handshake know which Data Plane connected, instead of
-// believing the id in the header.
+// fakeTokenStore holds issued tokens in memory.
+type fakeTokenStore map[string]string
+
+func (f fakeTokenStore) TokenFor(_ context.Context, dataPlaneID string) (string, bool, error) {
+	token, ok := f[dataPlaneID]
+	return token, ok, nil
+}
+
+// An issued per-Data-Plane token is what makes the handshake know which Data Plane connected, instead
+// of believing the id in the header.
 func TestPerDataPlaneTokenAuthenticatesTheClaimedIdentity(t *testing.T) {
-	v := newPerDataPlaneTokenVerifier(map[string]string{"org1:dev": "dev-token", "org1:stage": "stage-token"})
+	v := newStoredTokenVerifier(fakeTokenStore{"org1:dev": "dev-token", "org1:stage": "stage-token"})
 
 	r := httptest.NewRequest(http.MethodGet, "/cp/connect", nil)
 	r.Header.Set(HeaderDataPlaneID, "org1:dev")
@@ -75,7 +84,7 @@ func TestPerDataPlaneTokenAuthenticatesTheClaimedIdentity(t *testing.T) {
 // With a token per Data Plane, holding one is not enough to be another: this is the impersonation a
 // single shared token allows, where any holder can evict a connection and receive its commands.
 func TestPerDataPlaneTokenRefusesAnotherDataPlanesToken(t *testing.T) {
-	v := newPerDataPlaneTokenVerifier(map[string]string{"org1:dev": "dev-token", "org1:stage": "stage-token"})
+	v := newStoredTokenVerifier(fakeTokenStore{"org1:dev": "dev-token", "org1:stage": "stage-token"})
 
 	r := httptest.NewRequest(http.MethodGet, "/cp/connect", nil)
 	r.Header.Set(HeaderDataPlaneID, "org1:stage")
@@ -87,7 +96,7 @@ func TestPerDataPlaneTokenRefusesAnotherDataPlanesToken(t *testing.T) {
 }
 
 func TestPerDataPlaneTokenRefusesAnUnknownDataPlane(t *testing.T) {
-	v := newPerDataPlaneTokenVerifier(map[string]string{"org1:dev": "dev-token"})
+	v := newStoredTokenVerifier(fakeTokenStore{"org1:dev": "dev-token"})
 
 	r := httptest.NewRequest(http.MethodGet, "/cp/connect", nil)
 	r.Header.Set(HeaderDataPlaneID, "org9:dev")
@@ -99,7 +108,7 @@ func TestPerDataPlaneTokenRefusesAnUnknownDataPlane(t *testing.T) {
 }
 
 func TestPerDataPlaneTokenRequiresAClaimedIdentity(t *testing.T) {
-	v := newPerDataPlaneTokenVerifier(map[string]string{"org1:dev": "dev-token"})
+	v := newStoredTokenVerifier(fakeTokenStore{"org1:dev": "dev-token"})
 
 	r := httptest.NewRequest(http.MethodGet, "/cp/connect", nil)
 	r.Header.Set("Authorization", "Bearer dev-token")
@@ -112,10 +121,7 @@ func TestPerDataPlaneTokenRequiresAClaimedIdentity(t *testing.T) {
 // Per-Data-Plane tokens win when both are configured: the shared token is the weaker of the two, and
 // leaving it in place would keep the impersonation the other form exists to close.
 func TestPerDataPlaneTokensWinOverTheSharedToken(t *testing.T) {
-	v := serverVerifier(ServerConfig{
-		AuthToken:       "shared",
-		DataPlaneTokens: map[string]string{"org1:dev": "dev-token"},
-	})
+	v := serverVerifier(ServerConfig{AuthToken: "shared"}, fakeTokenStore{"org1:dev": "dev-token"})
 
 	shared := httptest.NewRequest(http.MethodGet, "/cp/connect", nil)
 	shared.Header.Set(HeaderDataPlaneID, "org1:dev")

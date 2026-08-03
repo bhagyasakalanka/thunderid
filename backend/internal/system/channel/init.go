@@ -27,7 +27,7 @@ import (
 // WebSocket route on mux. It returns the server (whose Close the caller invokes at shutdown), or nil
 // when disabled. An empty cfg.Path defaults to "/cp/connect", and a path missing its leading slash is
 // normalized so it cannot be misparsed as a host pattern by http.ServeMux.
-func InitializeServer(mux *http.ServeMux, cfg ServerConfig) *Server {
+func InitializeServer(mux *http.ServeMux, cfg ServerConfig, tokens TokenStore) *Server {
 	if !cfg.Enabled {
 		return nil
 	}
@@ -37,16 +37,17 @@ func InitializeServer(mux *http.ServeMux, cfg ServerConfig) *Server {
 	if !strings.HasPrefix(cfg.Path, "/") {
 		cfg.Path = "/" + cfg.Path
 	}
-	s := NewServer(cfg, serverVerifier(cfg))
+	s := NewServer(cfg, serverVerifier(cfg, tokens))
 	mux.HandleFunc("GET "+cfg.Path, s.HandleConnect)
 	return s
 }
 
-// serverVerifier picks how a handshake is authenticated. Per-Data-Plane tokens win when configured,
-// because they are the only form that tells the server which Data Plane connected.
-func serverVerifier(cfg ServerConfig) Verifier {
-	if len(cfg.DataPlaneTokens) > 0 {
-		return newPerDataPlaneTokenVerifier(cfg.DataPlaneTokens)
+// serverVerifier picks how a handshake is authenticated. Issued per-Data-Plane tokens win over the
+// configured shared one, because they are the only form that tells the server which Data Plane
+// connected.
+func serverVerifier(cfg ServerConfig, tokens TokenStore) Verifier {
+	if tokens != nil {
+		return newStoredTokenVerifier(tokens)
 	}
 	return newTokenVerifier(cfg.AuthToken)
 }

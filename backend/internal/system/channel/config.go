@@ -29,13 +29,9 @@ type ServerConfig struct {
 	Path string
 	// AuthToken is a bearer token shared by every Data Plane. It authenticates the connection but
 	// proves no identity, so the server takes the id each Data Plane claims for itself and any holder
-	// of the token can claim any id. Prefer DataPlaneTokens.
+	// of the token can claim any id. It is the fallback for a deployment that issues no per-Data-Plane
+	// tokens; when a TokenStore is supplied, that is used instead.
 	AuthToken string
-	// DataPlaneTokens maps a Data Plane id to the token issued to that one deployment. When set it
-	// replaces AuthToken, and the handshake then knows which Data Plane connected rather than
-	// believing the header: a claim is accepted only with that Data Plane's own token, so a
-	// compromised deployment can impersonate nothing but itself.
-	DataPlaneTokens map[string]string
 	// ReadLimit is the max single-message size in bytes. Zero uses the coder/websocket default of
 	// 32 KiB (32768 bytes); raise it for deployments that exchange larger JSON-RPC payloads.
 	ReadLimit int64
@@ -54,6 +50,11 @@ type ClientConfig struct {
 	ControlPlaneURL string
 	// AuthToken is the shared bearer token presented during the handshake.
 	AuthToken string
+	// CAFile is a PEM certificate to trust in addition to the system roots when dialing the Control
+	// Plane. It is for a Control Plane serving a certificate no public authority signed, which every
+	// local deployment does. Naming the one certificate keeps verification on, rather than turning it
+	// off for everything the client talks to.
+	CAFile string
 	// ReadLimit is the max single-message size in bytes. Zero uses the coder/websocket default of
 	// 32 KiB (32768 bytes); raise it for deployments that exchange larger JSON-RPC payloads.
 	ReadLimit int64

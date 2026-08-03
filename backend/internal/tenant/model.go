@@ -102,6 +102,9 @@ type EnvironmentSummary struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	Rank int    `json:"rank"`
+	// DataPlaneToken is the credential this environment's Data Plane connects with, returned here and
+	// nowhere else. Mount it on that deployment; it cannot be read back afterwards, only reissued.
+	DataPlaneToken string `json:"dataPlaneToken,omitempty"`
 }
 
 // SeedSummary reports the copy that gave a new environment its configuration. A partial failure is
