@@ -1804,3 +1804,32 @@ func (suite *ConfigTestSuite) TestNotificationConfig_Validate_DelegatesToOTP() {
 	assert.Error(suite.T(), err)
 	assert.Contains(suite.T(), err.Error(), "notification.otp.length")
 }
+
+// A channel server is usable with either form of token, and per-Data-Plane tokens are enough on
+// their own: requiring the shared one alongside them would keep the credential they exist to replace.
+func TestChannelServerAcceptsPerDataPlaneTokensWithoutASharedToken(t *testing.T) {
+	cfg := ChannelServerConfig{
+		Enabled:         true,
+		DataPlaneTokens: map[string]string{"org1:dev": "dev-token"},
+	}
+
+	assert.NoError(t, cfg.Validate())
+}
+
+func TestChannelServerRejectsAnEmptyPerDataPlaneToken(t *testing.T) {
+	cfg := ChannelServerConfig{
+		Enabled:         true,
+		DataPlaneTokens: map[string]string{"org1:dev": ""},
+	}
+
+	err := cfg.Validate()
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "org1:dev")
+}
+
+func TestChannelServerRejectsNoTokenAtAll(t *testing.T) {
+	cfg := ChannelServerConfig{Enabled: true}
+
+	assert.Error(t, cfg.Validate())
+}
