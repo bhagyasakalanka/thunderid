@@ -28,6 +28,15 @@ import (
 // HeaderDataPlaneID is the request header the Data Plane sends its id in during the handshake.
 const HeaderDataPlaneID = "X-Data-Plane-ID"
 
+// HeaderDataPlaneInstance is the request header naming which replica of that Data Plane is
+// connecting. It is carried separately from the id rather than encoded into it, so the id stays what
+// the environment records and what the token is issued against.
+const HeaderDataPlaneInstance = "X-Data-Plane-Instance"
+
+// defaultInstance stands in when a Data Plane names no replica, which is a deployment running a
+// single one.
+const defaultInstance = "default"
+
 // Verifier authenticates an inbound Data Plane handshake request. Implementations must not mutate r.
 // Token implementations are provided; an mTLS implementation can be added later without changing the
 // channel server.
