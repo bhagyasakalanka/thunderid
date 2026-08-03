@@ -57,6 +57,19 @@ const (
 	healthyConnectionThreshold = 30 * time.Second
 )
 
+// instance names this replica. The host name is the pod name under Kubernetes, which is stable across
+// this process's lifetime and distinct per replica, so a reconnect replaces this pod's own socket
+// rather than a sibling's.
+func (c *Client) instance() string {
+	if configured := strings.TrimSpace(c.cfg.Instance); configured != "" {
+		return configured
+	}
+	if host, err := os.Hostname(); err == nil && host != "" {
+		return host
+	}
+	return defaultInstance
+}
+
 // dialClient builds the HTTP client the handshake is made with. With no CA file configured it is
 // nil, which leaves coder/websocket to use its default and the system roots.
 //
@@ -184,6 +197,7 @@ func (c *Client) connectAndServe(ctx context.Context) (bool, time.Duration, erro
 	header := http.Header{}
 	header.Set("Authorization", "Bearer "+c.cfg.AuthToken)
 	header.Set(HeaderDataPlaneID, c.cfg.ID)
+	header.Set(HeaderDataPlaneInstance, c.instance())
 
 	httpClient, err := c.dialClient()
 	if err != nil {

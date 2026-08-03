@@ -46,6 +46,10 @@ type ClientConfig struct {
 	Enabled bool
 	// ID is this Data Plane's identifier, sent in the handshake and used as the CP registry key.
 	ID string
+	// Instance names which replica of that Data Plane this process is. Every replica dials, so without
+	// it they would present one identity and each new connection would evict the last. Empty defaults
+	// to the host name, which is the pod name under Kubernetes.
+	Instance string
 	// ControlPlaneURL is the wss:// (or ws://) endpoint of the Control Plane channel server.
 	ControlPlaneURL string
 	// AuthToken is the shared bearer token presented during the handshake.

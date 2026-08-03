@@ -39,18 +39,22 @@ const serverLoggerComponent = "ChannelServer"
 type serverConn struct {
 	*wsConn
 	dpID         string
+	instance     string
 	lastSeenNano atomic.Int64
 	pendingMu    sync.Mutex
 	pending      map[string]chan *Response
 }
 
-func newServerConn(wc *wsConn, dpID string) *serverConn {
-	sc := &serverConn{wsConn: wc, dpID: dpID, pending: make(map[string]chan *Response)}
+func newServerConn(wc *wsConn, dpID, instance string) *serverConn {
+	sc := &serverConn{
+		wsConn: wc, dpID: dpID, instance: instance, pending: make(map[string]chan *Response),
+	}
 	sc.touch()
 	return sc
 }
 
 func (sc *serverConn) ID() string          { return sc.dpID }
+func (sc *serverConn) Instance() string    { return sc.instance }
 func (sc *serverConn) LastSeen() time.Time { return time.Unix(0, sc.lastSeenNano.Load()) }
 func (sc *serverConn) Close(reason string) {
 	_ = sc.wsConn.close(websocket.StatusNormalClosure, reason)
@@ -142,6 +146,14 @@ func (s *Server) HandleConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Which replica of that Data Plane this connection belongs to. A Data Plane runs as several pods
+	// and every one of them dials, so without this they would be one identity and each new connection
+	// would evict the last. An older Data Plane that sends none is treated as a single replica.
+	instance := r.Header.Get(HeaderDataPlaneInstance)
+	if instance == "" {
+		instance = defaultInstance
+	}
+
 	// sc is assigned only after Accept returns, but OnPingReceived can fire as soon as the
 	// connection is accepted, so it must tolerate a nil sc.
 	var sc *serverConn
@@ -158,15 +170,17 @@ func (s *Server) HandleConnect(w http.ResponseWriter, r *http.Request) {
 	if acceptErr != nil {
 		return // Accept has already written the error response.
 	}
-	sc = newServerConn(newWSConn(ws, s.cfg.ReadLimit), dpID)
+	sc = newServerConn(newWSConn(ws, s.cfg.ReadLimit), dpID, instance)
 	s.registry.Register(sc)
-	s.logger.Info(s.ctx, "Data plane connected", log.String("dpID", dpID))
+	s.logger.Info(s.ctx, "Data plane connected",
+		log.String("dpID", dpID), log.String("instance", instance))
 
 	defer func() {
 		s.registry.Unregister(dpID, sc)
 		sc.failAllPending()
 		_ = sc.closeNow()
-		s.logger.Info(s.ctx, "Data plane disconnected", log.String("dpID", dpID))
+		s.logger.Info(s.ctx, "Data plane disconnected",
+			log.String("dpID", dpID), log.String("instance", instance))
 	}()
 
 	for {
