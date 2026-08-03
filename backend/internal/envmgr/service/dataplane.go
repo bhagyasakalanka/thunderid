@@ -83,3 +83,17 @@ func (s *Service) DataPlaneStatus(env model.Environment) model.DataPlaneStatus {
 	}
 	return s.dataPlanes.Status(id)
 }
+
+// DataPlaneTokenIssuer mints the credential a data plane presents when it connects to this control
+// plane. It is supplied by the server, which owns where those are kept.
+type DataPlaneTokenIssuer interface {
+	// Issue returns a new token for the data plane, replacing any previous one. It is readable only
+	// here: what is kept is encrypted, and nothing hands it back afterwards.
+	Issue(ctx context.Context, dataPlaneID, deploymentID string) (string, error)
+}
+
+// SetDataPlaneTokenIssuer installs what mints data plane tokens. Without one, an environment is
+// registered with no token, which is how a deployment using a single shared token behaves.
+func (s *Service) SetDataPlaneTokenIssuer(issuer DataPlaneTokenIssuer) {
+	s.tokens = issuer
+}

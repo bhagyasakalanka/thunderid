@@ -20,8 +20,13 @@ package channel
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"fmt"
 	"math/rand/v2"
 	"net/http"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -51,6 +56,33 @@ const (
 	// client at the fastest retry.
 	healthyConnectionThreshold = 30 * time.Second
 )
+
+// dialClient builds the HTTP client the handshake is made with. With no CA file configured it is
+// nil, which leaves coder/websocket to use its default and the system roots.
+//
+// The certificate is read on each dial rather than cached, so replacing a rotated one takes effect on
+// the next reconnect instead of needing a restart.
+func (c *Client) dialClient() (*http.Client, error) {
+	if strings.TrimSpace(c.cfg.CAFile) == "" {
+		return nil, nil
+	}
+	pem, err := os.ReadFile(c.cfg.CAFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read the control plane certificate %s: %w", c.cfg.CAFile, err)
+	}
+	// Starting from the system roots rather than an empty pool, so naming one certificate adds to
+	// what is trusted instead of replacing it.
+	roots, err := x509.SystemCertPool()
+	if err != nil || roots == nil {
+		roots = x509.NewCertPool()
+	}
+	if !roots.AppendCertsFromPEM(pem) {
+		return nil, fmt.Errorf("%s holds no certificate", c.cfg.CAFile)
+	}
+	return &http.Client{
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}},
+	}, nil
+}
 
 // Client is the Data Plane end of the channel: it dials the Control Plane, keeps the connection
 // alive with a heartbeat, reconnects with backoff, and serves inbound JSON-RPC requests.
@@ -153,7 +185,14 @@ func (c *Client) connectAndServe(ctx context.Context) (bool, time.Duration, erro
 	header.Set("Authorization", "Bearer "+c.cfg.AuthToken)
 	header.Set(HeaderDataPlaneID, c.cfg.ID)
 
-	ws, _, err := websocket.Dial(ctx, c.cfg.ControlPlaneURL, &websocket.DialOptions{HTTPHeader: header})
+	httpClient, err := c.dialClient()
+	if err != nil {
+		return false, 0, err
+	}
+	ws, _, err := websocket.Dial(ctx, c.cfg.ControlPlaneURL, &websocket.DialOptions{
+		HTTPHeader: header,
+		HTTPClient: httpClient,
+	})
 	if err != nil {
 		return false, 0, err
 	}

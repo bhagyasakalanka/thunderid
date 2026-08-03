@@ -67,7 +67,7 @@ func TestImportClientPropagatesServiceError(t *testing.T) {
 }
 
 func TestImportClientFailsFastWhenDataPlaneOffline(t *testing.T) {
-	s := InitializeServer(http.NewServeMux(), ServerConfig{Enabled: true, Path: "/cp/connect", AuthToken: "tok"})
+	s := InitializeServer(http.NewServeMux(), ServerConfig{Enabled: true, Path: "/cp/connect", AuthToken: "tok"}, nil)
 	defer s.Close()
 
 	_, err := NewImportClient(s, "dp-absent").Import(context.Background(), &importer.ImportRequest{Content: "x"})
