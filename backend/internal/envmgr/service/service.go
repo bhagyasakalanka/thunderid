@@ -52,26 +52,14 @@ type ThunderClient interface {
 // ClientFactory builds a ThunderClient for a base URL.
 type ClientFactory func(baseURL string, creds thunder.Credentials, insecure bool) ThunderClient
 
-// toCredentials maps the stored credentials onto the client's.
+// callerCredentials presents the token of whoever is driving this request.
 //
-// When an endpoint has no credentials of its own, the caller's own bearer token is forwarded. That
-// covers the common case of a control plane that trusts the same issuer as this service: the console
-// user's token already grants exactly the access they have, so nothing extra has to be stored. It
-// only works while a request is in flight, so an endpoint that must be reachable without a caller
-// (a data plane being applied to, say) still needs its own client credentials.
-func toCredentials(ctx context.Context, c model.Credentials) thunder.Credentials {
-	creds := thunder.Credentials{
-		Token:        c.Token,
-		ClientID:     c.ClientID,
-		ClientSecret: c.ClientSecret,
-		TokenURL:     c.TokenURL,
-		Scope:        c.Scope,
-		Resource:     c.Resource,
-	}
-	if creds.Token == "" && creds.ClientID == "" {
-		creds.Token = auth.CallerTokenFromContext(ctx)
-	}
-	return creds
+// The only server this service calls over HTTP is the control plane it runs inside, and always while
+// serving a request, so forwarding the caller's own token is both sufficient and correct: the capture
+// reads exactly what that caller is allowed to read. Data planes are reached over the channel they
+// dial out on, and need no credential at all.
+func callerCredentials(ctx context.Context) thunder.Credentials {
+	return thunder.Credentials{Token: auth.CallerTokenFromContext(ctx)}
 }
 
 // Service is the environment-management application service.
@@ -83,6 +71,8 @@ type Service struct {
 	hasher SecretHasher
 	// dataPlanes reaches the data planes connected to this control plane.
 	dataPlanes DataPlanes
+	// tokens issues the credential a data plane connects with.
+	tokens DataPlaneTokenIssuer
 	// localCP is the control plane hosting this service, when it hosts one. It is how a promote reaches
 	// a tenant other than the caller's own.
 	localCP LocalControlPlane
@@ -139,12 +129,13 @@ type CreateEnvironmentInput struct {
 }
 
 // CreateEnvironment registers a new environment.
-func (s *Service) CreateEnvironment(in CreateEnvironmentInput) (model.Environment, error) {
+func (s *Service) CreateEnvironment(ctx context.Context,
+	in CreateEnvironmentInput) (CreateEnvironmentResult, error) {
 	if strings.TrimSpace(in.Name) == "" {
-		return model.Environment{}, fmt.Errorf("%w: name is required", ErrValidation)
+		return CreateEnvironmentResult{}, fmt.Errorf("%w: name is required", ErrValidation)
 	}
 	if strings.TrimSpace(in.Target.DataPlaneID) == "" {
-		return model.Environment{}, fmt.Errorf("%w: target.dataPlaneId is required", ErrValidation)
+		return CreateEnvironmentResult{}, fmt.Errorf("%w: target.dataPlaneId is required", ErrValidation)
 	}
 	rank := s.store.NextRank()
 	if in.Rank != nil {
@@ -162,12 +153,61 @@ func (s *Service) CreateEnvironment(in CreateEnvironmentInput) (model.Environmen
 		UpdatedAt:  now,
 	}
 	if err := validateGraph(append(s.store.ListEnvironments(), env)); err != nil {
-		return model.Environment{}, err
+		return CreateEnvironmentResult{}, err
 	}
 	if err := s.store.SaveEnvironment(env); err != nil {
-		return model.Environment{}, err
+		return CreateEnvironmentResult{}, err
 	}
-	return env, nil
+
+	// The data plane needs a credential to connect with, and this is the only moment it is readable.
+	// Issuing it here rather than asking for one means there is nothing for an operator to invent, and
+	// nothing to configure on this side at all.
+	token, err := s.issueDataPlaneToken(ctx, env)
+	if err != nil {
+		return CreateEnvironmentResult{}, err
+	}
+	return CreateEnvironmentResult{Environment: env, DataPlaneToken: token}, nil
+}
+
+// CreateEnvironmentResult is a registered environment and, once, the token its data plane connects
+// with. The token is not stored in readable form and is never returned again.
+type CreateEnvironmentResult struct {
+	model.Environment
+	// DataPlaneToken is empty when this control plane issues no tokens, which is the case for a
+	// deployment using a single shared one configured on both sides.
+	DataPlaneToken string `json:"dataPlaneToken,omitempty"`
+}
+
+// issueDataPlaneToken mints the credential the environment's data plane presents when it connects.
+func (s *Service) issueDataPlaneToken(ctx context.Context, env model.Environment) (string, error) {
+	if s.tokens == nil {
+		return "", nil
+	}
+	deploymentID := ""
+	if env.Source != nil {
+		deploymentID = env.Source.DeploymentID
+	}
+	token, err := s.tokens.Issue(ctx, env.Target.DataPlaneID, deploymentID)
+	if err != nil {
+		return "", fmt.Errorf("failed to issue a token for %s: %w", env.Target.DataPlaneID, err)
+	}
+	return token, nil
+}
+
+// RegenerateDataPlaneToken issues a new token for an environment's data plane and returns it once.
+//
+// The previous token stops working immediately, so that data plane drops until the new one is in
+// place. That is the honest behaviour for a rotation: a credential that still worked afterwards would
+// not have been rotated.
+func (s *Service) RegenerateDataPlaneToken(ctx context.Context, envID string) (string, error) {
+	env, err := s.store.GetEnvironment(envID)
+	if err != nil {
+		return "", err
+	}
+	if s.tokens == nil {
+		return "", fmt.Errorf("this server issues no data plane tokens")
+	}
+	return s.issueDataPlaneToken(ctx, env)
 }
 
 // UpdateEnvironmentEdges replaces an environment's outgoing promotion edges. Edges are set after the
@@ -287,7 +327,7 @@ func (s *Service) CaptureVersion(ctx context.Context, envID, note string) (model
 	if isPromotionFed(s.store.ListEnvironments(), envID) {
 		return model.Version{}, ErrPromotionFed
 	}
-	client := s.newClient(env.Source.BaseURL, toCredentials(ctx, env.Source.Credentials), env.Source.InsecureSkipVerify)
+	client := s.newClient(env.Source.BaseURL, callerCredentials(ctx), env.Source.InsecureSkipVerify)
 	exported, err := client.Export(ctx)
 	if err != nil {
 		return model.Version{}, fmt.Errorf("export failed: %w", err)
@@ -410,7 +450,7 @@ func (s *Service) resolveVariables(ctx context.Context, env model.Environment,
 		return values
 	}
 
-	client := s.newClient(env.Source.BaseURL, toCredentials(ctx, env.Source.Credentials),
+	client := s.newClient(env.Source.BaseURL, callerCredentials(ctx),
 		env.Source.InsecureSkipVerify)
 	live, err := client.EnvironmentVariables(ctx)
 	if err != nil {
@@ -715,9 +755,13 @@ func (s *Service) Promote(ctx context.Context, in PromoteInput) (PromoteResult, 
 	// that tenant shows the promoted state. Redirect URLs are deliberately not required here: they are
 	// asked for when that tenant is applied to its data plane.
 	controlPlane, err := s.importIntoTargetControlPlane(ctx, targetEnv, promotedRes, vars,
-		secretKeysOf(source))
+		secretKeysOf(source), deletionsFromDiff(diff.Compute(targetRes, promotedRes)))
 	if err != nil {
 		return PromoteResult{}, err
+	}
+
+	if controlPlane != nil {
+		s.recordControlPlaneSeq(targetEnv, newVersion.Seq)
 	}
 
 	result := PromoteResult{
@@ -760,8 +804,77 @@ func (s *Service) ApplyToControlPlane(ctx context.Context, envID,
 
 	// Credentials are left as the tenant holds them, for the same reason a revert does: they are hashes
 	// this service cannot reproduce, and rewriting them would lock out every client that has one.
-	return s.importIntoTargetControlPlane(ctx, env, bundle.Parse(version.Resources),
-		version.Variables, secretKeysOf(version))
+	resp, err := s.importIntoTargetControlPlane(ctx, env, bundle.Parse(version.Resources),
+		version.Variables, secretKeysOf(version), s.controlPlaneDeletions(env, version))
+	if err != nil {
+		return nil, err
+	}
+	if resp != nil {
+		s.recordControlPlaneSeq(env, seq)
+	}
+	return resp, nil
+}
+
+// controlPlaneDeletions lists what the tenant holds that a version does not describe.
+//
+// The baseline is what was last written to that tenant, not the newest version. Those are the same
+// until a version is written to the control plane on its own, and then they are not: the tenant holds
+// what was written, while the newest version is whatever was captured before that. Comparing against
+// the newest one would compute removals for resources the tenant no longer has and miss the ones it
+// does.
+//
+// With nothing written by this service yet, the newest version stands in: a capture is a reading of
+// the tenant, so it is the best available account of what is there.
+func (s *Service) controlPlaneDeletions(env model.Environment,
+	version model.Version) []thunder.ResourceDeletion {
+	baseSeq, err := s.controlPlaneBaseline(env)
+	if err != nil || baseSeq == 0 || baseSeq == version.Seq {
+		return nil
+	}
+	base, err := s.store.GetVersion(env.ID, baseSeq)
+	if err != nil {
+		return nil
+	}
+	return deletionsFromDiff(diff.Compute(bundle.Parse(base.Resources), bundle.Parse(version.Resources)))
+}
+
+// controlPlaneBaseline is the version the control plane tenant currently reflects. It is what a write
+// into that tenant compares against, so the removals it computes match what is actually there.
+func (s *Service) controlPlaneBaseline(env model.Environment) (int, error) {
+	if env.ControlPlaneSeq > 0 {
+		return env.ControlPlaneSeq, nil
+	}
+	return s.store.LatestSeq(env.ID)
+}
+
+// promotionBaseline is the version an environment is taken to be at when promoting.
+//
+// It is what has been applied to its data plane, not what has been captured. A capture is a draft: it
+// records the control plane as it stands, but nothing is committed to until it is applied, and
+// several captures can pile up without the environment moving. Promoting the newest capture would
+// push work that was never adopted, and comparing against it would describe a destination state that
+// nothing is running.
+//
+// An environment with nothing applied yet falls back to its newest version, so a freshly registered
+// one can still promote.
+func (s *Service) promotionBaseline(env model.Environment) (int, error) {
+	if env.AppliedSeq > 0 {
+		return env.AppliedSeq, nil
+	}
+	return s.store.LatestSeq(env.ID)
+}
+
+// recordControlPlaneSeq remembers which version a tenant was last written with, so the next write
+// compares against what is actually there.
+func (s *Service) recordControlPlaneSeq(env model.Environment, seq int) {
+	if seq <= 0 || env.ControlPlaneSeq == seq {
+		return
+	}
+	env.ControlPlaneSeq = seq
+	env.UpdatedAt = s.now().UTC()
+	// A failure here costs accuracy on the next comparison, not this write, so it is not worth
+	// failing the operation that just succeeded.
+	_ = s.store.SaveEnvironment(env)
 }
 
 // ---- revert ----
@@ -836,11 +949,14 @@ func (s *Service) Revert(ctx context.Context, in RevertInput) (RevertResult, err
 	// on the newer configuration would show a state that neither the operator asked for nor the data
 	// plane is running.
 	controlPlane, err := s.importIntoTargetControlPlane(ctx, env, bundle.Parse(target.Resources),
-		target.Variables, secretKeysOf(target))
+		target.Variables, secretKeysOf(target), deletionsFromDiff(preview))
 	if err != nil {
 		return result, err
 	}
 	result.ControlPlane = controlPlane
+	if controlPlane != nil {
+		s.recordControlPlaneSeq(env, newVersion.Seq)
+	}
 
 	if in.Apply {
 		applied, err := s.Apply(ctx, in.EnvID, strconv.Itoa(newVersion.Seq), in.DryRun)
@@ -867,7 +983,8 @@ func (s *Service) promoteInputs(fromEnvID, toEnvID, versionRef string) (
 	if err != nil {
 		return model.Version{}, promoteContext{}, nil, nil, err
 	}
-	if _, err := s.store.GetEnvironment(toEnvID); err != nil {
+	toEnv, err := s.store.GetEnvironment(toEnvID)
+	if err != nil {
 		return model.Version{}, promoteContext{}, nil, nil, err
 	}
 	// Movement must follow an edge of the promotion graph. The reverse direction is allowed too, which
@@ -877,7 +994,9 @@ func (s *Service) promoteInputs(fromEnvID, toEnvID, versionRef string) (
 		return model.Version{}, promoteContext{}, nil, nil, ErrNoPromotionPath
 	}
 
-	sourceSeq, err := s.resolveSeq(fromEnv, defaultRef(versionRef, "latest"))
+	// A promotion moves what the source is running, not what has been captured from it. A caller naming
+	// a version explicitly still gets that one.
+	sourceSeq, err := s.resolveSeq(fromEnv, defaultRef(versionRef, "promotable"))
 	if err != nil {
 		return model.Version{}, promoteContext{}, nil, nil, err
 	}
@@ -889,9 +1008,11 @@ func (s *Service) promoteInputs(fromEnvID, toEnvID, versionRef string) (
 		return model.Version{}, promoteContext{}, nil, nil, err
 	}
 
+	// The destination is likewise taken to be at what it is running, so the comparison is between two
+	// states that exist rather than between two drafts.
 	tctx := promoteContext{currentVariables: map[string]string{}}
 	var targetRes []bundle.Resource
-	if targetSeq, err := s.store.LatestSeq(toEnvID); err == nil && targetSeq > 0 {
+	if targetSeq, err := s.promotionBaseline(toEnv); err == nil && targetSeq > 0 {
 		if targetVersion, err := s.store.GetVersion(toEnvID, targetSeq); err == nil {
 			tctx.currentSeq = targetSeq
 			tctx.currentVariables = targetVersion.Variables
@@ -935,6 +1056,10 @@ func (s *Service) resolveSeq(env model.Environment, ref string) (int, error) {
 		return versions[1].Seq, nil
 	case "applied":
 		return env.AppliedSeq, nil
+	case "control-plane":
+		return s.controlPlaneBaseline(env)
+	case "promotable":
+		return s.promotionBaseline(env)
 	default:
 		seq, err := strconv.Atoi(ref)
 		if err != nil || seq <= 0 {

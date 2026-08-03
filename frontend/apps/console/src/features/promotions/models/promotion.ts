@@ -29,6 +29,11 @@ export interface Environment {
   rank: number;
   appliedSeq: number;
   /**
+   * The version this environment's Control Plane tenant was last written with. Tracked apart from
+   * appliedSeq because writing one plane leaves the other alone.
+   */
+  controlPlaneSeq: number;
+  /**
    * Resource keys a user chose not to promote into this environment. The choice is remembered, so a
    * later promotion holds them back by default until they are deliberately selected again.
    */

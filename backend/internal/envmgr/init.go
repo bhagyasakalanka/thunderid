@@ -72,6 +72,9 @@ func registerRoutes(mux *http.ServeMux, reg *registry) {
 		"GET /environments/{id}/variables":      func(s *Server) http.HandlerFunc { return s.checkVariables },
 		"POST /environments/{id}/apply":         func(s *Server) http.HandlerFunc { return s.apply },
 		"GET /environments/{id}/secrets":        func(s *Server) http.HandlerFunc { return s.listSecrets },
+		"POST /environments/{id}/data-plane-token": func(s *Server) http.HandlerFunc {
+			return s.regenerateDataPlaneToken
+		},
 		"PUT /environments/{id}/secrets/{name}": func(s *Server) http.HandlerFunc { return s.setSecret },
 		"POST /environments/{id}/secrets/{name}/regenerate": func(s *Server) http.HandlerFunc {
 			return s.regenerateSecret

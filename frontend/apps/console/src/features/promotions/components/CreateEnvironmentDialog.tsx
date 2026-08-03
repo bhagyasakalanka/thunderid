@@ -19,6 +19,7 @@
 import {zodResolver} from '@hookform/resolvers/zod';
 import {useConfig} from '@thunderid/contexts';
 import {
+  Alert,
   Button,
   Dialog,
   DialogActions,
@@ -31,11 +32,12 @@ import {
   TextField,
   Typography,
 } from '@wso2/oxygen-ui';
-import {type JSX} from 'react';
+import {useState, type JSX} from 'react';
 import {Controller, useForm} from 'react-hook-form';
 import {useTranslation} from 'react-i18next';
 import {z} from 'zod';
 import useCreateEnvironment from '../api/useCreateEnvironment';
+import type {Environment} from '../models/promotion';
 
 const formSchema = z.object({
   name: z.string().trim().min(1),
@@ -78,7 +80,12 @@ export default function CreateEnvironmentDialog({open, onClose}: {open: boolean;
     },
   });
 
+  // The token is readable exactly once, when the environment is registered. Closing the dialog before
+  // it is copied means reissuing, so it is shown in place of the form rather than in a toast.
+  const [issuedToken, setIssuedToken] = useState<string | undefined>(undefined);
+
   const handleClose = (): void => {
+    setIssuedToken(undefined);
     reset();
     onClose();
   };
@@ -102,9 +109,47 @@ export default function CreateEnvironmentDialog({open, onClose}: {open: boolean;
           insecureSkipVerify: true,
         },
       },
-      {onSuccess: handleClose},
+      {
+        onSuccess: (created: Environment & {dataPlaneToken?: string}) => {
+          if (created.dataPlaneToken) {
+            setIssuedToken(created.dataPlaneToken);
+            return;
+          }
+          handleClose();
+        },
+      },
     );
   };
+
+  if (issuedToken) {
+    return (
+      <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
+        <DialogTitle>{t('promotions:environment.tokenTitle', 'Data Plane token')}</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{pt: 1}}>
+            <Alert severity="warning">
+              {t(
+                'promotions:environment.tokenOnce',
+                'Copy this now. It is shown once and cannot be read again, only reissued.',
+              )}
+            </Alert>
+            <Typography variant="body2" color="text.secondary">
+              {t(
+                'promotions:environment.tokenHelp',
+                'Mount it on that deployment and point channel.client.auth_token at it. The Data Plane presents it when it connects.',
+              )}
+            </Typography>
+            <TextField value={issuedToken} slotProps={{input: {readOnly: true}}} fullWidth multiline />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button variant="contained" onClick={handleClose}>
+            {t('common:actions.done', 'Done')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>

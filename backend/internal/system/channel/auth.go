@@ -19,6 +19,7 @@
 package channel
 
 import (
+	"context"
 	"crypto/subtle"
 	"net/http"
 	"strings"
@@ -70,42 +71,48 @@ func (v *tokenVerifier) Verify(r *http.Request) (string, error) {
 	return "", nil
 }
 
-// perDataPlaneTokenVerifier checks a token issued to one named Data Plane.
+// TokenStore holds the token issued to each Data Plane. It is an interface so the channel does not
+// depend on how or where tokens are kept.
+type TokenStore interface {
+	// TokenFor returns the token issued to a Data Plane. The boolean reports whether one exists.
+	TokenFor(ctx context.Context, dataPlaneID string) (string, bool, error)
+}
+
+// storedTokenVerifier checks the token issued to the Data Plane that claims to be connecting.
 //
 // This is what makes the handshake say who connected rather than take the client's word for it. With
 // one token shared by every Data Plane, any holder can claim another's id, evict its connection and
 // receive every command meant for it. Here a claim is only accepted when it comes with that Data
 // Plane's own token, so a compromised deployment can impersonate nothing but itself.
-type perDataPlaneTokenVerifier struct {
-	tokens map[string]string
+type storedTokenVerifier struct {
+	tokens TokenStore
 }
 
-// newPerDataPlaneTokenVerifier builds a Verifier over a Data-Plane-id to token mapping.
-func newPerDataPlaneTokenVerifier(tokens map[string]string) *perDataPlaneTokenVerifier {
-	copied := make(map[string]string, len(tokens))
-	for id, token := range tokens {
-		copied[id] = token
-	}
-	return &perDataPlaneTokenVerifier{tokens: copied}
+// newStoredTokenVerifier builds a Verifier over the issued tokens.
+func newStoredTokenVerifier(tokens TokenStore) *storedTokenVerifier {
+	return &storedTokenVerifier{tokens: tokens}
 }
 
 // Verify returns the id the request authenticated as. The claimed id selects which token must be
-// presented, and proving it is what authenticates the claim, so an id with no token configured is
+// presented, and presenting it is what authenticates the claim, so an id with no token issued is
 // refused rather than falling back to any other.
-func (v *perDataPlaneTokenVerifier) Verify(r *http.Request) (string, error) {
-	if len(v.tokens) == 0 {
+func (v *storedTokenVerifier) Verify(r *http.Request) (string, error) {
+	if v.tokens == nil {
 		return "", errAuthNotConfigured
 	}
 	claimed := r.Header.Get(HeaderDataPlaneID)
 	if claimed == "" {
 		return "", errMissingDataPlaneID
 	}
-	want, ok := v.tokens[claimed]
+	want, found, err := v.tokens.TokenFor(r.Context(), claimed)
+	if err != nil {
+		return "", err
+	}
 	got := bearerToken(r)
-	// The comparison runs whether or not the id is known, so a wrong id and a wrong token fail the
-	// same way rather than the first being distinguishable by how quickly it is rejected.
+	// The comparison runs whether or not a token was found, so an unknown Data Plane and a wrong
+	// token fail the same way rather than the first being distinguishable by how quickly it fails.
 	matched := subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
-	if !ok || want == "" || got == "" || !matched {
+	if !found || want == "" || got == "" || !matched {
 		return "", errUnauthorized
 	}
 	return claimed, nil

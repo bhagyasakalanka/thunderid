@@ -420,3 +420,21 @@ CREATE TABLE "TENANT" (
     CONSTRAINT unique_tenant_id UNIQUE (DEPLOYMENT_ID, TENANT_ID)
 );
 CREATE INDEX idx_tenant_deployment ON "TENANT" (DEPLOYMENT_ID);
+
+-- The credential a data plane presents when it dials this control plane's channel.
+--
+-- Keyed by DATA_PLANE_ID alone, not by (DEPLOYMENT_ID, DATA_PLANE_ID) like the tenant-scoped tables:
+-- the handshake is authenticated before any tenant context exists, so the lookup cannot be scoped by
+-- one. A data plane id is already unique across a control plane, because the connection registry
+-- keys by it. DEPLOYMENT_ID records which tenant the environment belongs to.
+--
+-- TOKEN holds the ciphertext. It is encrypted with the configuration crypto service, the same one
+-- that protects connection secrets, so it is unreadable from a database dump alone.
+CREATE TABLE "DATA_PLANE_TOKEN" (
+    DATA_PLANE_ID VARCHAR(255) PRIMARY KEY,
+    DEPLOYMENT_ID VARCHAR(255) NOT NULL,
+    TOKEN         TEXT         NOT NULL,
+    CREATED_AT    TEXT         DEFAULT (datetime('now')),
+    UPDATED_AT    TEXT         DEFAULT (datetime('now'))
+);
+CREATE INDEX idx_data_plane_token_deployment ON "DATA_PLANE_TOKEN" (DEPLOYMENT_ID);

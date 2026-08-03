@@ -66,7 +66,8 @@ func credentialsByKind(resources []bundle.Resource, secretKeys []string) (omitte
 	return omitted, referenced
 }
 
-// ControlPlaneRequest builds the import a control plane is written with, from a raw bundle.
+// ControlPlaneRequest builds the import a control plane is written with, from a raw bundle. It
+// carries no deletions: the caller that seeds a brand new tenant has nothing there to remove.
 //
 // It is exported for the one caller that has a bundle without an environment behind it: seeding a
 // brand new tenant from a live export of the one it is copied from, when that source has no captured
@@ -159,14 +160,18 @@ type targetSecretOutcome struct {
 // secret service is where they live, and it is where an operator sets them. Writing one here would also
 // propagate it to that data plane through capture, replacing a working credential with one this service
 // invented.
+// The deletions are what the tenant holds that this configuration no longer describes. Without them
+// a write is upsert-only, so restoring an earlier version would add and update but leave everything
+// created since in place, and the tenant would match neither version.
 func (s *Service) importIntoTargetControlPlane(ctx context.Context, env model.Environment,
-	resources []bundle.Resource, values map[string]string,
-	secretKeys []string) (*thunder.ImportResponse, error) {
+	resources []bundle.Resource, values map[string]string, secretKeys []string,
+	deletions []thunder.ResourceDeletion) (*thunder.ImportResponse, error) {
 	if env.Source == nil || strings.TrimSpace(env.Source.BaseURL) == "" {
 		return nil, nil
 	}
 
 	req := controlPlaneRequest(resources, values, secretKeys)
+	req.Deletions = deletions
 
 	// The tenant is the one recorded on the environment when it was registered, read from the store
 	// rather than from anything the caller supplied, and it is the only tenant this write may reach.
@@ -187,8 +192,7 @@ func (s *Service) importIntoTargetControlPlane(ctx context.Context, env model.En
 		return resp, nil
 	}
 
-	client := s.newClient(env.Source.BaseURL, toCredentials(ctx, env.Source.Credentials),
-		env.Source.InsecureSkipVerify)
+	client := s.newClient(env.Source.BaseURL, callerCredentials(ctx), env.Source.InsecureSkipVerify)
 	resp, err := client.Import(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("import into the target control plane failed: %w", err)

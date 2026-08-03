@@ -20,9 +20,17 @@ package channel
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -164,4 +172,81 @@ func TestStartCalledTwiceIsIdempotent(t *testing.T) {
 	client.Start(ctx)
 	client.Start(ctx)
 	client.Stop()
+}
+
+// A Control Plane serving a certificate no public authority signed is reached by naming that
+// certificate, which keeps verification on rather than turning it off.
+func TestDialClientTrustsTheNamedCertificate(t *testing.T) {
+	dir := t.TempDir()
+	certFile := filepath.Join(dir, "server.cert")
+	if err := os.WriteFile(certFile, selfSignedPEM(t), 0o600); err != nil {
+		t.Fatalf("write cert: %v", err)
+	}
+	c := &Client{cfg: ClientConfig{CAFile: certFile}}
+
+	httpClient, err := c.dialClient()
+
+	if err != nil {
+		t.Fatalf("dial client: %v", err)
+	}
+	if httpClient == nil {
+		t.Fatal("expected a client configured with the named certificate")
+	}
+}
+
+// With nothing named, the default client and the system roots are used.
+func TestDialClientWithoutACertificateUsesTheDefault(t *testing.T) {
+	c := &Client{cfg: ClientConfig{}}
+
+	httpClient, err := c.dialClient()
+
+	if err != nil {
+		t.Fatalf("dial client: %v", err)
+	}
+	if httpClient != nil {
+		t.Fatal("expected the library default to be left in place")
+	}
+}
+
+// A certificate that cannot be read is a misconfiguration worth failing on, not something to fall
+// back from: falling back would silently dial with verification the operator did not ask for.
+func TestDialClientFailsOnAnUnreadableCertificate(t *testing.T) {
+	c := &Client{cfg: ClientConfig{CAFile: filepath.Join(t.TempDir(), "missing.cert")}}
+
+	if _, err := c.dialClient(); err == nil {
+		t.Fatal("expected a missing certificate to fail the dial")
+	}
+}
+
+func TestDialClientFailsOnAFileHoldingNoCertificate(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "not-a-cert")
+	if err := os.WriteFile(path, []byte("nonsense"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	c := &Client{cfg: ClientConfig{CAFile: path}}
+
+	if _, err := c.dialClient(); err == nil {
+		t.Fatal("expected a file with no certificate to fail the dial")
+	}
+}
+
+// selfSignedPEM builds a throwaway certificate to stand in for a Control Plane's own.
+func selfSignedPEM(t *testing.T) []byte {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("key: %v", err)
+	}
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "localhost"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+	}
+	der, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("certificate: %v", err)
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
 }

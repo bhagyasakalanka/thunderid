@@ -53,7 +53,7 @@ func wireEndToEnd(t *testing.T, ctx context.Context, runner *fakeImportRunner) *
 	t.Helper()
 	cfg := ServerConfig{Enabled: true, Path: "/cp/connect", AuthToken: "tok"}
 	mux := http.NewServeMux()
-	s := InitializeServer(mux, cfg)
+	s := InitializeServer(mux, cfg, nil)
 	hs := httptest.NewServer(mux)
 
 	client := InitializeClient(ClientConfig{
@@ -120,7 +120,7 @@ func TestServerLastSeenAdvancesOnTransportPing(t *testing.T) {
 
 	cfg := ServerConfig{Enabled: true, Path: "/cp/connect", AuthToken: "tok"}
 	mux := http.NewServeMux()
-	s := InitializeServer(mux, cfg)
+	s := InitializeServer(mux, cfg, nil)
 	hs := httptest.NewServer(mux)
 
 	client := InitializeClient(ClientConfig{
@@ -145,7 +145,7 @@ func TestServerLastSeenAdvancesOnTransportPing(t *testing.T) {
 }
 
 func TestCallImportOfflineFailsFast(t *testing.T) {
-	s := InitializeServer(http.NewServeMux(), ServerConfig{Enabled: true, Path: "/cp/connect", AuthToken: "tok"})
+	s := InitializeServer(http.NewServeMux(), ServerConfig{Enabled: true, Path: "/cp/connect", AuthToken: "tok"}, nil)
 	defer s.Close()
 	_, err := s.CallImport(context.Background(), "dp-1", &importer.ImportRequest{Content: "x"})
 	assert.ErrorIs(t, err, ErrDataPlaneNotConnected)
@@ -153,7 +153,7 @@ func TestCallImportOfflineFailsFast(t *testing.T) {
 
 func TestInitializeServerDisabledReturnsNilAndRegistersNoRoute(t *testing.T) {
 	mux := http.NewServeMux()
-	s := InitializeServer(mux, ServerConfig{Enabled: false, Path: "/cp/connect"})
+	s := InitializeServer(mux, ServerConfig{Enabled: false, Path: "/cp/connect"}, nil)
 	assert.Nil(t, s)
 
 	req := httptest.NewRequest(http.MethodGet, "/cp/connect", nil)
@@ -172,7 +172,7 @@ func TestInitializeClientDisabledReturnsNil(t *testing.T) {
 
 func TestInitializeServerNormalizesPathMissingLeadingSlash(t *testing.T) {
 	mux := http.NewServeMux()
-	s := InitializeServer(mux, ServerConfig{Enabled: true, Path: "cp/connect", AuthToken: "tok"})
+	s := InitializeServer(mux, ServerConfig{Enabled: true, Path: "cp/connect", AuthToken: "tok"}, nil)
 	defer s.Close()
 
 	req := httptest.NewRequest(http.MethodGet, "/cp/connect", nil)

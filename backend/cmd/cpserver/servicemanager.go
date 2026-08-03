@@ -41,6 +41,7 @@ import (
 	authnOIDC "github.com/thunder-id/thunderid/internal/authn/oidc"
 	"github.com/thunder-id/thunderid/internal/cert"
 	"github.com/thunder-id/thunderid/internal/connection"
+	"github.com/thunder-id/thunderid/internal/dataplanetoken"
 	layoutmgt "github.com/thunder-id/thunderid/internal/design/layout/mgt"
 	thememgt "github.com/thunder-id/thunderid/internal/design/theme/mgt"
 	"github.com/thunder-id/thunderid/internal/entity"
@@ -48,7 +49,6 @@ import (
 	"github.com/thunder-id/thunderid/internal/entitytype"
 	"github.com/thunder-id/thunderid/internal/environmentvariable"
 	"github.com/thunder-id/thunderid/internal/envmgr"
-	"github.com/thunder-id/thunderid/internal/envmgr/model"
 	envmgrservice "github.com/thunder-id/thunderid/internal/envmgr/service"
 	"github.com/thunder-id/thunderid/internal/envmgr/thunder"
 	flowconfig "github.com/thunder-id/thunderid/internal/flow/config"
@@ -98,6 +98,9 @@ var observabilitySvc observability.ObservabilityServiceInterface
 // channelServer is the CP-DP phone-home WebSocket server. It is held here so unregisterServices can
 // close it during shutdown. Nil when the channel is disabled.
 var channelServer *channel.Server
+
+// dataPlaneTokens issues and holds the credential each data plane presents when it connects.
+var dataPlaneTokens *dataplanetoken.Service
 
 // registerServices registers the Control Plane management services with the provided HTTP
 // multiplexer. It also returns the import and export services so the bootstrap and export
@@ -382,20 +385,23 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 
 	// Initialize the CP-DP channel server (phone-home WebSocket). No-op when disabled.
 	chCfg := config.GetServerRuntime().Config.Channel.Server
+	// Tokens are issued per data plane when an environment is registered and held encrypted here, so
+	// the handshake knows which data plane connected instead of believing the id it claims.
+	dataPlaneTokens = dataplanetoken.New()
 	channelServer = channel.InitializeServer(mux, channel.ServerConfig{
-		Enabled:         chCfg.Enabled,
-		Path:            chCfg.Path,
-		AuthToken:       chCfg.AuthToken,
-		DataPlaneTokens: chCfg.DataPlaneTokens,
-		ReadLimit:       chCfg.ReadLimitBytes,
-		RPCTimeout:      time.Duration(chCfg.RPCTimeoutSeconds) * time.Second,
-	})
+		Enabled:    chCfg.Enabled,
+		Path:       chCfg.Path,
+		AuthToken:  chCfg.AuthToken,
+		ReadLimit:  chCfg.ReadLimitBytes,
+		RPCTimeout: time.Duration(chCfg.RPCTimeoutSeconds) * time.Second,
+	}, dataPlaneTokens)
 
 	// Data planes are reached over the connections they hold open to this server, so the environment
 	// manager is given those rather than a client for each one's management API. Without a channel
 	// there is no way to reach a data plane at all, and an apply says so rather than failing obscurely.
 	if envManager != nil {
 		envManager.SetDataPlanes(&channelDataPlanes{server: channelServer})
+		envManager.SetDataPlaneTokenIssuer(dataPlaneTokens)
 	}
 
 	return jwtService, runtimeCryptoSvc, importService, exportService, envManager, envVarService
@@ -520,6 +526,8 @@ type envmgrRegistry interface {
 	localCaptureRouter
 	SetLocalControlPlane(cp envmgrservice.LocalControlPlane)
 	SetDataPlanes(planes envmgrservice.DataPlanes)
+	SetDataPlaneTokenIssuer(issuer envmgrservice.DataPlaneTokenIssuer)
 	SeedTenant(ctx context.Context, sourceDeploymentID, targetDeploymentID string) (*thunder.ImportResponse, error)
-	CreateEnvironment(deploymentID string, in envmgrservice.CreateEnvironmentInput) (model.Environment, error)
+	CreateEnvironment(ctx context.Context, deploymentID string,
+		in envmgrservice.CreateEnvironmentInput) (envmgrservice.CreateEnvironmentResult, error)
 }
