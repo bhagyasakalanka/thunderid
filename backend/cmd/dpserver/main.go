@@ -190,6 +190,7 @@ func initChannelClient(importService importer.ImportServiceInterface,
 	return channel.InitializeClient(channel.ClientConfig{
 		Enabled:          c.Enabled,
 		ID:               c.ID,
+		Instance:         c.Instance,
 		ControlPlaneURL:  c.ControlPlaneURL,
 		AuthToken:        c.AuthToken,
 		CAFile:           c.CAFile,

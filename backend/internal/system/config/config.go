@@ -171,8 +171,12 @@ func (c *ChannelServerConfig) Validate() error {
 
 // ChannelClientConfig configures the Data Plane channel WebSocket client.
 type ChannelClientConfig struct {
-	Enabled         bool   `yaml:"enabled"                   json:"enabled"`
-	ID              string `yaml:"id"                        json:"id"`
+	Enabled bool   `yaml:"enabled"                   json:"enabled"`
+	ID      string `yaml:"id"                        json:"id"`
+	// Instance names which replica of this Data Plane the process is. Every replica dials the Control
+	// Plane, so without it they present one identity and each new connection evicts the last. Empty
+	// defaults to the host name, which is the pod name under Kubernetes.
+	Instance        string `yaml:"instance"                  json:"instance"`
 	ControlPlaneURL string `yaml:"control_plane_url"         json:"control_plane_url"`
 	AuthToken       string `yaml:"auth_token"                json:"auth_token"`
 	// CAFile is a PEM certificate to trust alongside the system roots when dialing the Control Plane,
