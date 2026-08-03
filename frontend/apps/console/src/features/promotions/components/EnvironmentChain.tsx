@@ -21,6 +21,7 @@ import {ArrowRight} from '@wso2/oxygen-ui-icons-react';
 import {useState, type JSX} from 'react';
 import {useTranslation} from 'react-i18next';
 import {useNavigate} from 'react-router';
+import DataPlaneStatusChip from './DataPlaneStatusChip';
 import PromoteDialog from './PromoteDialog';
 import useEnvManagerUrl from '../api/useEnvManagerUrl';
 import useGetEnvironments from '../api/useGetEnvironments';
@@ -104,6 +105,7 @@ export default function EnvironmentChain(): JSX.Element {
                     {env.hasPendingChanges && (
                       <Chip size="small" color="warning" label={t('promotions:listing.pending', 'Pending changes')} />
                     )}
+                    <DataPlaneStatusChip status={env.dataPlane} />
                   </Stack>
                   <Typography variant="caption" color="text.secondary" display="block">
                     {t('promotions:listing.versionState', 'Latest v{{latest}} · Applied v{{applied}}', {
@@ -154,6 +156,7 @@ export default function EnvironmentChain(): JSX.Element {
           fromEnvName={promotion.from.name}
           toEnvId={promotion.to.id}
           toEnvName={promotion.to.name}
+          toDataPlaneConnected={promotion.to.dataPlane?.connected ?? false}
           onClose={() => {
             setPromotion(undefined);
           }}

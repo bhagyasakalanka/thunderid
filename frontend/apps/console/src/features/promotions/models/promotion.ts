@@ -39,8 +39,20 @@ export interface Environment {
   promotesToResolved: string[];
   /** Incoming edges: the environments that can promote into this one. */
   promotedFrom: string[];
+  /**
+   * Whether this environment's Data Plane is currently connected. The Data Plane dials the Control
+   * Plane and holds that connection open, so nothing can be applied or promoted to one that is not
+   * connected.
+   */
+  dataPlane: DataPlaneStatus;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Whether an environment's Data Plane is connected, and when it was last heard from. */
+export interface DataPlaneStatus {
+  connected: boolean;
+  lastSeen?: string;
 }
 
 export interface EnvironmentListResponse {
@@ -117,6 +129,8 @@ export interface ApplyResult {
 export interface PromoteResult {
   preview: Diff;
   newVersion: Version;
+  /** The outcome of writing the configuration into the target's Control Plane tenant. */
+  controlPlane?: ImportResponse;
   applied?: ApplyResult;
 }
 

@@ -54,6 +54,8 @@ func (s *stubRegistry) CaptureSecret(context.Context, string, string,
 
 func (s *stubRegistry) SetLocalControlPlane(envmgrservice.LocalControlPlane) {}
 
+func (s *stubRegistry) SetDataPlanes(envmgrservice.DataPlanes) {}
+
 type stubExport struct{ deploymentID string }
 
 func (s *stubExport) ExportResources(ctx context.Context, _ *export.ExportRequest) (

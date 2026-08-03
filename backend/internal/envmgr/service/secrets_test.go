@@ -49,7 +49,7 @@ func secretsFixture(t *testing.T) (*Service, *fakeClient, model.Environment) {
 	})
 	env, err := svc.CreateEnvironment(CreateEnvironmentInput{
 		Name:   "dev",
-		Target: model.Target{BaseURL: "https://dp"},
+		Target: model.Target{DataPlaneID: "dp"},
 		Source: &model.Source{BaseURL: "https://cp", DeploymentID: "tenant-a"},
 	})
 	if err != nil {
@@ -203,7 +203,7 @@ func TestPromoteWritesIntoTheDestinationsOwnTenant(t *testing.T) {
 
 	stage, err := svc.CreateEnvironment(CreateEnvironmentInput{
 		Name:   "stage",
-		Target: model.Target{BaseURL: "https://dp-b"},
+		Target: model.Target{DataPlaneID: "dp-b"},
 		Source: &model.Source{BaseURL: "https://cp", DeploymentID: "tenant-b"},
 	})
 	if err != nil {
@@ -228,7 +228,7 @@ func TestCaptureIsRefusedForAnEnvironmentFedByPromotion(t *testing.T) {
 	svc, _, dev := secretsFixture(t)
 	stage, err := svc.CreateEnvironment(CreateEnvironmentInput{
 		Name:   "stage",
-		Target: model.Target{BaseURL: "https://dp-b"},
+		Target: model.Target{DataPlaneID: "dp-b"},
 		Source: &model.Source{BaseURL: "https://cp", DeploymentID: "tenant-b"},
 	})
 	if err != nil {

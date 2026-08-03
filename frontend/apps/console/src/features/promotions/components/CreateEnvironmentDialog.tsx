@@ -20,14 +20,12 @@ import {zodResolver} from '@hookform/resolvers/zod';
 import {useConfig} from '@thunderid/contexts';
 import {
   Button,
-  Checkbox,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   Divider,
   FormControl,
-  FormControlLabel,
   FormLabel,
   Stack,
   TextField,
@@ -42,21 +40,21 @@ import useCreateEnvironment from '../api/useCreateEnvironment';
 const formSchema = z.object({
   name: z.string().trim().min(1),
   rank: z.string().trim().optional(),
-  targetBaseUrl: z.string().trim().url(),
-  targetClientId: z.string().trim().optional(),
-  targetClientSecret: z.string().trim().optional(),
-  targetResource: z.string().trim().optional(),
+  targetDataPlaneId: z.string().trim().min(1),
+  targetBaseUrl: z.string().trim().url().or(z.literal('')),
   tenantId: z.string().trim().optional(),
-  targetInsecure: z.boolean(),
 });
 type FormData = z.infer<typeof formSchema>;
 
 /**
  * Registers an environment in the promotion chain.
  *
- * The target is the data plane that versions are applied to. The source is the control plane that
- * configuration is captured from, and is optional: environments that only receive promotions from a
- * lower environment do not need one.
+ * The target is the data plane that versions are applied to. It is named rather than addressed: the
+ * data plane dials this control plane and holds that connection open, and everything sent to it
+ * travels back down that connection, so there is no URL to call and no credential to hold.
+ *
+ * The source is the control plane that configuration is captured from, and is optional: environments
+ * that only receive promotions from a lower environment do not need one.
  */
 export default function CreateEnvironmentDialog({open, onClose}: {open: boolean; onClose: () => void}): JSX.Element {
   const {t} = useTranslation();
@@ -74,16 +72,9 @@ export default function CreateEnvironmentDialog({open, onClose}: {open: boolean;
     defaultValues: {
       name: '',
       rank: '',
+      targetDataPlaneId: '',
       targetBaseUrl: '',
-      targetClientId: '',
-      targetClientSecret: '',
-      // ThunderID will not issue a scoped client_credentials token without a resource indicator. This
-      // is the System resource server shipped in the data plane's bootstrap bundle. Naming a resource
-      // server the management scopes are not registered against still issues a token, but an unscoped
-      // one, which the data plane then rejects as forbidden.
-      targetResource: 'https://localhost:8090/automation',
       tenantId: '',
-      targetInsecure: true,
     },
   });
 
@@ -100,12 +91,8 @@ export default function CreateEnvironmentDialog({open, onClose}: {open: boolean;
         name: formData.name,
         rank: formData.rank && !Number.isNaN(rank) ? rank : undefined,
         target: {
-          baseUrl: formData.targetBaseUrl,
-          clientId: formData.targetClientId,
-          clientSecret: formData.targetClientSecret,
-          scope: formData.targetClientId ? 'system' : undefined,
-          resource: formData.targetResource,
-          insecureSkipVerify: formData.targetInsecure,
+          dataPlaneId: formData.targetDataPlaneId,
+          baseUrl: formData.targetBaseUrl || undefined,
         },
         // Configuration is captured from the Control Plane this console is already talking to, and
         // the caller's own session token is forwarded for it, so there is nothing to ask for or store.
@@ -170,51 +157,37 @@ export default function CreateEnvironmentDialog({open, onClose}: {open: boolean;
           </Typography>
 
           <Controller
+            name="targetDataPlaneId"
+            control={control}
+            render={({field, fieldState}) => (
+              <FormControl fullWidth>
+                <FormLabel>{t('promotions:environment.dataPlaneId', 'Data Plane ID')}</FormLabel>
+                <TextField {...field} placeholder="org1:dev" error={Boolean(fieldState.error)} fullWidth />
+                <Typography variant="caption" color="text.secondary">
+                  {t(
+                    'promotions:environment.dataPlaneIdHelp',
+                    'The id the Data Plane presents when it connects to this Control Plane. It must match that deployment configuration.',
+                  )}
+                </Typography>
+              </FormControl>
+            )}
+          />
+          <Controller
             name="targetBaseUrl"
             control={control}
             render={({field, fieldState}) => (
               <FormControl fullWidth>
-                <FormLabel>{t('promotions:environment.baseUrl', 'Base URL')}</FormLabel>
+                <FormLabel>{t('promotions:environment.baseUrl', 'Base URL (optional)')}</FormLabel>
                 <TextField
                   {...field}
                   placeholder="https://localhost:8090"
                   error={Boolean(fieldState.error)}
                   fullWidth
                 />
-              </FormControl>
-            )}
-          />
-          <Controller
-            name="targetClientId"
-            control={control}
-            render={({field}) => (
-              <FormControl fullWidth>
-                <FormLabel>{t('promotions:environment.clientId', 'Client ID')}</FormLabel>
-                <TextField {...field} fullWidth />
-              </FormControl>
-            )}
-          />
-          <Controller
-            name="targetClientSecret"
-            control={control}
-            render={({field}) => (
-              <FormControl fullWidth>
-                <FormLabel>{t('promotions:environment.clientSecret', 'Client secret')}</FormLabel>
-                <TextField {...field} type="password" fullWidth />
-              </FormControl>
-            )}
-          />
-          <Controller
-            name="targetResource"
-            control={control}
-            render={({field}) => (
-              <FormControl fullWidth>
-                <FormLabel>{t('promotions:environment.resource', 'Resource identifier')}</FormLabel>
-                <TextField {...field} fullWidth />
                 <Typography variant="caption" color="text.secondary">
                   {t(
-                    'promotions:environment.resourceHelp',
-                    'The resource server the access token is issued for. Required for client credentials.',
+                    'promotions:environment.baseUrlHelp',
+                    'Where that deployment serves its own users. Nothing calls it; it is recorded so you can follow it.',
                   )}
                 </Typography>
               </FormControl>
@@ -237,16 +210,6 @@ export default function CreateEnvironmentDialog({open, onClose}: {open: boolean;
             )}
           />
 
-          <Controller
-            name="targetInsecure"
-            control={control}
-            render={({field}) => (
-              <FormControlLabel
-                control={<Checkbox checked={field.value} onChange={(event) => field.onChange(event.target.checked)} />}
-                label={t('promotions:environment.insecure', 'Skip TLS certificate verification')}
-              />
-            )}
-          />
 
         </Stack>
       </DialogContent>

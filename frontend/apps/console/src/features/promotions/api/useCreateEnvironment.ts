@@ -25,34 +25,29 @@ import PromotionQueryKeys from '../constants/promotion-query-keys';
 import type {Environment} from '../models/promotion';
 
 /**
- * Connection details for a plane the environment manager talks to.
+ * The Data Plane an environment is applied to.
  *
- * Prefer clientId and clientSecret: the service exchanges them for tokens and renews them as they
- * expire. Leave both empty for a server that trusts the same issuer as the console, and the caller's
- * own token is forwarded instead. A static token is a last resort, because it expires.
+ * It is named, not addressed. The Data Plane dials the Control Plane and holds that connection open,
+ * and everything sent to it travels back down that connection, so there is no URL to call and no
+ * credential to hold.
  */
-export interface SecretProviderInput {
-  baseUrl: string;
-  token?: string;
-  insecureSkipVerify?: boolean;
+export interface TargetInput {
+  /** The id the Data Plane presents when it connects to the Control Plane. */
+  dataPlaneId: string;
+  /** Where that deployment serves its own users. Recorded for an operator to follow; nothing calls it. */
+  baseUrl?: string;
 }
 
-export interface EndpointInput {
+/**
+ * The Control Plane an environment's configuration is captured from.
+ *
+ * The console is already talking to it, so the caller's own session token is forwarded and there is
+ * nothing to configure beyond which tenant to read.
+ */
+export interface SourceInput {
   baseUrl: string;
   /** The Control Plane tenant this environment belongs to, used to route captured secrets to it. */
   deploymentId?: string;
-  /**
-   * The service holding this data plane's secrets, used to check they are present before an apply.
-   * Omit it unless the secrets live outside the data plane: a data plane serves its own store, and
-   * that is reached with the credentials above, so there is nothing extra to configure.
-   */
-  secretProvider?: SecretProviderInput;
-  clientId?: string;
-  clientSecret?: string;
-  scope?: string;
-  /** RFC 8707 resource indicator naming the resource server the token is minted for. */
-  resource?: string;
-  token?: string;
   insecureSkipVerify?: boolean;
 }
 
@@ -60,8 +55,8 @@ export interface EndpointInput {
 export interface CreateEnvironmentVariables {
   name: string;
   rank?: number;
-  target: EndpointInput;
-  source?: EndpointInput;
+  target: TargetInput;
+  source?: SourceInput;
 }
 
 /**
