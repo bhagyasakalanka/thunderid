@@ -170,7 +170,7 @@ func tenantCtx() context.Context {
 // configWithSecretProviderURL builds the minimum configuration the forwarder reads.
 func configWithSecretProviderURL(url string) config.Config {
 	var cfg config.Config
-	cfg.Server.SecurityConfig.SecretProvider.URL = url
+	cfg.Server.SecurityConfig.SecretProvider.Service.URL = url
 	return cfg
 }
 
