@@ -45,7 +45,9 @@ func (s *StoreServer) Handler() http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]interface{}{"status": "ok", "secrets": len(s.store.All())})
+		// Counted from what is already held rather than by reading the backing store, so a health
+		// check cannot turn into a call to the key vault on every poll.
+		writeJSON(w, http.StatusOK, map[string]interface{}{"status": "ok", "secrets": s.store.Count()})
 	})
 
 	mux.HandleFunc("GET /secrets", s.guard(s.list))
@@ -59,8 +61,8 @@ func (s *StoreServer) Handler() http.Handler {
 }
 
 // list returns every secret, which is what a data plane loads at startup.
-func (s *StoreServer) list(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]interface{}{"secrets": s.store.All()})
+func (s *StoreServer) list(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]interface{}{"secrets": s.store.All(r.Context())})
 }
 
 // names returns the stored names and kinds without any value.
@@ -68,18 +70,18 @@ func (s *StoreServer) list(w http.ResponseWriter, _ *http.Request) {
 // It exists so a caller can check that every credential a configuration needs is present before
 // applying it. Answering that question with the full listing would mean shipping secrets to something
 // that only needs to know they exist.
-func (s *StoreServer) names(w http.ResponseWriter, _ *http.Request) {
-	all := s.store.All()
+func (s *StoreServer) names(w http.ResponseWriter, r *http.Request) {
+	all := s.store.All(r.Context())
 	kinds := make(map[string]Kind, len(all))
 	for name, secret := range all {
 		kinds[name] = secret.Kind
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"names": s.store.Names(), "kinds": kinds})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"names": s.store.Names(r.Context()), "kinds": kinds})
 }
 
 // get returns one secret, which is what a data plane refetches on a cache miss.
 func (s *StoreServer) get(w http.ResponseWriter, r *http.Request) {
-	secret, ok := s.store.Get(r.PathValue("name"))
+	secret, ok := s.store.Get(r.Context(), r.PathValue("name"))
 	if !ok {
 		writeError(w, http.StatusNotFound, "no such secret")
 		return
@@ -114,7 +116,7 @@ func (s *StoreServer) put(w http.ResponseWriter, r *http.Request) {
 		Parameters:  req.Parameters,
 		Description: req.Description,
 	}
-	if err := s.store.Put(secret); err != nil {
+	if err := s.store.Put(r.Context(), secret); err != nil {
 		if errors.Is(err, ErrInvalidSecret) {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
@@ -128,7 +130,7 @@ func (s *StoreServer) put(w http.ResponseWriter, r *http.Request) {
 
 // delete removes a secret.
 func (s *StoreServer) delete(w http.ResponseWriter, r *http.Request) {
-	if err := s.store.Delete(r.PathValue("name")); err != nil {
+	if err := s.store.Delete(r.Context(), r.PathValue("name")); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete the secret")
 		return
 	}
@@ -149,7 +151,7 @@ func (s *StoreServer) verify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	secret, ok := s.store.Get(r.PathValue("name"))
+	secret, ok := s.store.Get(r.Context(), r.PathValue("name"))
 	if !ok {
 		writeError(w, http.StatusNotFound, "no such secret")
 		return

@@ -38,7 +38,7 @@ func newFakeStore() *fakeStore {
 	return &fakeStore{secrets: map[string]secretstore.Secret{}}
 }
 
-func (f *fakeStore) Put(secret secretstore.Secret) error {
+func (f *fakeStore) Put(_ context.Context, secret secretstore.Secret) error {
 	if f.putErr != nil {
 		return f.putErr
 	}
@@ -46,14 +46,14 @@ func (f *fakeStore) Put(secret secretstore.Secret) error {
 	return nil
 }
 
-func (f *fakeStore) Get(name string) (secretstore.Secret, bool) {
+func (f *fakeStore) Get(_ context.Context, name string) (secretstore.Secret, bool) {
 	s, ok := f.secrets[name]
 	return s, ok
 }
 
-func (f *fakeStore) All() map[string]secretstore.Secret { return f.secrets }
+func (f *fakeStore) All(context.Context) map[string]secretstore.Secret { return f.secrets }
 
-func (f *fakeStore) Names() []string {
+func (f *fakeStore) Names(context.Context) []string {
 	out := make([]string, 0, len(f.secrets))
 	for name := range f.secrets {
 		out = append(out, name)
