@@ -57,7 +57,7 @@ type secretForwarder struct {
 // tenant, so it cannot know which data plane's provider a captured credential belongs on. The
 // environment manager holds that mapping and routes by tenant.
 func newSecretForwarder(cfg config.Config) *secretForwarder {
-	sp := cfg.Server.SecurityConfig.SecretProvider
+	sp := cfg.Server.SecurityConfig.SecretProvider.Service
 	if strings.TrimSpace(sp.URL) == "" {
 		return nil
 	}
