@@ -19,72 +19,64 @@
 package secretstore
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"sync"
+	"time"
 )
 
-// Store holds the secrets this service serves and accepts writes for.
+// Store holds the secrets this server serves and accepts writes for.
 //
 // Writes arrive from a control plane the moment a secret is created or updated, so they must take
-// effect immediately rather than waiting for a configuration promotion. Persistence is a JSON file
-// when one is configured, which keeps secrets across a restart until a real key vault backs this.
+// effect immediately rather than waiting for a configuration promotion: a credential that reaches a
+// data plane late is a credential that rejects logins in between.
+//
+// Where the secrets actually live is the backend's business. The store keeps what it last read in
+// memory so that resolving a reference during a request costs nothing, and reloads when the backend
+// says that cache can go stale beneath it.
 type Store struct {
-	path string
+	backend Backend
+	ttl     time.Duration
 
-	mu      sync.RWMutex
-	secrets map[string]Secret
+	mu       sync.RWMutex
+	secrets  map[string]Secret
+	loadedAt time.Time
 }
 
-// NewStore opens a store, loading any secrets already persisted at path. An empty path keeps the store
-// in memory only.
-func NewStore(path string) (*Store, error) {
-	s := &Store{path: path, secrets: map[string]Secret{}}
-	if path == "" {
-		return s, nil
+// NewStore opens a store over a backend, loading what it already holds.
+//
+// The initial load failing is reported rather than fatal: a vault that is briefly unreachable at
+// startup should not stop the server coming up, and the next read reloads.
+func NewStore(ctx context.Context, backend Backend) (*Store, error) {
+	if backend == nil {
+		return nil, fmt.Errorf("a secret store needs a backend")
 	}
-
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return s, nil
-		}
-		return nil, fmt.Errorf("failed to read secret store %s: %w", path, err)
-	}
-	if err := json.Unmarshal(raw, &s.secrets); err != nil {
-		// A plain name to value object is also accepted, so an operator can hand-write a simple file.
-		var plain map[string]string
-		if plainErr := json.Unmarshal(raw, &plain); plainErr != nil {
-			return nil, fmt.Errorf("failed to parse secret store %s: %w", path, err)
-		}
-		s.secrets = map[string]Secret{}
-		for name, value := range plain {
-			s.secrets[name] = Secret{Name: name, Kind: KindValue, Value: value}
-		}
-	}
-	for name, secret := range s.secrets {
-		secret.Name = name
-		s.secrets[name] = secret
-	}
-	return s, nil
+	s := &Store{backend: backend, ttl: backend.CacheTTL(), secrets: map[string]Secret{}}
+	err := s.reload(ctx)
+	return s, err
 }
+
+// Backend reports where this store keeps its secrets, for logging.
+func (s *Store) Backend() string { return s.backend.Name() }
 
 // Put stores a secret, replacing any entry of the same name.
-func (s *Store) Put(secret Secret) error {
+func (s *Store) Put(ctx context.Context, secret Secret) error {
 	if err := secret.Validate(); err != nil {
+		return err
+	}
+	if err := s.backend.Put(ctx, secret); err != nil {
 		return err
 	}
 	s.mu.Lock()
 	s.secrets[secret.Name] = secret
 	s.mu.Unlock()
-	return s.persist()
+	return nil
 }
 
 // Get returns a secret by name.
-func (s *Store) Get(name string) (Secret, bool) {
+func (s *Store) Get(ctx context.Context, name string) (Secret, bool) {
+	s.refreshIfStale(ctx)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	secret, ok := s.secrets[name]
@@ -92,15 +84,19 @@ func (s *Store) Get(name string) (Secret, bool) {
 }
 
 // Delete removes a secret. Removing an absent name is not an error, so a repeated delete is safe.
-func (s *Store) Delete(name string) error {
+func (s *Store) Delete(ctx context.Context, name string) error {
+	if err := s.backend.Delete(ctx, name); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	delete(s.secrets, name)
 	s.mu.Unlock()
-	return s.persist()
+	return nil
 }
 
 // All returns every secret, keyed by name. This is what a data plane loads at startup.
-func (s *Store) All() map[string]Secret {
+func (s *Store) All(ctx context.Context) map[string]Secret {
+	s.refreshIfStale(ctx)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make(map[string]Secret, len(s.secrets))
@@ -111,7 +107,8 @@ func (s *Store) All() map[string]Secret {
 }
 
 // Names returns the stored names in order, for diagnostics that must not expose values.
-func (s *Store) Names() []string {
+func (s *Store) Names(ctx context.Context) []string {
+	s.refreshIfStale(ctx)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	names := make([]string, 0, len(s.secrets))
@@ -122,31 +119,48 @@ func (s *Store) Names() []string {
 	return names
 }
 
-// persist writes the store to disk when a path is configured.
-func (s *Store) persist() error {
-	if s.path == "" {
-		return nil
-	}
-
+// Count reports how many secrets are held, without reloading. It is for startup logging, which must
+// not log names or values.
+func (s *Store) Count() int {
 	s.mu.RLock()
-	raw, err := json.MarshalIndent(s.secrets, "", "  ")
-	s.mu.RUnlock()
-	if err != nil {
-		return fmt.Errorf("failed to encode secrets: %w", err)
-	}
+	defer s.mu.RUnlock()
+	return len(s.secrets)
+}
 
-	if dir := filepath.Dir(s.path); dir != "" {
-		if err := os.MkdirAll(dir, 0o700); err != nil {
-			return fmt.Errorf("failed to create secret store directory: %w", err)
-		}
+// Refresh reloads every secret from the backend.
+func (s *Store) Refresh(ctx context.Context) error { return s.reload(ctx) }
+
+// refreshIfStale reloads when the cache has outlived the backend's TTL.
+//
+// A failed reload is deliberately not propagated: the cache is still the best answer available, and a
+// vault that has gone briefly unreachable should degrade to slightly stale secrets rather than to
+// none. The load time advances either way, so a vault that stays down is retried once per TTL rather
+// than on every single read.
+func (s *Store) refreshIfStale(ctx context.Context) {
+	if s.ttl <= 0 {
+		return
 	}
-	tmp := s.path + ".tmp"
-	// Secrets are readable by their owner only.
-	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
-		return fmt.Errorf("failed to write secret store: %w", err)
+	s.mu.RLock()
+	fresh := time.Since(s.loadedAt) < s.ttl
+	s.mu.RUnlock()
+	if fresh {
+		return
 	}
-	if err := os.Rename(tmp, s.path); err != nil {
-		return fmt.Errorf("failed to commit secret store: %w", err)
+	_ = s.reload(ctx)
+}
+
+// reload replaces the cache with what the backend holds.
+func (s *Store) reload(ctx context.Context) error {
+	secrets, err := s.backend.Load(ctx)
+	if err != nil {
+		s.mu.Lock()
+		s.loadedAt = time.Now()
+		s.mu.Unlock()
+		return err
 	}
+	s.mu.Lock()
+	s.secrets = secrets
+	s.loadedAt = time.Now()
+	s.mu.Unlock()
 	return nil
 }

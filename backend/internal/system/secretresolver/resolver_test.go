@@ -267,3 +267,65 @@ func TestResolveSubstitutesAReadableValueAsItself(t *testing.T) {
 		t.Fatalf("expected the value verbatim, got %q err=%v", got, err)
 	}
 }
+
+// A credential regenerated on the control plane is written into this deployment's store while the
+// server is running. Resolution has to see the new value: serving the old one means every login
+// against that credential fails until the process restarts.
+func TestARegeneratedSecretResolvesWithoutARestart(t *testing.T) {
+	stored := map[string]providerSecret{
+		"APP_CLIENT_SECRET": {Kind: "value", Value: "the-old-value"},
+	}
+	r := New(Config{Local: func(_ context.Context, name string) (LocalSecret, bool, error) {
+		s, ok := stored[name]
+		if !ok {
+			return LocalSecret{}, false, nil
+		}
+		return LocalSecret{Kind: s.Kind, Value: s.Value, Algorithm: s.Algorithm}, true, nil
+	}})
+	ctx := context.Background()
+
+	first, err := r.Resolve(ctx, "kv:APP_CLIENT_SECRET")
+	if err != nil || first != "the-old-value" {
+		t.Fatalf("expected the stored value, got %q %v", first, err)
+	}
+
+	// The control plane pushes a regenerated credential into the store.
+	stored["APP_CLIENT_SECRET"] = providerSecret{Kind: "value", Value: "the-new-value"}
+
+	got, err := r.Resolve(ctx, "kv:APP_CLIENT_SECRET")
+	if err != nil {
+		t.Fatalf("resolve after regeneration: %v", err)
+	}
+	if got != "the-new-value" {
+		t.Fatalf("expected the regenerated value, got %q", got)
+	}
+}
+
+// The same for a hash: a regenerated password or client secret is verified against the hash held
+// here, so a stale one rejects every attempt.
+func TestARegeneratedHashResolvesWithoutARestart(t *testing.T) {
+	stored := map[string]LocalSecret{
+		"APP_CLIENT_SECRET": {Kind: "hash", Value: "the-old-hash", Algorithm: "PBKDF2", Salt: "old-salt"},
+	}
+	r := New(Config{Local: func(_ context.Context, name string) (LocalSecret, bool, error) {
+		s, ok := stored[name]
+		return s, ok, nil
+	}})
+	ctx := context.Background()
+
+	if _, _, err := r.ResolveHash(ctx, "kv:APP_CLIENT_SECRET"); err != nil {
+		t.Fatalf("first resolve: %v", err)
+	}
+	stored["APP_CLIENT_SECRET"] = LocalSecret{
+		Kind: "hash", Value: "the-new-hash", Algorithm: "PBKDF2", Salt: "new-salt",
+	}
+
+	hash, found, err := r.ResolveHash(ctx, "kv:APP_CLIENT_SECRET")
+
+	if err != nil || !found {
+		t.Fatalf("expected the hash, got %v %v", found, err)
+	}
+	if hash.Value != "the-new-hash" || hash.Salt != "new-salt" {
+		t.Fatalf("expected the regenerated hash, got %+v", hash)
+	}
+}

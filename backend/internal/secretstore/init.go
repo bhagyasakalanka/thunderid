@@ -19,11 +19,14 @@
 // Package secretstore serves the credentials a data plane resolves its kv: references from. It is
 // the standalone secret provider service brought in-process, so a deployment can run without a
 // separate service; the standalone one still exists and is unchanged.
+//
+// Where the secrets are kept is a deployment decision, made by Config.Mode: a file beside the server,
+// or a key vault that every instance of the deployment shares. See Backend.
 package secretstore
 
 import (
+	"context"
 	"net/http"
-	"strings"
 )
 
 // basePath keeps these routes clear of /secrets, which the configuration secret service already
@@ -33,26 +36,30 @@ const basePath = "/secret-store"
 
 // Initialize mounts the secret store on the given mux and returns the store behind it.
 //
-// A blank file path disables the module and registers nothing, which is what a deployment pointing
-// at the standalone provider (or at no provider at all) wants.
+// A mode that keeps no store here registers nothing and returns a nil store, which is what a
+// deployment reading from the standalone provider (or from no provider at all) wants.
+//
+// A store whose backing is unreachable at startup is still returned, along with the error, so the
+// caller can log it and carry on: the store retries, and a vault that is briefly down should not stop
+// the server coming up.
 //
 // No shared bearer token is configured here. The standalone service guards itself with one because
 // it is reachable on its own; mounted here the route sits behind this server's management-API
 // authentication, and requiring a second, different token as well would mean no caller could
 // satisfy both at once.
-func Initialize(mux *http.ServeMux, filePath string) (*Store, error) {
-	if strings.TrimSpace(filePath) == "" {
-		return nil, nil
-	}
-
-	store, err := NewStore(filePath)
+func Initialize(ctx context.Context, mux *http.ServeMux, cfg Config) (*Store, error) {
+	backend, err := NewBackend(cfg)
 	if err != nil {
 		return nil, err
 	}
+	if backend == nil {
+		return nil, nil
+	}
 
+	store, loadErr := NewStore(ctx, backend)
 	server := NewStoreServer(store, "")
 	registerRoutes(mux, server)
-	return store, nil
+	return store, loadErr
 }
 
 // registerRoutes mounts the store's own handler under basePath. The handler builds its routes on an

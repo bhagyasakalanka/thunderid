@@ -45,6 +45,7 @@ DEBUG_MODE=${DEBUG_MODE:-false}
 VERBOSE_MODE=${VERBOSE_MODE:-false}
 SILENT_MODE=true
 ADMIN_USERNAME_PROVIDED=false
+SKIP_BOOTSTRAP=false
 ADMIN_PASSWORD_PROVIDED=false
 if [[ -n "${ADMIN_USERNAME:-}" ]]; then
     ADMIN_USERNAME_PROVIDED=true
@@ -125,6 +126,10 @@ print_help() {
     echo "                           Falls back to ADMIN_PASSWORD env var; generated if unset"
     echo "  --direct-auth-secret VALUE Secret gating the Direct API endpoints"
     echo "                           Falls back to DIRECT_AUTH_SECRET env var; generated if unset"
+    echo "  --skip-bootstrap         Generate key material only, creating no default resources."
+    echo "                           For a deployment that seeds its own baseline, such as a"
+    echo "                           multi-tenant Control Plane, where the resources belong to a"
+    echo "                           named tenant rather than to the server."
     echo "  --help                   Show this help message"
     echo ""
     echo "Description:"
@@ -145,6 +150,10 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --debug)
             DEBUG_MODE=true
+            shift
+            ;;
+        --skip-bootstrap)
+            SKIP_BOOTSTRAP=true
             shift
             ;;
         --verbose)
@@ -511,10 +520,14 @@ check_port() {
     fi
 }
 
-# Check if ports are available
-check_port $PORT "${PRODUCT_NAME} server"
-if [ "$DEBUG_MODE" = "true" ]; then
-    check_port $DEBUG_PORT "Debug server"
+# Check if ports are available. Only the bootstrap step binds one, by starting the server briefly, so
+# with --skip-bootstrap there is nothing to bind and a port in use is not this run's concern: another
+# instance of the same deployment may legitimately be serving on it already.
+if [ "$SKIP_BOOTSTRAP" != "true" ]; then
+    check_port $PORT "${PRODUCT_NAME} server"
+    if [ "$DEBUG_MODE" = "true" ]; then
+        check_port $DEBUG_PORT "Debug server"
+    fi
 fi
 
 # Check for Delve if debug mode is enabled
@@ -547,6 +560,13 @@ fi
 
 if [ "$VERBOSE_MODE" = "true" ]; then
     echo -e "${BLUE}⏳ Creating default resources...${NC}"
+fi
+
+if [ "$SKIP_BOOTSTRAP" = "true" ]; then
+    log_success "Key material ready; skipping default resources as requested"
+    print_admin_credentials_notice
+    print_direct_auth_secret_notice
+    exit 0
 fi
 
 BOOTSTRAP_LOG="$(mktemp)"

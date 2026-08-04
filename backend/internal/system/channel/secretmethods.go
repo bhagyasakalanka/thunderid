@@ -39,10 +39,10 @@ const (
 // SecretStore is the subset of the Data Plane's secret store the channel serves. It is satisfied by
 // *secretstore.Store.
 type SecretStore interface {
-	Put(secret secretstore.Secret) error
-	Get(name string) (secretstore.Secret, bool)
-	All() map[string]secretstore.Secret
-	Names() []string
+	Put(ctx context.Context, secret secretstore.Secret) error
+	Get(ctx context.Context, name string) (secretstore.Secret, bool)
+	All(ctx context.Context) map[string]secretstore.Secret
+	Names(ctx context.Context) []string
 }
 
 // secretNamesResult lists what the store holds without any value: enough to tell whether a
@@ -73,33 +73,33 @@ func RegisterSecretMethods(router *Router, store SecretStore) {
 		return
 	}
 
-	router.Register(MethodSecretPut, func(_ context.Context, params json.RawMessage) (json.RawMessage, *Error) {
+	router.Register(MethodSecretPut, func(ctx context.Context, params json.RawMessage) (json.RawMessage, *Error) {
 		var secret secretstore.Secret
 		if err := json.Unmarshal(params, &secret); err != nil {
 			return nil, NewError(CodeInvalidParams, "invalid secret: "+err.Error())
 		}
-		if err := store.Put(secret); err != nil {
+		if err := store.Put(ctx, secret); err != nil {
 			return nil, NewError(CodeInvalidParams, err.Error())
 		}
 		// The stored value is not echoed back.
 		return marshalResult(secret.Redacted())
 	})
 
-	router.Register(MethodSecretNames, func(_ context.Context, _ json.RawMessage) (json.RawMessage, *Error) {
-		all := store.All()
+	router.Register(MethodSecretNames, func(ctx context.Context, _ json.RawMessage) (json.RawMessage, *Error) {
+		all := store.All(ctx)
 		kinds := make(map[string]secretstore.Kind, len(all))
 		for name, secret := range all {
 			kinds[name] = secret.Kind
 		}
-		return marshalResult(secretNamesResult{Names: store.Names(), Kinds: kinds})
+		return marshalResult(secretNamesResult{Names: store.Names(ctx), Kinds: kinds})
 	})
 
-	router.Register(MethodSecretGet, func(_ context.Context, params json.RawMessage) (json.RawMessage, *Error) {
+	router.Register(MethodSecretGet, func(ctx context.Context, params json.RawMessage) (json.RawMessage, *Error) {
 		var p secretGetParams
 		if err := json.Unmarshal(params, &p); err != nil {
 			return nil, NewError(CodeInvalidParams, "invalid params: "+err.Error())
 		}
-		secret, ok := store.Get(p.Name)
+		secret, ok := store.Get(ctx, p.Name)
 		if !ok {
 			return marshalResult(secretGetResult{Found: false})
 		}
