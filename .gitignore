@@ -111,6 +111,8 @@ out
 out-tsc
 backend/bin
 backend/server
+backend/cpserver
+backend/dpserver
 
 # E2E extracted distribution
 tests/e2e/distribution/
