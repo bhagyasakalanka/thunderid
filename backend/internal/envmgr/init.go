@@ -23,7 +23,6 @@ package envmgr
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/thunder-id/thunderid/internal/envmgr/auth"
 	"github.com/thunder-id/thunderid/internal/envmgr/service"
@@ -32,16 +31,10 @@ import (
 
 // Initialize mounts the environment manager on the given mux and returns its service.
 //
-// A blank data directory disables the module and registers nothing, which is what a deployment
-// using the standalone service (or promoting by other means) wants.
 // The hasher is what lets a credential that is only ever verified, such as an application's client
 // secret, be set from here: it is hashed the same way the server hashes one it captures itself.
-func Initialize(mux *http.ServeMux, dataDir string, hasher service.SecretHasher) (*registry, error) {
-	if strings.TrimSpace(dataDir) == "" {
-		return nil, nil
-	}
-
-	reg := newRegistry(dataDir, hasher)
+func Initialize(mux *http.ServeMux, hasher service.SecretHasher) (*registry, error) {
+	reg := newRegistry(hasher)
 	registerRoutes(mux, reg)
 	return reg, nil
 }

@@ -110,14 +110,9 @@ COPY --from=builder /app/backend/cmd/cpserver/bootstrap/ /opt/thunderid/bootstra
 RUN rm -rf /opt/thunderid/apps/console /opt/thunderid/apps/gate
 COPY --from=builder /app/frontend/apps/cp-console/dist/ /opt/thunderid/apps/console/
 
-# Where environments and their captured versions are kept. Mount a volume over it: losing it loses the
-# version history that promotion compares against.
-RUN mkdir -p /opt/thunderid/repository/envmgr
-
 RUN chown -R thunderid:thunderid /opt/thunderid && \
     chmod +x thunderid start.sh setup.sh scripts/init_script.sh && \
-    (find bootstrap -name "*.sh" -type f -exec chmod +x {} \; 2>/dev/null || true) && \
-    chmod 700 /opt/thunderid/repository/envmgr
+    (find bootstrap -name "*.sh" -type f -exec chmod +x {} \; 2>/dev/null || true)
 
 EXPOSE 8095
 

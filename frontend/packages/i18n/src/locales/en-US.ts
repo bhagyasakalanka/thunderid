@@ -1427,8 +1427,7 @@ const translations = {
     'listing.viewHistory': 'History',
     'listing.promoteTo': 'Promote to {{target}}',
     'listing.promotedFrom': 'Promoted from: {{sources}}',
-    notConfigured:
-      'The environment manager is not configured. Set env_manager.public_url in the console configuration to enable promotions.',
+    notConfigured: 'Promotions are available on the Control Plane console only.',
     'diff.added': 'Added',
     'diff.updated': 'Updated',
     'diff.deleted': 'Deleted',

@@ -507,16 +507,19 @@ func buildHashConfig() (cryptolib.HashConfig, error) {
 // of over HTTP; a nil result means promotion is not hosted here.
 func initEnvironmentManager(ctx context.Context, logger *log.Logger, mux *http.ServeMux,
 	cfg config.Config) envmgrRegistry {
-	dataDir := cfg.Server.SecurityConfig.EnvironmentManager.DataDir
-	reg, err := envmgr.Initialize(mux, dataDir, hashSecretForEnvManager)
+	// The environment manager keeps its environments and versions in their own datasource. Leaving it
+	// unconfigured is how a deployment that promotes by other means turns the module off, and without
+	// it there is nowhere for a captured version to go.
+	if strings.TrimSpace(cfg.Database.Environment.Type) == "" {
+		logger.Info(ctx, "No environment datasource is configured, so promotion is not hosted here")
+		return nil
+	}
+	reg, err := envmgr.Initialize(mux, hashSecretForEnvManager)
 	if err != nil {
 		logger.Error(ctx, "Failed to start the in-process environment manager", log.Error(err))
 		return nil
 	}
-	if reg == nil {
-		return nil
-	}
-	logger.Info(ctx, "Serving the environment manager from this server", log.String("dataDir", dataDir))
+	logger.Info(ctx, "Serving the environment manager from this server")
 	return reg
 }
 

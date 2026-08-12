@@ -23,7 +23,6 @@ export type {
   TrustedIssuerConfig,
   BrandConfig,
   SdkConfig,
-  EnvManagerConfig,
   Plane,
 } from './Config/types';
 export type {ToastContextType, ToastSeverity} from './Toast/ToastContext';

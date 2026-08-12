@@ -23,8 +23,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 
@@ -34,15 +32,13 @@ import (
 	"github.com/thunder-id/thunderid/internal/system/deployment"
 )
 
-// registry hands each deployment its own environment manager, rooted at its own directory under the
-// configured data directory.
+// registry hands each deployment its own environment manager, each scoped to its own rows in the
+// environment database.
 //
-// Isolation is by directory rather than by a column, because the store this module reuses keeps its
-// state in files. One store per deployment means a caller cannot name another deployment's
-// environment at all: the id simply does not exist in the store the request is served from. That is
-// the same guarantee the row-scoped resources get, reached differently.
+// One store per deployment means a caller cannot name another deployment's environment at all: every
+// query carries the deployment, so the id simply does not resolve in the store the request is served
+// from. That is the same guarantee the row-scoped resources get.
 type registry struct {
-	dataDir     string
 	hasher      service.SecretHasher
 	localCP     service.LocalControlPlane
 	dataPlanes  service.DataPlanes
@@ -52,8 +48,8 @@ type registry struct {
 	servers map[string]*Server
 }
 
-func newRegistry(dataDir string, hasher service.SecretHasher) *registry {
-	return &registry{dataDir: dataDir, hasher: hasher, servers: make(map[string]*Server)}
+func newRegistry(hasher service.SecretHasher) *registry {
+	return &registry{hasher: hasher, servers: make(map[string]*Server)}
 }
 
 // serverFor returns the deployment's environment manager, building it on first use.
@@ -83,11 +79,6 @@ func (r *registry) serverForID(id string) (*Server, error) {
 		return nil, fmt.Errorf("no deployment in context, so the environment manager cannot be scoped")
 	}
 	id = storeKeyFor(id)
-	// A deployment id reaches the filesystem here, so anything that could climb out of the data
-	// directory is refused rather than sanitized.
-	if strings.ContainsAny(id, `/\`) || id == "." || id == ".." {
-		return nil, fmt.Errorf("deployment id %q cannot be used as a directory name", id)
-	}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -95,7 +86,7 @@ func (r *registry) serverForID(id string) (*Server, error) {
 		return existing, nil
 	}
 
-	st, err := store.New(filepath.Join(r.dataDir, id))
+	st, err := store.New(id)
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +117,7 @@ var ErrNoSeedSource = errors.New("no environment manages this tenant")
 // registry rather than on a Server.
 func (r *registry) SeedTenant(ctx context.Context, sourceDeploymentID,
 	targetDeploymentID string) (*thunder.ImportResponse, error) {
-	deployments, err := r.deploymentIDs()
+	deployments, err := store.Deployments(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +126,7 @@ func (r *registry) SeedTenant(ctx context.Context, sourceDeploymentID,
 		if err != nil {
 			continue
 		}
-		if _, ok := server.svc.EnvironmentForTenant(sourceDeploymentID); !ok {
+		if _, ok, err := server.svc.EnvironmentForTenant(ctx, sourceDeploymentID); err != nil || !ok {
 			continue
 		}
 		return server.svc.SeedTenant(ctx, sourceDeploymentID, targetDeploymentID)
@@ -152,21 +143,6 @@ func (r *registry) CreateEnvironment(ctx context.Context, deploymentID string,
 		return service.CreateEnvironmentResult{}, err
 	}
 	return server.svc.CreateEnvironment(ctx, in)
-}
-
-// deploymentIDs lists the deployments that have an environment manager store on disk.
-func (r *registry) deploymentIDs() ([]string, error) {
-	entries, err := os.ReadDir(r.dataDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read the environment manager data directory: %w", err)
-	}
-	ids := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if entry.IsDir() {
-			ids = append(ids, entry.Name())
-		}
-	}
-	return ids, nil
 }
 
 // SetDataPlaneTokenIssuer installs what mints the credential a data plane connects with. It is set

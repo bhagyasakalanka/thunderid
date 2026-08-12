@@ -102,18 +102,18 @@ type SecretList struct {
 // The list is derived from the configuration rather than from the secret service, so a credential that
 // was never captured still appears, which is the case an operator most needs to see.
 func (s *Service) ListSecrets(ctx context.Context, envID string) (SecretList, error) {
-	env, err := s.store.GetEnvironment(envID)
+	env, err := s.store.GetEnvironment(ctx, envID)
 	if err != nil {
 		return SecretList{}, err
 	}
-	seq, err := s.resolveSeq(env, "latest")
+	seq, err := s.resolveSeq(ctx, env, "latest")
 	if err != nil {
 		return SecretList{}, err
 	}
 	if seq == 0 {
 		return SecretList{}, ErrNoVersions
 	}
-	version, err := s.store.GetVersion(envID, seq)
+	version, err := s.store.GetVersion(ctx, envID, seq)
 	if err != nil {
 		return SecretList{}, err
 	}
@@ -143,11 +143,11 @@ func (s *Service) SetSecret(ctx context.Context, envID, name, value string) (Sec
 	if value == "" {
 		return SecretEntry{}, fmt.Errorf("%w: a value is required", ErrValidation)
 	}
-	env, err := s.store.GetEnvironment(envID)
+	env, err := s.store.GetEnvironment(ctx, envID)
 	if err != nil {
 		return SecretEntry{}, err
 	}
-	entry := s.describeSecret(envID, name)
+	entry := s.describeSecret(ctx, envID, name)
 
 	body, err := s.secretBody(entry.Kind, value, fmt.Sprintf("Set %s", name))
 	if err != nil {
@@ -170,7 +170,7 @@ func (s *Service) SetSecret(ctx context.Context, envID, name, value string) (Sec
 // Only a hashed credential can be generated: a replayed one, such as a gateway API key, is issued by
 // the third party and a random value would simply be wrong.
 func (s *Service) RegenerateSecret(ctx context.Context, envID, name string) (SecretEntry, string, error) {
-	entry := s.describeSecret(envID, name)
+	entry := s.describeSecret(ctx, envID, name)
 	if entry.Kind != KindHash {
 		return SecretEntry{}, "", fmt.Errorf(
 			"%w: %s is replayed to a third party, so it has to be set to the value that party issued",
@@ -219,10 +219,10 @@ func (s *Service) secretBody(kind, value, description string) (map[string]interf
 // describeSecret finds what the environment's configuration says about a placeholder. A name the
 // configuration does not mention still gets an entry, classified from the name, so a credential can be
 // set before the version that needs it is captured.
-func (s *Service) describeSecret(envID, name string) SecretEntry {
-	if env, err := s.store.GetEnvironment(envID); err == nil {
-		if seq, err := s.resolveSeq(env, "latest"); err == nil && seq > 0 {
-			if version, err := s.store.GetVersion(envID, seq); err == nil {
+func (s *Service) describeSecret(ctx context.Context, envID, name string) SecretEntry {
+	if env, err := s.store.GetEnvironment(ctx, envID); err == nil {
+		if seq, err := s.resolveSeq(ctx, env, "latest"); err == nil && seq > 0 {
+			if version, err := s.store.GetVersion(ctx, envID, seq); err == nil {
 				for _, entry := range secretEntriesOf(version) {
 					if entry.Name == name {
 						return entry

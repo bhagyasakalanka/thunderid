@@ -62,8 +62,6 @@ type SecurityConfig struct {
 	// When set, callers must present this value in the Direct-Auth-Secret header; when empty, those
 	// endpoints are blocked (secure by default).
 	DirectAuthSecret string `yaml:"direct_auth_secret" json:"direct_auth_secret"`
-	// EnvironmentManager configures the in-process environment manager. Disabled when unset.
-	EnvironmentManager EnvironmentManagerConfig `yaml:"environment_manager" json:"environment_manager"`
 }
 
 // SecretProviderConfig configures where this deployment's secrets live. Configuration promoted from a
@@ -144,15 +142,6 @@ type SecretServiceConfig struct {
 	Token string `yaml:"token" json:"token"`
 	// TimeoutSeconds bounds a call to the service. A non-positive value falls back to the default.
 	TimeoutSeconds int `yaml:"timeout_seconds" json:"timeout_seconds"`
-}
-
-// EnvironmentManagerConfig configures the in-process environment manager, which promotes
-// configuration between deployments. It is a control plane concern and is ignored elsewhere.
-//
-// DataDir is where environments and captured versions are kept. Leaving it empty disables the
-// module, which is what a deployment using the standalone environment manager service wants.
-type EnvironmentManagerConfig struct {
-	DataDir string `yaml:"data_dir" json:"data_dir"`
 }
 
 // TokenRevocationConfig configures the Resource Server's token-revocation enforcement: an in-memory

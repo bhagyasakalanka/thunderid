@@ -146,20 +146,6 @@ export interface GateClientConfig {
 }
 
 /**
- * Environment manager configuration, pointing at the service that holds environment configuration
- * versions and drives promotion between environments.
- *
- * @public
- */
-export interface EnvManagerConfig {
-  /**
-   * Full public URL of the environment manager service.
-   * @example "https://localhost:8095"
-   */
-  public_url?: string;
-}
-
-/**
  * Theme configuration interface that defines theming options for applications.
  */
 export interface ThemeConfig {
@@ -315,12 +301,6 @@ export interface ProductConfig {
    * `${getServerUrl()}/gate/callback`.
    */
   gate_client?: GateClientConfig;
-
-  /**
-   * Optional environment manager location. When omitted, the promotion feature reports that it is
-   * not configured instead of calling an unknown host.
-   */
-  env_manager?: EnvManagerConfig;
 
   /** Optional design configuration for theming and UI customization */
   design?: DesignConfig;
