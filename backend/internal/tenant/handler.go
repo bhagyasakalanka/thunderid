@@ -76,6 +76,55 @@ func (h *tenantHandler) HandleTenantPostRequest(w http.ResponseWriter, r *http.R
 	logger.Debug(ctx, "Successfully provisioned tenant", log.String("deploymentID", created.DeploymentID))
 }
 
+// HandleEnvironmentPostRequest registers an existing tenant as an environment of its organization.
+//
+// A tenant created without a data plane has none: there was nowhere to apply to. This completes the
+// setup once that data plane exists, using the same system credentials the tenant was created with
+// rather than a token for the tenant itself.
+func (h *tenantHandler) HandleEnvironmentPostRequest(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logger := log.GetLogger().With(log.String(log.LoggerKeyComponentName, tenantHandlerLoggerComponentName))
+
+	deploymentID := r.PathValue("id")
+	if deploymentID == "" {
+		errResp := apierror.ErrorResponse{
+			Code:        ErrorInvalidDeploymentID.Code,
+			Message:     ErrorInvalidDeploymentID.Error,
+			Description: ErrorInvalidDeploymentID.ErrorDescription,
+		}
+		sysutils.WriteErrorResponse(ctx, w, http.StatusBadRequest, errResp)
+		return
+	}
+
+	request, err := sysutils.DecodeJSONBody[RegisterEnvironmentRequest](r)
+	if err != nil {
+		var valErr *sysutils.ValidationError
+		if errors.As(err, &valErr) {
+			sysutils.WriteStructuredErrorResponse(w, http.StatusBadRequest, "Validation Failed", valErr.Errors)
+			return
+		}
+		errResp := apierror.ErrorResponse{
+			Code:        ErrorInvalidRequestFormat.Code,
+			Message:     ErrorInvalidRequestFormat.Error,
+			Description: ErrorInvalidRequestFormat.ErrorDescription,
+		}
+		sysutils.WriteErrorResponse(ctx, w, http.StatusBadRequest, errResp)
+		return
+	}
+
+	request.DataPlane.ID = sysutils.SanitizeString(request.DataPlane.ID)
+	request.DataPlane.BaseURL = sysutils.SanitizeString(request.DataPlane.BaseURL)
+
+	environment, svcErr := h.tenantService.RegisterEnvironment(ctx, deploymentID, *request)
+	if svcErr != nil {
+		handleError(ctx, w, svcErr)
+		return
+	}
+
+	sysutils.WriteSuccessResponse(ctx, w, http.StatusCreated, environment)
+	logger.Debug(ctx, "Registered tenant as an environment", log.String("deploymentID", deploymentID))
+}
+
 // HandleTenantListRequest lists all managed tenants.
 func (h *tenantHandler) HandleTenantListRequest(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()

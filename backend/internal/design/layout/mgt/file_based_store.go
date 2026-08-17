@@ -67,7 +67,7 @@ func (f *layoutFileBasedStore) DeleteLayout(ctx context.Context, id string) erro
 
 // GetLayout implements layoutMgtStoreInterface.
 func (f *layoutFileBasedStore) GetLayout(ctx context.Context, id string) (Layout, error) {
-	data, err := f.GenericFileBasedStore.Get(id)
+	data, err := f.GenericFileBasedStore.Get(ctx, id)
 	if err != nil {
 		return Layout{}, errLayoutNotFound
 	}
@@ -89,7 +89,7 @@ func (f *layoutFileBasedStore) GetLayoutList(ctx context.Context, limit, offset 
 		return []Layout{}, nil
 	}
 
-	list, err := f.GenericFileBasedStore.List()
+	list, err := f.GenericFileBasedStore.List(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +116,7 @@ func (f *layoutFileBasedStore) GetLayoutList(ctx context.Context, limit, offset 
 
 // GetLayoutListCount implements layoutMgtStoreInterface.
 func (f *layoutFileBasedStore) GetLayoutListCount(ctx context.Context) (int, error) {
-	count, err := f.GenericFileBasedStore.Count()
+	count, err := f.GenericFileBasedStore.Count(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -144,7 +144,7 @@ func (f *layoutFileBasedStore) IsLayoutDeclarative(id string) bool {
 
 // IsLayoutHandleConflict checks if a layout handle already exists (excluding a specific ID).
 func (f *layoutFileBasedStore) IsLayoutHandleConflict(ctx context.Context, handle string, excludeID string) (bool, error) {
-	list, err := f.GenericFileBasedStore.List()
+	list, err := f.GenericFileBasedStore.List(ctx)
 	if err != nil {
 		return false, err
 	}

@@ -25,6 +25,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -52,6 +53,32 @@ type ThunderClient interface {
 // ClientFactory builds a ThunderClient for a base URL.
 type ClientFactory func(baseURL string, creds thunder.Credentials, insecure bool) ThunderClient
 
+// Store is the persistence this service needs, which store.Store implements against the environment
+// database. It is an interface so tests can substitute one that needs no database.
+//
+// Every method carries the deployment implicitly: a Store is opened for one, and cannot reach
+// another's environments.
+type Store interface {
+	SaveEnvironment(ctx context.Context, env model.Environment) error
+	GetEnvironment(ctx context.Context, id string) (model.Environment, error)
+	ListEnvironments(ctx context.Context) ([]model.Environment, error)
+	DeleteEnvironment(ctx context.Context, id string) error
+	NextRank(ctx context.Context) (int, error)
+	AddVersion(ctx context.Context, v model.Version) (model.Version, error)
+	GetVersion(ctx context.Context, envID string, seq int) (model.Version, error)
+	ListVersions(ctx context.Context, envID string) ([]model.Version, error)
+	LatestSeq(ctx context.Context, envID string) (int, error)
+
+	// Work queued for a Data Plane. Enqueue and Get are this deployment's own; claiming and
+	// completing are not, because a pod holds connections for whichever Data Planes dialed it
+	// rather than for one organization.
+	EnqueueJob(ctx context.Context, job store.Job) (store.Job, error)
+	GetJob(ctx context.Context, id string) (store.Job, error)
+	ClaimNextJob(ctx context.Context, dataPlaneID, claimedBy string) (store.Job, bool, error)
+	CompleteJob(ctx context.Context, deploymentID, id, result, failure string) error
+	ReleaseJob(ctx context.Context, deploymentID, id string) error
+}
+
 // callerCredentials presents the token of whoever is driving this request.
 //
 // The only server this service calls over HTTP is the control plane it runs inside, and always while
@@ -64,7 +91,7 @@ func callerCredentials(ctx context.Context) thunder.Credentials {
 
 // Service is the environment-management application service.
 type Service struct {
-	store     *store.Store
+	store     Store
 	newClient ClientFactory
 	now       func() time.Time
 	// hasher hashes a credential that is only ever verified. It is nil until the server installs one.
@@ -76,6 +103,9 @@ type Service struct {
 	// localCP is the control plane hosting this service, when it hosts one. It is how a promote reaches
 	// a tenant other than the caller's own.
 	localCP LocalControlPlane
+	// sealer encrypts a queued payload that carries a credential. It is nil until the server installs
+	// one, and queueing a credential without it is refused rather than done in the clear.
+	sealer SecretSealer
 }
 
 // LocalControlPlane writes configuration into a named tenant of the control plane this service runs in.
@@ -97,7 +127,7 @@ func (s *Service) SetLocalControlPlane(cp LocalControlPlane) {
 }
 
 // New builds a Service.
-func New(st *store.Store, factory ClientFactory) *Service {
+func New(st Store, factory ClientFactory) *Service {
 	return &Service{store: st, newClient: factory, now: time.Now}
 }
 
@@ -137,7 +167,10 @@ func (s *Service) CreateEnvironment(ctx context.Context,
 	if strings.TrimSpace(in.Target.DataPlaneID) == "" {
 		return CreateEnvironmentResult{}, fmt.Errorf("%w: target.dataPlaneId is required", ErrValidation)
 	}
-	rank := s.store.NextRank()
+	rank, err := s.store.NextRank(ctx)
+	if err != nil {
+		return CreateEnvironmentResult{}, err
+	}
 	if in.Rank != nil {
 		rank = *in.Rank
 	}
@@ -152,10 +185,14 @@ func (s *Service) CreateEnvironment(ctx context.Context,
 		CreatedAt:  now,
 		UpdatedAt:  now,
 	}
-	if err := validateGraph(append(s.store.ListEnvironments(), env)); err != nil {
+	existing, err := s.store.ListEnvironments(ctx)
+	if err != nil {
 		return CreateEnvironmentResult{}, err
 	}
-	if err := s.store.SaveEnvironment(env); err != nil {
+	if err := validateGraph(append(existing, env)); err != nil {
+		return CreateEnvironmentResult{}, err
+	}
+	if err := s.store.SaveEnvironment(ctx, env); err != nil {
 		return CreateEnvironmentResult{}, err
 	}
 
@@ -200,7 +237,7 @@ func (s *Service) issueDataPlaneToken(ctx context.Context, env model.Environment
 // place. That is the honest behaviour for a rotation: a credential that still worked afterwards would
 // not have been rotated.
 func (s *Service) RegenerateDataPlaneToken(ctx context.Context, envID string) (string, error) {
-	env, err := s.store.GetEnvironment(envID)
+	env, err := s.store.GetEnvironment(ctx, envID)
 	if err != nil {
 		return "", err
 	}
@@ -213,15 +250,19 @@ func (s *Service) RegenerateDataPlaneToken(ctx context.Context, envID string) (s
 // UpdateEnvironmentEdges replaces an environment's outgoing promotion edges. Edges are set after the
 // fact because the environments they point at generally do not exist yet when the first one is
 // registered.
-func (s *Service) UpdateEnvironmentEdges(envID string, promotesTo []string) (model.Environment, error) {
-	env, err := s.store.GetEnvironment(envID)
+func (s *Service) UpdateEnvironmentEdges(ctx context.Context, envID string,
+	promotesTo []string) (model.Environment, error) {
+	env, err := s.store.GetEnvironment(ctx, envID)
 	if err != nil {
 		return model.Environment{}, err
 	}
 	env.PromotesTo = promotesTo
 	env.UpdatedAt = s.now().UTC()
 
-	envs := s.store.ListEnvironments()
+	envs, err := s.store.ListEnvironments(ctx)
+	if err != nil {
+		return model.Environment{}, err
+	}
 	for i := range envs {
 		if envs[i].ID == envID {
 			envs[i] = env
@@ -230,20 +271,20 @@ func (s *Service) UpdateEnvironmentEdges(envID string, promotesTo []string) (mod
 	if err := validateGraph(envs); err != nil {
 		return model.Environment{}, err
 	}
-	if err := s.store.SaveEnvironment(env); err != nil {
+	if err := s.store.SaveEnvironment(ctx, env); err != nil {
 		return model.Environment{}, err
 	}
 	return env, nil
 }
 
 // GetEnvironment returns an environment.
-func (s *Service) GetEnvironment(id string) (model.Environment, error) {
-	return s.store.GetEnvironment(id)
+func (s *Service) GetEnvironment(ctx context.Context, id string) (model.Environment, error) {
+	return s.store.GetEnvironment(ctx, id)
 }
 
 // ListEnvironments returns all environments ordered by rank.
-func (s *Service) ListEnvironments() []model.Environment {
-	return s.store.ListEnvironments()
+func (s *Service) ListEnvironments(ctx context.Context) ([]model.Environment, error) {
+	return s.store.ListEnvironments(ctx)
 }
 
 // EnvironmentSummary is an environment plus the version state the promotion view needs, so the chain
@@ -266,8 +307,11 @@ type EnvironmentSummary struct {
 
 // ListEnvironmentSummaries returns every environment in promotion order (each one before those it
 // promotes into), annotated with its version state and its edges in the promotion graph.
-func (s *Service) ListEnvironmentSummaries() ([]EnvironmentSummary, error) {
-	envs := s.store.ListEnvironments()
+func (s *Service) ListEnvironmentSummaries(ctx context.Context) ([]EnvironmentSummary, error) {
+	envs, err := s.store.ListEnvironments(ctx)
+	if err != nil {
+		return nil, err
+	}
 	ordered := topologicalOrder(envs)
 	adjacency := buildAdjacency(envs)
 
@@ -280,7 +324,7 @@ func (s *Service) ListEnvironmentSummaries() ([]EnvironmentSummary, error) {
 
 	out := make([]EnvironmentSummary, 0, len(ordered))
 	for _, env := range ordered {
-		latest, err := s.store.LatestSeq(env.ID)
+		latest, err := s.store.LatestSeq(ctx, env.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -305,8 +349,8 @@ func (s *Service) ListEnvironmentSummaries() ([]EnvironmentSummary, error) {
 }
 
 // DeleteEnvironment removes an environment and its versions.
-func (s *Service) DeleteEnvironment(id string) error {
-	return s.store.DeleteEnvironment(id)
+func (s *Service) DeleteEnvironment(ctx context.Context, id string) error {
+	return s.store.DeleteEnvironment(ctx, id)
 }
 
 // ---- versions ----
@@ -314,7 +358,7 @@ func (s *Service) DeleteEnvironment(id string) error {
 // CaptureVersion pulls the current config from an environment's control-plane source (export plus
 // revealed secret values) and stores it as a new version.
 func (s *Service) CaptureVersion(ctx context.Context, envID, note string) (model.Version, error) {
-	env, err := s.store.GetEnvironment(envID)
+	env, err := s.store.GetEnvironment(ctx, envID)
 	if err != nil {
 		return model.Version{}, err
 	}
@@ -324,7 +368,11 @@ func (s *Service) CaptureVersion(ctx context.Context, envID, note string) (model
 	// An environment fed by promotion has no configuration of its own to read: its control plane tenant
 	// holds what the promotion put there. Capturing would pull the caller's own tenant into this
 	// environment's history and present it as this environment's state.
-	if isPromotionFed(s.store.ListEnvironments(), envID) {
+	envs, err := s.store.ListEnvironments(ctx)
+	if err != nil {
+		return model.Version{}, err
+	}
+	if isPromotionFed(envs, envID) {
 		return model.Version{}, ErrPromotionFed
 	}
 	client := s.newClient(env.Source.BaseURL, callerCredentials(ctx), env.Source.InsecureSkipVerify)
@@ -361,7 +409,7 @@ func (s *Service) CaptureVersion(ctx context.Context, envID, note string) (model
 		delete(vars, key)
 	}
 
-	return s.store.AddVersion(model.Version{
+	return s.store.AddVersion(ctx, model.Version{
 		EnvID:      envID,
 		Origin:     model.OriginCaptured,
 		Note:       note,
@@ -373,15 +421,16 @@ func (s *Service) CaptureVersion(ctx context.Context, envID, note string) (model
 }
 
 // UploadVersion stores a caller-supplied bundle as a new version.
-func (s *Service) UploadVersion(envID, resources string, variables map[string]string, note string) (
+func (s *Service) UploadVersion(ctx context.Context, envID, resources string,
+	variables map[string]string, note string) (
 	model.Version, error) {
-	if _, err := s.store.GetEnvironment(envID); err != nil {
+	if _, err := s.store.GetEnvironment(ctx, envID); err != nil {
 		return model.Version{}, err
 	}
 	if variables == nil {
 		variables = map[string]string{}
 	}
-	return s.store.AddVersion(model.Version{
+	return s.store.AddVersion(ctx, model.Version{
 		EnvID:     envID,
 		Origin:    model.OriginUploaded,
 		Note:      note,
@@ -392,30 +441,30 @@ func (s *Service) UploadVersion(envID, resources string, variables map[string]st
 }
 
 // GetVersion returns a full version.
-func (s *Service) GetVersion(envID string, seq int) (model.Version, error) {
-	return s.store.GetVersion(envID, seq)
+func (s *Service) GetVersion(ctx context.Context, envID string, seq int) (model.Version, error) {
+	return s.store.GetVersion(ctx, envID, seq)
 }
 
 // ListVersions returns version metadata newest first.
-func (s *Service) ListVersions(envID string) ([]model.Version, error) {
-	if _, err := s.store.GetEnvironment(envID); err != nil {
+func (s *Service) ListVersions(ctx context.Context, envID string) ([]model.Version, error) {
+	if _, err := s.store.GetEnvironment(ctx, envID); err != nil {
 		return nil, err
 	}
-	return s.store.ListVersions(envID)
+	return s.store.ListVersions(ctx, envID)
 }
 
 // Diff computes the difference between two version references (a sequence number, "latest" or
 // "applied") within one environment.
-func (s *Service) Diff(envID, fromRef, toRef string) (diff.Diff, error) {
-	env, err := s.store.GetEnvironment(envID)
+func (s *Service) Diff(ctx context.Context, envID, fromRef, toRef string) (diff.Diff, error) {
+	env, err := s.store.GetEnvironment(ctx, envID)
 	if err != nil {
 		return diff.Diff{}, err
 	}
-	from, err := s.resolveResources(env, fromRef)
+	from, err := s.resolveResources(ctx, env, fromRef)
 	if err != nil {
 		return diff.Diff{}, err
 	}
-	to, err := s.resolveResources(env, toRef)
+	to, err := s.resolveResources(ctx, env, toRef)
 	if err != nil {
 		return diff.Diff{}, err
 	}
@@ -436,6 +485,12 @@ type ApplyResult struct {
 	// applied resource can come out with a field such as its redirect URIs stripped.
 	MissingVariables []string                `json:"missingVariables,omitempty"`
 	Import           *thunder.ImportResponse `json:"import,omitempty"`
+	// JobID identifies the queued work, and Status says whether it is finished. An apply is delivered
+	// by the pod holding the data plane's connection, which may not be the one that took the request,
+	// so a "pending" status means the answer is collected later by this id rather than that anything
+	// went wrong. Import is set only once the status is "done".
+	JobID  string `json:"jobId"`
+	Status string `json:"status"`
 }
 
 // resolveVariables returns the values an apply would use: the version's captured snapshot overlaid
@@ -525,18 +580,18 @@ func (s *Service) missingSecrets(ctx context.Context, env model.Environment,
 // CheckVariables reports which placeholders a version would fail to resolve, so a caller can fix them
 // before applying rather than discovering a silently emptied field afterwards.
 func (s *Service) CheckVariables(ctx context.Context, envID, versionRef string) (VariableStatus, error) {
-	env, err := s.store.GetEnvironment(envID)
+	env, err := s.store.GetEnvironment(ctx, envID)
 	if err != nil {
 		return VariableStatus{}, err
 	}
-	seq, err := s.resolveSeq(env, defaultRef(versionRef, "latest"))
+	seq, err := s.resolveSeq(ctx, env, defaultRef(versionRef, "latest"))
 	if err != nil {
 		return VariableStatus{}, err
 	}
 	if seq == 0 {
 		return VariableStatus{}, ErrNoVersions
 	}
-	version, err := s.store.GetVersion(envID, seq)
+	version, err := s.store.GetVersion(ctx, envID, seq)
 	if err != nil {
 		return VariableStatus{}, err
 	}
@@ -564,25 +619,25 @@ func (s *Service) CheckVariables(ctx context.Context, envID, versionRef string) 
 // target version against what is currently applied and drives the import API with the full target
 // bundle (idempotent upsert) plus deletions for resources the diff shows were removed.
 func (s *Service) Apply(ctx context.Context, envID, versionRef string, dryRun bool) (ApplyResult, error) {
-	env, err := s.store.GetEnvironment(envID)
+	env, err := s.store.GetEnvironment(ctx, envID)
 	if err != nil {
 		return ApplyResult{}, err
 	}
-	targetSeq, err := s.resolveSeq(env, defaultRef(versionRef, "latest"))
+	targetSeq, err := s.resolveSeq(ctx, env, defaultRef(versionRef, "latest"))
 	if err != nil {
 		return ApplyResult{}, err
 	}
 	if targetSeq == 0 {
 		return ApplyResult{}, ErrNoVersions
 	}
-	target, err := s.store.GetVersion(envID, targetSeq)
+	target, err := s.store.GetVersion(ctx, envID, targetSeq)
 	if err != nil {
 		return ApplyResult{}, err
 	}
 
 	var appliedRes []bundle.Resource
 	if env.AppliedSeq > 0 {
-		if applied, err := s.store.GetVersion(envID, env.AppliedSeq); err == nil {
+		if applied, err := s.store.GetVersion(ctx, envID, env.AppliedSeq); err == nil {
 			appliedRes = withoutExcluded(bundle.Parse(applied.Resources), env.Excluded)
 		}
 	}
@@ -603,29 +658,39 @@ func (s *Service) Apply(ctx context.Context, envID, versionRef string, dryRun bo
 		// refuses local edits to it. Its own resources, written by other means, stay editable.
 		Options: &thunder.ImportOptions{MarkManaged: true},
 	}
-	plane, err := s.dataPlaneFor(env)
+	// The import is queued rather than sent, and delivered by whichever pod holds this data plane's
+	// connection, which may not be this one. When it is this one the whole thing finishes here and
+	// the caller is answered in this response; otherwise the caller collects the answer by job id.
+	payload, err := json.Marshal(importPayload{
+		Request: req, EnvID: env.ID, TargetSeq: targetSeq, DryRun: dryRun,
+	})
+	if err != nil {
+		return ApplyResult{}, fmt.Errorf("failed to prepare the import: %w", err)
+	}
+	job, err := s.dispatch(ctx, env, store.JobTypeImport, payload, false)
 	if err != nil {
 		return ApplyResult{}, err
 	}
-	resp, err := plane.Import(ctx, req)
-	if err != nil {
-		return ApplyResult{}, fmt.Errorf("import failed: %w", err)
-	}
 
-	if !dryRun {
-		env.AppliedSeq = targetSeq
-		env.UpdatedAt = s.now().UTC()
-		if err := s.store.SaveEnvironment(env); err != nil {
-			return ApplyResult{}, err
-		}
-	}
-	return ApplyResult{
+	result := ApplyResult{
+		JobID:            job.ID,
+		Status:           job.Status,
 		TargetSeq:        targetSeq,
 		Diff:             d,
 		DryRun:           dryRun,
 		MissingVariables: bundle.MissingVariables(target.Resources, values, secretKeysOf(target)),
-		Import:           resp,
-	}, nil
+	}
+	if job.Status == store.JobFailed {
+		return result, fmt.Errorf("import failed: %s", job.Error)
+	}
+	if job.Status == store.JobDone && job.Result != "" {
+		var resp thunder.ImportResponse
+		if err := json.Unmarshal([]byte(job.Result), &resp); err != nil {
+			return result, fmt.Errorf("failed to read the import result: %w", err)
+		}
+		result.Import = &resp
+	}
+	return result, nil
 }
 
 // ApplyAllResult reports one environment's outcome from an apply across every environment.
@@ -645,13 +710,16 @@ type ApplyAllResult struct {
 // untouched, but every data plane holding the old value needs the new one, and re-applying is what
 // pushes it. Environments with no version are skipped.
 func (s *Service) ApplyAll(ctx context.Context, dryRun bool) []ApplyAllResult {
-	envs := s.store.ListEnvironments()
+	envs, err := s.store.ListEnvironments(ctx)
+	if err != nil {
+		return []ApplyAllResult{{Error: err.Error()}}
+	}
 	results := make([]ApplyAllResult, 0, len(envs))
 
 	for _, env := range envs {
 		outcome := ApplyAllResult{EnvID: env.ID, EnvName: env.Name}
 
-		latest, err := s.store.LatestSeq(env.ID)
+		latest, err := s.store.LatestSeq(ctx, env.ID)
 		if err != nil {
 			outcome.Error = err.Error()
 			results = append(results, outcome)
@@ -705,8 +773,8 @@ type PromoteResult struct {
 // PromotePreview returns the diff of a source environment's version against the target environment's
 // current version, without writing anything. This is what a caller reviews (and selects from) before
 // promoting.
-func (s *Service) PromotePreview(fromEnvID, toEnvID, versionRef string) (diff.Diff, error) {
-	_, _, sourceRes, targetRes, err := s.promoteInputs(fromEnvID, toEnvID, versionRef)
+func (s *Service) PromotePreview(ctx context.Context, fromEnvID, toEnvID, versionRef string) (diff.Diff, error) {
+	_, _, sourceRes, targetRes, err := s.promoteInputs(ctx, fromEnvID, toEnvID, versionRef)
 	if err != nil {
 		return diff.Diff{}, err
 	}
@@ -716,13 +784,13 @@ func (s *Service) PromotePreview(fromEnvID, toEnvID, versionRef string) (diff.Di
 // Promote copies selected changes from a source environment's version into a new version of the
 // target environment, optionally applying it to the target's data plane.
 func (s *Service) Promote(ctx context.Context, in PromoteInput) (PromoteResult, error) {
-	source, target, sourceRes, targetRes, err := s.promoteInputs(in.FromEnvID, in.ToEnvID, in.VersionRef)
+	source, target, sourceRes, targetRes, err := s.promoteInputs(ctx, in.FromEnvID, in.ToEnvID, in.VersionRef)
 	if err != nil {
 		return PromoteResult{}, err
 	}
 	preview := diff.Compute(targetRes, sourceRes)
 
-	targetEnv, err := s.store.GetEnvironment(in.ToEnvID)
+	targetEnv, err := s.store.GetEnvironment(ctx, in.ToEnvID)
 	if err != nil {
 		return PromoteResult{}, err
 	}
@@ -731,9 +799,9 @@ func (s *Service) Promote(ctx context.Context, in PromoteInput) (PromoteResult, 
 	selection := in.Selection
 	if !in.SelectionProvided {
 		selection = defaultSelection(preview, targetEnv.Excluded)
-	} else if err := s.rememberSelection(targetEnv, preview, selection); err != nil {
+	} else if err := s.rememberSelection(ctx, targetEnv, preview, selection); err != nil {
 		return PromoteResult{}, err
-	} else if targetEnv, err = s.store.GetEnvironment(in.ToEnvID); err != nil {
+	} else if targetEnv, err = s.store.GetEnvironment(ctx, in.ToEnvID); err != nil {
 		return PromoteResult{}, err
 	}
 
@@ -745,7 +813,7 @@ func (s *Service) Promote(ctx context.Context, in PromoteInput) (PromoteResult, 
 	// would reach that data plane through capture and replace a credential already in use.
 	secretOutcome := targetSecretOutcome{Generated: []string{}, Reused: []string{}, Skipped: secretKeysOf(source)}
 
-	newVersion, err := s.store.AddVersion(model.Version{
+	newVersion, err := s.store.AddVersion(ctx, model.Version{
 		EnvID:       in.ToEnvID,
 		Origin:      model.OriginPromoted,
 		ParentSeq:   target.currentSeq,
@@ -771,7 +839,7 @@ func (s *Service) Promote(ctx context.Context, in PromoteInput) (PromoteResult, 
 	}
 
 	if controlPlane != nil {
-		s.recordControlPlaneSeq(targetEnv, newVersion.Seq)
+		s.recordControlPlaneSeq(ctx, targetEnv, newVersion.Seq)
 	}
 
 	result := PromoteResult{
@@ -796,18 +864,18 @@ func (s *Service) Promote(ctx context.Context, in PromoteInput) (PromoteResult, 
 // control plane without touching what is serving traffic.
 func (s *Service) ApplyToControlPlane(ctx context.Context, envID,
 	versionRef string) (*thunder.ImportResponse, error) {
-	env, err := s.store.GetEnvironment(envID)
+	env, err := s.store.GetEnvironment(ctx, envID)
 	if err != nil {
 		return nil, err
 	}
-	seq, err := s.resolveSeq(env, defaultRef(versionRef, "latest"))
+	seq, err := s.resolveSeq(ctx, env, defaultRef(versionRef, "latest"))
 	if err != nil {
 		return nil, err
 	}
 	if seq == 0 {
 		return nil, ErrNoVersions
 	}
-	version, err := s.store.GetVersion(envID, seq)
+	version, err := s.store.GetVersion(ctx, envID, seq)
 	if err != nil {
 		return nil, err
 	}
@@ -815,12 +883,12 @@ func (s *Service) ApplyToControlPlane(ctx context.Context, envID,
 	// Credentials are left as the tenant holds them, for the same reason a revert does: they are hashes
 	// this service cannot reproduce, and rewriting them would lock out every client that has one.
 	resp, err := s.importIntoTargetControlPlane(ctx, env, bundle.Parse(version.Resources),
-		version.Variables, secretKeysOf(version), s.controlPlaneDeletions(env, version))
+		version.Variables, secretKeysOf(version), s.controlPlaneDeletions(ctx, env, version))
 	if err != nil {
 		return nil, err
 	}
 	if resp != nil {
-		s.recordControlPlaneSeq(env, seq)
+		s.recordControlPlaneSeq(ctx, env, seq)
 	}
 	return resp, nil
 }
@@ -835,13 +903,13 @@ func (s *Service) ApplyToControlPlane(ctx context.Context, envID,
 //
 // With nothing written by this service yet, the newest version stands in: a capture is a reading of
 // the tenant, so it is the best available account of what is there.
-func (s *Service) controlPlaneDeletions(env model.Environment,
+func (s *Service) controlPlaneDeletions(ctx context.Context, env model.Environment,
 	version model.Version) []thunder.ResourceDeletion {
-	baseSeq, err := s.controlPlaneBaseline(env)
+	baseSeq, err := s.controlPlaneBaseline(ctx, env)
 	if err != nil || baseSeq == 0 || baseSeq == version.Seq {
 		return nil
 	}
-	base, err := s.store.GetVersion(env.ID, baseSeq)
+	base, err := s.store.GetVersion(ctx, env.ID, baseSeq)
 	if err != nil {
 		return nil
 	}
@@ -850,11 +918,11 @@ func (s *Service) controlPlaneDeletions(env model.Environment,
 
 // controlPlaneBaseline is the version the control plane tenant currently reflects. It is what a write
 // into that tenant compares against, so the removals it computes match what is actually there.
-func (s *Service) controlPlaneBaseline(env model.Environment) (int, error) {
+func (s *Service) controlPlaneBaseline(ctx context.Context, env model.Environment) (int, error) {
 	if env.ControlPlaneSeq > 0 {
 		return env.ControlPlaneSeq, nil
 	}
-	return s.store.LatestSeq(env.ID)
+	return s.store.LatestSeq(ctx, env.ID)
 }
 
 // promotionBaseline is the version an environment is taken to be at when promoting.
@@ -867,16 +935,16 @@ func (s *Service) controlPlaneBaseline(env model.Environment) (int, error) {
 //
 // An environment with nothing applied yet falls back to its newest version, so a freshly registered
 // one can still promote.
-func (s *Service) promotionBaseline(env model.Environment) (int, error) {
+func (s *Service) promotionBaseline(ctx context.Context, env model.Environment) (int, error) {
 	if env.AppliedSeq > 0 {
 		return env.AppliedSeq, nil
 	}
-	return s.store.LatestSeq(env.ID)
+	return s.store.LatestSeq(ctx, env.ID)
 }
 
 // recordControlPlaneSeq remembers which version a tenant was last written with, so the next write
 // compares against what is actually there.
-func (s *Service) recordControlPlaneSeq(env model.Environment, seq int) {
+func (s *Service) recordControlPlaneSeq(ctx context.Context, env model.Environment, seq int) {
 	if seq <= 0 || env.ControlPlaneSeq == seq {
 		return
 	}
@@ -884,7 +952,7 @@ func (s *Service) recordControlPlaneSeq(env model.Environment, seq int) {
 	env.UpdatedAt = s.now().UTC()
 	// A failure here costs accuracy on the next comparison, not this write, so it is not worth
 	// failing the operation that just succeeded.
-	_ = s.store.SaveEnvironment(env)
+	_ = s.store.SaveEnvironment(ctx, env)
 }
 
 // ---- revert ----
@@ -912,34 +980,34 @@ type RevertResult struct {
 // Revert creates a new version that restores the content of an earlier version, optionally applying
 // it. History is preserved: reverting adds a new head rather than deleting versions.
 func (s *Service) Revert(ctx context.Context, in RevertInput) (RevertResult, error) {
-	env, err := s.store.GetEnvironment(in.EnvID)
+	env, err := s.store.GetEnvironment(ctx, in.EnvID)
 	if err != nil {
 		return RevertResult{}, err
 	}
-	toSeq, err := s.resolveSeq(env, in.ToRef)
+	toSeq, err := s.resolveSeq(ctx, env, in.ToRef)
 	if err != nil {
 		return RevertResult{}, err
 	}
 	if toSeq == 0 {
 		return RevertResult{}, ErrNoVersions
 	}
-	target, err := s.store.GetVersion(in.EnvID, toSeq)
+	target, err := s.store.GetVersion(ctx, in.EnvID, toSeq)
 	if err != nil {
 		return RevertResult{}, err
 	}
-	latestSeq, err := s.store.LatestSeq(in.EnvID)
+	latestSeq, err := s.store.LatestSeq(ctx, in.EnvID)
 	if err != nil {
 		return RevertResult{}, err
 	}
 	var currentRes []bundle.Resource
 	if latestSeq > 0 {
-		if current, err := s.store.GetVersion(in.EnvID, latestSeq); err == nil {
+		if current, err := s.store.GetVersion(ctx, in.EnvID, latestSeq); err == nil {
 			currentRes = bundle.Parse(current.Resources)
 		}
 	}
 	preview := diff.Compute(currentRes, bundle.Parse(target.Resources))
 
-	newVersion, err := s.store.AddVersion(model.Version{
+	newVersion, err := s.store.AddVersion(ctx, model.Version{
 		EnvID:      in.EnvID,
 		Origin:     model.OriginReverted,
 		ParentSeq:  latestSeq,
@@ -965,7 +1033,7 @@ func (s *Service) Revert(ctx context.Context, in RevertInput) (RevertResult, err
 	}
 	result.ControlPlane = controlPlane
 	if controlPlane != nil {
-		s.recordControlPlaneSeq(env, newVersion.Seq)
+		s.recordControlPlaneSeq(ctx, env, newVersion.Seq)
 	}
 
 	if in.Apply {
@@ -987,33 +1055,36 @@ type promoteContext struct {
 }
 
 // promoteInputs resolves the source version and the target environment's current version.
-func (s *Service) promoteInputs(fromEnvID, toEnvID, versionRef string) (
+func (s *Service) promoteInputs(ctx context.Context, fromEnvID, toEnvID, versionRef string) (
 	model.Version, promoteContext, []bundle.Resource, []bundle.Resource, error) {
-	fromEnv, err := s.store.GetEnvironment(fromEnvID)
+	fromEnv, err := s.store.GetEnvironment(ctx, fromEnvID)
 	if err != nil {
 		return model.Version{}, promoteContext{}, nil, nil, err
 	}
-	toEnv, err := s.store.GetEnvironment(toEnvID)
+	toEnv, err := s.store.GetEnvironment(ctx, toEnvID)
 	if err != nil {
 		return model.Version{}, promoteContext{}, nil, nil, err
 	}
 	// Movement must follow an edge of the promotion graph. The reverse direction is allowed too, which
 	// is what a demotion is: pushing a version back down the same edge it came up.
-	envs := s.store.ListEnvironments()
+	envs, listErr := s.store.ListEnvironments(ctx)
+	if listErr != nil {
+		return model.Version{}, promoteContext{}, nil, nil, listErr
+	}
 	if !canPromote(envs, fromEnvID, toEnvID) && !canPromote(envs, toEnvID, fromEnvID) {
 		return model.Version{}, promoteContext{}, nil, nil, ErrNoPromotionPath
 	}
 
 	// A promotion moves what the source is running, not what has been captured from it. A caller naming
 	// a version explicitly still gets that one.
-	sourceSeq, err := s.resolveSeq(fromEnv, defaultRef(versionRef, "promotable"))
+	sourceSeq, err := s.resolveSeq(ctx, fromEnv, defaultRef(versionRef, "promotable"))
 	if err != nil {
 		return model.Version{}, promoteContext{}, nil, nil, err
 	}
 	if sourceSeq == 0 {
 		return model.Version{}, promoteContext{}, nil, nil, ErrNoVersions
 	}
-	source, err := s.store.GetVersion(fromEnvID, sourceSeq)
+	source, err := s.store.GetVersion(ctx, fromEnvID, sourceSeq)
 	if err != nil {
 		return model.Version{}, promoteContext{}, nil, nil, err
 	}
@@ -1022,8 +1093,8 @@ func (s *Service) promoteInputs(fromEnvID, toEnvID, versionRef string) (
 	// states that exist rather than between two drafts.
 	tctx := promoteContext{currentVariables: map[string]string{}}
 	var targetRes []bundle.Resource
-	if targetSeq, err := s.promotionBaseline(toEnv); err == nil && targetSeq > 0 {
-		if targetVersion, err := s.store.GetVersion(toEnvID, targetSeq); err == nil {
+	if targetSeq, err := s.promotionBaseline(ctx, toEnv); err == nil && targetSeq > 0 {
+		if targetVersion, err := s.store.GetVersion(ctx, toEnvID, targetSeq); err == nil {
 			tctx.currentSeq = targetSeq
 			tctx.currentVariables = targetVersion.Variables
 			targetRes = bundle.Parse(targetVersion.Resources)
@@ -1033,15 +1104,15 @@ func (s *Service) promoteInputs(fromEnvID, toEnvID, versionRef string) (
 }
 
 // resolveResources resolves a version reference to its parsed resources.
-func (s *Service) resolveResources(env model.Environment, ref string) ([]bundle.Resource, error) {
-	seq, err := s.resolveSeq(env, ref)
+func (s *Service) resolveResources(ctx context.Context, env model.Environment, ref string) ([]bundle.Resource, error) {
+	seq, err := s.resolveSeq(ctx, env, ref)
 	if err != nil {
 		return nil, err
 	}
 	if seq == 0 {
 		return nil, nil
 	}
-	v, err := s.store.GetVersion(env.ID, seq)
+	v, err := s.store.GetVersion(ctx, env.ID, seq)
 	if err != nil {
 		return nil, err
 	}
@@ -1050,13 +1121,13 @@ func (s *Service) resolveResources(env model.Environment, ref string) ([]bundle.
 
 // resolveSeq resolves a reference ("latest", "previous", "applied", or a number) to a version
 // sequence. It returns 0 when there is nothing to resolve to (no versions / nothing applied).
-func (s *Service) resolveSeq(env model.Environment, ref string) (int, error) {
+func (s *Service) resolveSeq(ctx context.Context, env model.Environment, ref string) (int, error) {
 	switch ref {
 	case "", "latest":
-		return s.store.LatestSeq(env.ID)
+		return s.store.LatestSeq(ctx, env.ID)
 	case "previous":
 		// The version immediately before the current head, which is what a one-click revert targets.
-		versions, err := s.store.ListVersions(env.ID)
+		versions, err := s.store.ListVersions(ctx, env.ID)
 		if err != nil {
 			return 0, err
 		}
@@ -1067,9 +1138,9 @@ func (s *Service) resolveSeq(env model.Environment, ref string) (int, error) {
 	case "applied":
 		return env.AppliedSeq, nil
 	case "control-plane":
-		return s.controlPlaneBaseline(env)
+		return s.controlPlaneBaseline(ctx, env)
 	case "promotable":
-		return s.promotionBaseline(env)
+		return s.promotionBaseline(ctx, env)
 	default:
 		seq, err := strconv.Atoi(ref)
 		if err != nil || seq <= 0 {

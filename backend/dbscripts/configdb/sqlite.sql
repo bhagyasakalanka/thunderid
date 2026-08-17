@@ -378,22 +378,6 @@ CREATE TABLE "SERVER_CONFIG" (
     PRIMARY KEY (DEPLOYMENT_ID, NAME)
 );
 
--- Table to store deployment-scoped non-secret environment variables (Control Plane). KEY is the
--- declarative placeholder the value resolves (e.g. MY_APP_REDIRECT_URL); VALUE is stored in
--- plaintext because it carries no confidential material.
-CREATE TABLE "ENVIRONMENT_VARIABLE" (
-    DEPLOYMENT_ID VARCHAR(255) NOT NULL,
-    ID            VARCHAR(36)  PRIMARY KEY,
-    KEY           VARCHAR(255) NOT NULL,
-    VALUE         TEXT         NOT NULL,
-    DESCRIPTION   VARCHAR(255),
-    CREATED_AT    TEXT         DEFAULT (datetime('now')),
-    UPDATED_AT    TEXT         DEFAULT (datetime('now')),
-    CONSTRAINT unique_environment_variable_key UNIQUE (DEPLOYMENT_ID, KEY)
-);
--- Environment variables are always listed and looked up within a deployment.
-CREATE INDEX idx_environment_variable_deployment ON "ENVIRONMENT_VARIABLE" (DEPLOYMENT_ID);
-
 -- Registry of resources this deployment does not own. A Data Plane records here everything the
 -- Control Plane wrote to it through the import API, so its own management APIs can refuse to change
 -- them: a resource edited on both planes is silently overwritten by the next promotion. Only the

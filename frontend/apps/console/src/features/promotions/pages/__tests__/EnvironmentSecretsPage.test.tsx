@@ -65,12 +65,12 @@ describe('EnvironmentSecretsPage', () => {
     render(<EnvironmentSecretsPage />);
 
     // A hashed credential is generated here, so both actions apply.
-    const hashed = screen.getByText('APPLICATION_APP_A_CLIENT_SECRET').closest('[role="row"]')!;
+    const hashed = screen.getByText('APPLICATION_APP_A_CLIENT_SECRET').closest('[role="row"]') as HTMLElement;
     expect(within(hashed).getByLabelText(/set value/i)).toBeInTheDocument();
     expect(within(hashed).getByLabelText(/regenerate/i)).toBeInTheDocument();
 
     // A credential replayed to an external service is issued there, so generating one is meaningless.
-    const replayed = screen.getByText('CONNECTION_TWILIO_AUTH_TOKEN').closest('[role="row"]')!;
+    const replayed = screen.getByText('CONNECTION_TWILIO_AUTH_TOKEN').closest('[role="row"]') as HTMLElement;
     expect(within(replayed).getByLabelText(/set value/i)).toBeInTheDocument();
     expect(within(replayed).queryByLabelText(/regenerate/i)).not.toBeInTheDocument();
   });

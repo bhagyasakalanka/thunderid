@@ -47,7 +47,8 @@ type environmentVariableStore struct {
 	deploymentID string
 }
 
-// newEnvironmentVariableStore creates a new environmentVariableStore bound to the config database.
+// newEnvironmentVariableStore creates a new environmentVariableStore bound to the environment
+// database, which it shares with the environment manager the variables are resolved for.
 func newEnvironmentVariableStore() environmentVariableStoreInterface {
 	return &environmentVariableStore{
 		dbProvider:   provider.GetDBProvider(),
@@ -57,7 +58,7 @@ func newEnvironmentVariableStore() environmentVariableStoreInterface {
 
 // CreateEnvironmentVariable inserts a new environment variable row.
 func (s *environmentVariableStore) CreateEnvironmentVariable(ctx context.Context, ev EnvironmentVariable) error {
-	dbClient, err := s.dbProvider.GetConfigDBClient()
+	dbClient, err := s.dbProvider.GetEnvironmentDBClient()
 	if err != nil {
 		return fmt.Errorf("failed to get database client: %w", err)
 	}
@@ -72,7 +73,7 @@ func (s *environmentVariableStore) CreateEnvironmentVariable(ctx context.Context
 
 // GetEnvironmentVariableCount returns the total number of environment variables for the deployment.
 func (s *environmentVariableStore) GetEnvironmentVariableCount(ctx context.Context) (int, error) {
-	dbClient, err := s.dbProvider.GetConfigDBClient()
+	dbClient, err := s.dbProvider.GetEnvironmentDBClient()
 	if err != nil {
 		return 0, fmt.Errorf("failed to get database client: %w", err)
 	}
@@ -95,7 +96,7 @@ func (s *environmentVariableStore) GetEnvironmentVariableCount(ctx context.Conte
 // GetEnvironmentVariableList returns a paginated list of environment variables.
 func (s *environmentVariableStore) GetEnvironmentVariableList(ctx context.Context, limit,
 	offset int) ([]EnvironmentVariable, error) {
-	dbClient, err := s.dbProvider.GetConfigDBClient()
+	dbClient, err := s.dbProvider.GetEnvironmentDBClient()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get database client: %w", err)
 	}
@@ -116,7 +117,7 @@ func (s *environmentVariableStore) GetEnvironmentVariableList(ctx context.Contex
 // GetEnvironmentVariableByID returns a single environment variable by id.
 func (s *environmentVariableStore) GetEnvironmentVariableByID(ctx context.Context,
 	id string) (EnvironmentVariable, error) {
-	dbClient, err := s.dbProvider.GetConfigDBClient()
+	dbClient, err := s.dbProvider.GetEnvironmentDBClient()
 	if err != nil {
 		return EnvironmentVariable{}, fmt.Errorf("failed to get database client: %w", err)
 	}
@@ -135,7 +136,7 @@ func (s *environmentVariableStore) GetEnvironmentVariableByID(ctx context.Contex
 // GetEnvironmentVariableByKey returns a single environment variable by key.
 func (s *environmentVariableStore) GetEnvironmentVariableByKey(ctx context.Context,
 	key string) (EnvironmentVariable, error) {
-	dbClient, err := s.dbProvider.GetConfigDBClient()
+	dbClient, err := s.dbProvider.GetEnvironmentDBClient()
 	if err != nil {
 		return EnvironmentVariable{}, fmt.Errorf("failed to get database client: %w", err)
 	}
@@ -154,7 +155,7 @@ func (s *environmentVariableStore) GetEnvironmentVariableByKey(ctx context.Conte
 // UpdateEnvironmentVariableByID updates an environment variable's description and value.
 func (s *environmentVariableStore) UpdateEnvironmentVariableByID(ctx context.Context, id, description,
 	value string) error {
-	dbClient, err := s.dbProvider.GetConfigDBClient()
+	dbClient, err := s.dbProvider.GetEnvironmentDBClient()
 	if err != nil {
 		return fmt.Errorf("failed to get database client: %w", err)
 	}
@@ -172,7 +173,7 @@ func (s *environmentVariableStore) UpdateEnvironmentVariableByID(ctx context.Con
 
 // DeleteEnvironmentVariableByID deletes an environment variable by id.
 func (s *environmentVariableStore) DeleteEnvironmentVariableByID(ctx context.Context, id string) error {
-	dbClient, err := s.dbProvider.GetConfigDBClient()
+	dbClient, err := s.dbProvider.GetEnvironmentDBClient()
 	if err != nil {
 		return fmt.Errorf("failed to get database client: %w", err)
 	}
@@ -191,7 +192,7 @@ func (s *environmentVariableStore) DeleteEnvironmentVariableByID(ctx context.Con
 // GetEnvironmentVariableValues returns every environment variable key mapped to its value for the
 // deployment.
 func (s *environmentVariableStore) GetEnvironmentVariableValues(ctx context.Context) (map[string]string, error) {
-	dbClient, err := s.dbProvider.GetConfigDBClient()
+	dbClient, err := s.dbProvider.GetEnvironmentDBClient()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get database client: %w", err)
 	}

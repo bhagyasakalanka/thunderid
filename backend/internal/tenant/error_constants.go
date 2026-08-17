@@ -134,6 +134,35 @@ var (
 			DefaultValue: "The tenant could not be registered as an environment of its organization",
 		},
 	}
+	// ErrorInvalidDataPlane is returned when an environment is registered without naming the
+	// deployment its configuration is applied to.
+	ErrorInvalidDataPlane = tidcommon.ServiceError{
+		Type: tidcommon.ClientErrorType,
+		Code: "TNT-1009",
+		Error: tidcommon.I18nMessage{
+			Key:          "error.tenantservice.invalid_data_plane",
+			DefaultValue: "Invalid data plane",
+		},
+		ErrorDescription: tidcommon.I18nMessage{
+			Key:          "error.tenantservice.invalid_data_plane_description",
+			DefaultValue: "dataPlane.id is required to register an environment",
+		},
+	}
+	// ErrorEnvironmentRegistrationUnavailable is returned when this server hosts no environment
+	// manager, so there is nowhere to register an environment.
+	ErrorEnvironmentRegistrationUnavailable = tidcommon.ServiceError{
+		Type: tidcommon.ClientErrorType,
+		Code: "TNT-1010",
+		Error: tidcommon.I18nMessage{
+			Key:          "error.tenantservice.environment_registration_unavailable",
+			DefaultValue: "Environment registration is not available",
+		},
+		ErrorDescription: tidcommon.I18nMessage{
+			Key: "error.tenantservice.environment_registration_unavailable_description",
+			DefaultValue: "This server hosts no environment manager, so an environment cannot be " +
+				"registered here",
+		},
+	}
 	// ErrorInternalServer is returned for unexpected server-side errors.
 	ErrorInternalServer = tidcommon.ServiceError{
 		Type: tidcommon.ServerErrorType,

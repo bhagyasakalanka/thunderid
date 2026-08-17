@@ -41,16 +41,17 @@ func (s *Service) CaptureSecretForTenant(ctx context.Context, deploymentID, name
 		return 0, fmt.Errorf("%w: a tenant id and a secret name are required", ErrValidation)
 	}
 
+	envs, err := s.store.ListEnvironments(ctx)
+	if err != nil {
+		return 0, err
+	}
+
 	delivered := 0
-	for _, env := range s.store.ListEnvironments() {
+	for _, env := range envs {
 		if env.Source == nil || env.Source.DeploymentID != deploymentID {
 			continue
 		}
-		plane, err := s.dataPlaneFor(env)
-		if err != nil {
-			return delivered, fmt.Errorf("failed to store the secret for %s: %w", env.Name, err)
-		}
-		if err := plane.PutSecret(ctx, name, body); err != nil {
+		if _, err := s.queueSecret(ctx, env, name, body); err != nil {
 			return delivered, fmt.Errorf("failed to store the secret for %s: %w", env.Name, err)
 		}
 		delivered++

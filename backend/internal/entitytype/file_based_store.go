@@ -52,7 +52,9 @@ func (f *entityTypeFileBasedStore) DeleteEntityTypeByID(ctx context.Context, cat
 // GetEntityTypeByID implements entityTypeStoreInterface.
 func (f *entityTypeFileBasedStore) GetEntityTypeByID(ctx context.Context, category TypeCategory,
 	schemaID string) (EntityType, error) {
-	data, err := f.GenericFileBasedStore.Get(schemaID)
+	// Asks whether an id names a declarative resource, to refuse changing one. It is not a read on
+	// behalf of a deployment and returns no data, so it is not scoped.
+	data, err := f.GenericFileBasedStore.GetForLoad(schemaID)
 	if err != nil {
 		return EntityType{}, ErrEntityTypeNotFound
 	}
@@ -70,7 +72,7 @@ func (f *entityTypeFileBasedStore) GetEntityTypeByID(ctx context.Context, catego
 // GetEntityTypeByName implements entityTypeStoreInterface.
 func (f *entityTypeFileBasedStore) GetEntityTypeByName(ctx context.Context, category TypeCategory,
 	schemaName string) (EntityType, error) {
-	list, err := f.GenericFileBasedStore.List()
+	list, err := f.GenericFileBasedStore.List(ctx)
 	if err != nil {
 		return EntityType{}, ErrEntityTypeNotFound
 	}
@@ -88,7 +90,7 @@ func (f *entityTypeFileBasedStore) GetEntityTypeByName(ctx context.Context, cate
 func (f *entityTypeFileBasedStore) GetEntityTypeList(
 	ctx context.Context, category TypeCategory, limit, offset int,
 ) ([]EntityTypeListItem, error) {
-	list, err := f.GenericFileBasedStore.List()
+	list, err := f.GenericFileBasedStore.List(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +131,7 @@ func (f *entityTypeFileBasedStore) GetEntityTypeList(
 // GetEntityTypeListCount implements entityTypeStoreInterface.
 func (f *entityTypeFileBasedStore) GetEntityTypeListCount(ctx context.Context,
 	category TypeCategory) (int, error) {
-	list, err := f.GenericFileBasedStore.List()
+	list, err := f.GenericFileBasedStore.List(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -153,7 +155,7 @@ func (f *entityTypeFileBasedStore) GetEntityTypeListByOUIDs(
 		ouIDSet[id] = struct{}{}
 	}
 
-	list, err := f.GenericFileBasedStore.List()
+	list, err := f.GenericFileBasedStore.List(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +203,7 @@ func (f *entityTypeFileBasedStore) GetEntityTypeListCountByOUIDs(ctx context.Con
 		ouIDSet[id] = struct{}{}
 	}
 
-	list, err := f.GenericFileBasedStore.List()
+	list, err := f.GenericFileBasedStore.List(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -230,7 +232,9 @@ func (f *entityTypeFileBasedStore) UpdateEntityTypeByID(ctx context.Context, cat
 // IsEntityTypeDeclarative returns true if the given schema id is present in the file-based
 // store under the given category.
 func (f *entityTypeFileBasedStore) IsEntityTypeDeclarative(category TypeCategory, schemaID string) bool {
-	data, err := f.GenericFileBasedStore.Get(schemaID)
+	// Asks whether an id names a declarative resource, to refuse changing one. It is not a read on
+	// behalf of a deployment and returns no data, so it is not scoped.
+	data, err := f.GenericFileBasedStore.GetForLoad(schemaID)
 	if err != nil {
 		return false
 	}
@@ -254,7 +258,7 @@ func (f *entityTypeFileBasedStore) GetDisplayAttributesByNames(
 		nameSet[name] = struct{}{}
 	}
 
-	list, err := f.GenericFileBasedStore.List()
+	list, err := f.GenericFileBasedStore.List(ctx)
 	if err != nil {
 		return nil, err
 	}

@@ -42,6 +42,11 @@ export interface ApplyDialogProps {
   envName: string;
   /** The version to apply, as a sequence number. */
   version: string;
+  /**
+   * Called with the job id when the data plane has not taken the configuration yet, so the caller
+   * can follow it. Not called when the apply completed in the same request.
+   */
+  onQueued?: (jobId: string) => void;
   onClose: () => void;
 }
 
@@ -52,14 +57,32 @@ export interface ApplyDialogProps {
  * result afterwards. The comparison is against what is currently applied there, not against the
  * previous version in the list, because those differ whenever versions were skipped.
  */
-export default function ApplyDialog({open, envId, envName, version, onClose}: ApplyDialogProps): JSX.Element {
+export default function ApplyDialog({
+  open,
+  envId,
+  envName,
+  version,
+  onQueued = undefined,
+  onClose,
+}: ApplyDialogProps): JSX.Element {
   const {t} = useTranslation();
   const {data: diff, isLoading, error} = useGetEnvironmentDiff(open ? envId : '', 'applied', version);
   const {data: variableStatus} = useCheckVariables(open ? envId : '', version);
   const applyVersion = useApplyVersion();
 
   const handleApply = (): void => {
-    applyVersion.mutate({envId, version}, {onSuccess: () => onClose()});
+    applyVersion.mutate(
+      {envId, version},
+      {
+        onSuccess: (result): void => {
+          // Work the data plane has not taken yet is handed back to the page, which follows it.
+          if (result.status !== 'done') {
+            onQueued?.(result.jobId);
+          }
+          onClose();
+        },
+      },
+    );
   };
 
   return (

@@ -19,6 +19,7 @@
 package service
 
 import (
+	"context"
 	"sort"
 
 	"github.com/thunder-id/thunderid/internal/envmgr/bundle"
@@ -97,14 +98,15 @@ func withoutExcluded(resources []bundle.Resource, excluded []string) []bundle.Re
 }
 
 // rememberSelection stores the environment's exclusions when they changed.
-func (s *Service) rememberSelection(env model.Environment, d diff.Diff, selection []string) error {
+func (s *Service) rememberSelection(ctx context.Context, env model.Environment, d diff.Diff,
+	selection []string) error {
 	next := nextExclusions(env.Excluded, d, selection)
 	if sameKeys(env.Excluded, next) {
 		return nil
 	}
 	env.Excluded = next
 	env.UpdatedAt = s.now().UTC()
-	return s.store.SaveEnvironment(env)
+	return s.store.SaveEnvironment(ctx, env)
 }
 
 func toSet(keys []string) map[string]bool {

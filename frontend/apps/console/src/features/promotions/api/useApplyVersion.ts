@@ -52,10 +52,17 @@ export default function useApplyVersion(): UseMutationResult<ApplyResult, Error,
 
       return response.data;
     },
-    onSuccess: () => {
+    onSuccess: (result: ApplyResult) => {
       queryClient.invalidateQueries({queryKey: [PromotionQueryKeys.ENVIRONMENTS]}).catch(() => {
         // Ignore invalidation errors.
       });
+      // The apply is carried out by the Control Plane pod holding this data plane's connection,
+      // which is not always the one that took the request. Reporting success while it is still
+      // queued would claim the data plane holds configuration it has not been given yet.
+      if (result.status !== 'done') {
+        showToast(t('apply.queued', 'Configuration queued and will be applied shortly'), 'info');
+        return;
+      }
       showToast(t('apply.success', 'Configuration applied successfully'), 'success');
     },
     onError: () => {

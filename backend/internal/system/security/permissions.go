@@ -345,6 +345,7 @@ func InitSystemPermissions(handle string) {
 		{"GET /system/tenants", p.TenantView},
 		{"POST /system/tenants", p.Tenant},
 		{"GET /system/tenants/**", p.TenantView},
+		{"POST /system/tenants/**", p.Tenant},
 		{"DELETE /system/tenants/**", p.Tenant},
 
 		// Import APIs.
