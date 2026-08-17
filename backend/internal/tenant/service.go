@@ -94,6 +94,10 @@ type TenantServiceInterface interface {
 	CreateTenant(ctx context.Context, request CreateTenantRequest) (*CreateTenantResponse, *tidcommon.ServiceError)
 	ListTenants(ctx context.Context) (*TenantListResponse, *tidcommon.ServiceError)
 	DeleteTenant(ctx context.Context, deploymentID string) *tidcommon.ServiceError
+	// RegisterEnvironment registers an existing tenant as an environment of its organization, for a
+	// tenant created before its data plane existed.
+	RegisterEnvironment(ctx context.Context, deploymentID string,
+		request RegisterEnvironmentRequest) (*EnvironmentSummary, *tidcommon.ServiceError)
 	// SetBaselineSeeder installs what a later environment of an organization is copied from.
 	SetBaselineSeeder(seeder BaselineSeeder)
 }
@@ -188,7 +192,7 @@ func (s *tenantService) CreateTenant(ctx context.Context,
 	// here and filled by the seed below, which is what keeps its ids identical to its organization's.
 	var seeded *SeedSummary
 	if seedFrom == "" {
-		if svcErr := s.provision(ctx, deploymentID, request); svcErr != nil {
+		if svcErr := s.provision(ctx, deploymentID); svcErr != nil {
 			return nil, svcErr
 		}
 	} else {
@@ -216,6 +220,79 @@ func (s *tenantService) CreateTenant(ctx context.Context,
 		return nil, s.internalError(ctx, "failed to record tenant", err)
 	}
 	return &CreateTenantResponse{Tenant: tenant, Seeded: seeded, Environment: environment}, nil
+}
+
+// RegisterEnvironment registers an existing tenant as an environment of its organization.
+//
+// It exists because a tenant can be created before its data plane does, and the environment cannot be
+// registered until there is one to apply to. Doing it here rather than through the environment API
+// means the platform can complete the setup with the same system credentials it created the tenant
+// with, instead of needing a token for that tenant.
+func (s *tenantService) RegisterEnvironment(ctx context.Context, deploymentID string,
+	request RegisterEnvironmentRequest) (*EnvironmentSummary, *tidcommon.ServiceError) {
+	if svcErr := s.requireSystemTenant(ctx); svcErr != nil {
+		return nil, svcErr
+	}
+	if strings.TrimSpace(request.DataPlane.ID) == "" {
+		return nil, &ErrorInvalidDataPlane
+	}
+	if deploymentID == s.systemDeploymentID {
+		return nil, &ErrorReservedSystemTenant
+	}
+
+	provisioned, err := s.store.IsProvisioned(ctx, deploymentID)
+	if err != nil {
+		return nil, s.internalError(ctx, "failed to check tenant provisioning state", err)
+	}
+	if !provisioned {
+		return nil, &ErrorTenantNotFound
+	}
+	if s.seeder == nil {
+		return nil, &ErrorEnvironmentRegistrationUnavailable
+	}
+
+	// An organization's first environment is the bottom of its promotion chain, so it is rank 1
+	// whatever was asked for. A later one takes the requested rank, or goes to the end.
+	seedFrom, svcErr := s.seedSourceFor(ctx, orgOf(deploymentID))
+	if svcErr != nil {
+		return nil, svcErr
+	}
+	rank := 0
+	if seedFrom == "" || seedFrom == deploymentID {
+		rank = 1
+	} else if request.Rank != nil {
+		rank = *request.Rank
+	}
+
+	insecure := request.ControlPlane != nil && request.ControlPlane.InsecureSkipVerify
+	summary, err := s.seeder.RegisterEnvironment(ctx, RegisterEnvironmentInput{
+		Name:                           environmentNameOf(deploymentID),
+		DeploymentID:                   deploymentID,
+		Rank:                           rank,
+		DataPlane:                      request.DataPlane,
+		ControlPlaneInsecureSkipVerify: insecure,
+	})
+	if err != nil {
+		log.GetLogger().With(log.String(log.LoggerKeyComponentName, tenantLoggerComponentName)).
+			Error(ctx, "Failed to register the tenant as an environment",
+				log.String("deploymentId", deploymentID), log.Error(err))
+		svcErr := ErrorEnvironmentRegistrationFailed
+		svcErr.ErrorDescription = tidcommon.I18nMessage{
+			Key:          "error.tenantservice.environment_registration_failed_description",
+			DefaultValue: err.Error(),
+		}
+		return nil, &svcErr
+	}
+	return summary, nil
+}
+
+// environmentNameOf is the environment part of a deployment id, which is what names the environment.
+func environmentNameOf(deploymentID string) string {
+	_, env, found := strings.Cut(deploymentID, orgEnvSeparator)
+	if !found {
+		return deploymentID
+	}
+	return env
 }
 
 // registerEnvironment records the new tenant as an environment of its organization. Without a data
@@ -302,23 +379,13 @@ func (s *tenantService) seed(ctx context.Context, sourceDeploymentID,
 
 // provision runs the bootstrap import scoped to the target deployment id. It is serialized because it
 // sets process-global env vars that the bootstrap bundle's placeholders resolve from.
-func (s *tenantService) provision(ctx context.Context, deploymentID string,
-	request CreateTenantRequest) *tidcommon.ServiceError {
+func (s *tenantService) provision(ctx context.Context, deploymentID string) *tidcommon.ServiceError {
 	s.provisionMu.Lock()
 	defer s.provisionMu.Unlock()
 
-	adminUsername := request.AdminUsername
-	if adminUsername == "" {
-		adminUsername = "admin"
-	}
-	adminPassword := request.AdminPassword
-	if adminPassword == "" {
-		adminPassword = "admin"
-	}
-
+	// No administrator credentials: a tenant is provisioned without a local administrator, because
+	// whoever administers it signs in against the trusted issuer instead.
 	for key, value := range map[string]string{
-		"ADMIN_USERNAME":          adminUsername,
-		"ADMIN_PASSWORD":          adminPassword,
 		"PUBLIC_URL":              s.publicURL,
 		"CONSOLE_REDIRECT_URIS_0": s.publicURL + "/console",
 	} {

@@ -57,6 +57,10 @@ func (s *stubRegistry) SetDataPlanes(envmgrservice.DataPlanes) {}
 
 func (s *stubRegistry) SetDataPlaneTokenIssuer(envmgrservice.DataPlaneTokenIssuer) {}
 
+func (s *stubRegistry) SetSecretSealer(envmgrservice.SecretSealer) {}
+
+func (s *stubRegistry) DeliverPending(context.Context, string) error { return nil }
+
 type stubExport struct{ deploymentID string }
 
 func (s *stubExport) ExportResources(ctx context.Context, _ *export.ExportRequest) (

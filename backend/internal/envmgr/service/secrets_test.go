@@ -277,3 +277,86 @@ func TestRevertRestoresTheControlPlaneWithoutSendingCredentials(t *testing.T) {
 		t.Fatal("stripping the credential must not take the resource with it")
 	}
 }
+
+// A pod that cannot reach the data plane answers from what it last reported, rather than failing.
+func TestListSecretsFallsBackToWhatTheDataPlaneLastReported(t *testing.T) {
+	fake := &fakeClient{secretNames: []string{"APPLICATION_APP_A_CLIENT_SECRET"}}
+	svc := newTestService(t, fake)
+	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "dev", Target: model.Target{DataPlaneID: "dev-dp"},
+	})
+	_, _ = svc.store.AddVersion(context.Background(), model.Version{
+		EnvID: env.ID, Origin: model.OriginUploaded, CreatedAt: svc.now().UTC(),
+		Resources: "resource_type: application\nid: app-a\nname: app-a\n" +
+			"clientSecret: {{.APPLICATION_APP_A_CLIENT_SECRET}}",
+		SecretKeys: []string{"APPLICATION_APP_A_CLIENT_SECRET"},
+	})
+
+	// While the connection is here, the names are recorded.
+	if _, err := svc.ListSecrets(context.Background(), env.ID); err != nil {
+		t.Fatalf("list with a connection: %v", err)
+	}
+	stored, _ := svc.store.GetEnvironment(context.Background(), env.ID)
+	if len(stored.SecretNames) == 0 || stored.SecretNamesAt.IsZero() {
+		t.Fatal("expected the reported credentials to be recorded for other pods")
+	}
+
+	// With no connection, the recorded names still answer.
+	svc.SetDataPlanes(&fakeDataPlanes{plane: fake, connected: false})
+	list, err := svc.ListSecrets(context.Background(), env.ID)
+	if err != nil {
+		t.Fatalf("expected the recorded names to answer, got %v", err)
+	}
+	if !list.Checked {
+		t.Fatal("expected the listing to report that the credentials are known")
+	}
+}
+
+// A pod that cannot reach the data plane queues the question rather than reporting the credentials
+// as unknown forever, and hands back the job to follow.
+func TestListSecretsQueuesTheQuestionWhenThisPodCannotAsk(t *testing.T) {
+	fake := &fakeClient{secretNames: []string{"APPLICATION_APP_A_CLIENT_SECRET"}}
+	svc := newTestService(t, fake)
+	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "dev", Target: model.Target{DataPlaneID: "dev-dp"},
+	})
+	_, _ = svc.store.AddVersion(context.Background(), model.Version{
+		EnvID: env.ID, Origin: model.OriginUploaded, CreatedAt: svc.now().UTC(),
+		Resources: "resource_type: application\nid: app-a\nname: app-a\n" +
+			"clientSecret: {{.APPLICATION_APP_A_CLIENT_SECRET}}",
+		SecretKeys: []string{"APPLICATION_APP_A_CLIENT_SECRET"},
+	})
+
+	svc.SetDataPlanes(&fakeDataPlanes{plane: fake, connected: false})
+	list, err := svc.ListSecrets(context.Background(), env.ID)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if list.Checked {
+		t.Fatal("expected the credentials to be reported as not yet known")
+	}
+	if list.PendingJobID == "" {
+		t.Fatal("expected a job to follow")
+	}
+
+	// The pod holding the connection carries it out, which records the answer.
+	svc.SetDataPlanes(&fakeDataPlanes{plane: fake, connected: true})
+	if err := svc.DeliverNext(context.Background(), "dev-dp"); err != nil {
+		t.Fatalf("deliver: %v", err)
+	}
+
+	stored, _ := svc.store.GetEnvironment(context.Background(), env.ID)
+	if stored.SecretNamesAt.IsZero() || len(stored.SecretNames) != 1 {
+		t.Fatalf("expected the answer to be recorded, got %v", stored.SecretNames)
+	}
+
+	// With it recorded, the pod that could not ask now answers.
+	svc.SetDataPlanes(&fakeDataPlanes{plane: fake, connected: false})
+	again, err := svc.ListSecrets(context.Background(), env.ID)
+	if err != nil {
+		t.Fatalf("second list: %v", err)
+	}
+	if !again.Checked {
+		t.Fatal("expected the recorded answer to be used")
+	}
+}

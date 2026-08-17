@@ -54,7 +54,7 @@ func (f *fileBasedStore) Create(id string, data interface{}) error {
 
 // GetRoleListCount returns the total count of roles in the file-based store.
 func (f *fileBasedStore) GetRoleListCount(ctx context.Context) (int, error) {
-	return f.GenericFileBasedStore.Count()
+	return f.GenericFileBasedStore.Count(ctx)
 }
 
 // GetRoleList returns the list of roles from the file-based store.
@@ -66,7 +66,7 @@ func (f *fileBasedStore) GetRoleList(ctx context.Context, limit, offset int) ([]
 		offset = 0
 	}
 
-	list, err := f.GenericFileBasedStore.List()
+	list, err := f.GenericFileBasedStore.List(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +140,7 @@ func (f *fileBasedStore) GetRoleListByOUID(ctx context.Context, ouID string, lim
 
 // rolesByOUID returns all roles belonging to the given organization unit from the file-based store.
 func (f *fileBasedStore) rolesByOUID(ctx context.Context, ouID string) ([]Role, error) {
-	list, err := f.GenericFileBasedStore.List()
+	list, err := f.GenericFileBasedStore.List(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +176,7 @@ func (f *fileBasedStore) CreateRole(ctx context.Context, id string, role RoleCre
 
 // GetRole returns a role from the file-based store.
 func (f *fileBasedStore) GetRole(ctx context.Context, id string) (RoleWithPermissions, error) {
-	data, err := f.GenericFileBasedStore.Get(id)
+	data, err := f.GenericFileBasedStore.Get(ctx, id)
 	if err != nil {
 		// Distinguish "not found" from other storage errors
 		if isEntityNotFoundError(err) {
@@ -203,7 +203,7 @@ func (f *fileBasedStore) GetRole(ctx context.Context, id string) (RoleWithPermis
 
 // IsRoleExist checks if a role exists in the file-based store.
 func (f *fileBasedStore) IsRoleExist(ctx context.Context, id string) (bool, error) {
-	_, err := f.GenericFileBasedStore.Get(id)
+	_, err := f.GenericFileBasedStore.Get(ctx, id)
 	if err != nil {
 		// Distinguish "not found" from other storage errors
 		if isEntityNotFoundError(err) {
@@ -238,7 +238,7 @@ func (f *fileBasedStore) GetRoleAssignmentsByType(
 		offset = 0
 	}
 
-	data, err := f.GenericFileBasedStore.Get(id)
+	data, err := f.GenericFileBasedStore.Get(ctx, id)
 	if err != nil {
 		// Distinguish "not found" from other storage errors
 		if isEntityNotFoundError(err) {
@@ -276,7 +276,7 @@ func (f *fileBasedStore) GetRoleAssignmentsCount(ctx context.Context, id string)
 func (f *fileBasedStore) GetRoleAssignmentsCountByType(
 	ctx context.Context, id string, assigneeType string,
 ) (int, error) {
-	data, err := f.GenericFileBasedStore.Get(id)
+	data, err := f.GenericFileBasedStore.Get(ctx, id)
 	if err != nil {
 		// Distinguish "not found" from other storage errors
 		if isEntityNotFoundError(err) {
@@ -326,8 +326,7 @@ func (f *fileBasedStore) DeleteAssignmentsByRoleID(ctx context.Context, id strin
 
 // DeleteAssignmentsByAssignee is a no-op for the file-based store: declarative roles hold no
 // mutable runtime assignments to cascade-delete, so there is nothing to remove.
-func (f *fileBasedStore) DeleteAssignmentsByAssignee(
-	_ context.Context, _, _ string) (int64, error) {
+func (f *fileBasedStore) DeleteAssignmentsByAssignee(ctx context.Context, _, _ string) (int64, error) {
 	return 0, nil
 }
 
@@ -343,7 +342,7 @@ func (f *fileBasedStore) RemoveAssignments(ctx context.Context, id string, assig
 
 // CheckRoleNameExists checks if a role with the given name exists in the file-based store.
 func (f *fileBasedStore) CheckRoleNameExists(ctx context.Context, ouID, name string) (bool, error) {
-	list, err := f.GenericFileBasedStore.List()
+	list, err := f.GenericFileBasedStore.List(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -370,7 +369,7 @@ func (f *fileBasedStore) CheckRoleNameExistsExcludingID(
 	ctx context.Context,
 	ouID, name, excludeRoleID string,
 ) (bool, error) {
-	list, err := f.GenericFileBasedStore.List()
+	list, err := f.GenericFileBasedStore.List(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -411,7 +410,7 @@ func (f *fileBasedStore) GetAuthorizedPermissionsByResourceServer(
 		return []string{}, nil
 	}
 
-	list, err := f.GenericFileBasedStore.List()
+	list, err := f.GenericFileBasedStore.List(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -468,7 +467,7 @@ func (f *fileBasedStore) GetUserRoles(
 		return []string{}, nil
 	}
 
-	list, err := f.GenericFileBasedStore.List()
+	list, err := f.GenericFileBasedStore.List(ctx)
 	if err != nil {
 		return nil, err
 	}

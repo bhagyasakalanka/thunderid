@@ -1427,8 +1427,7 @@ const translations = {
     'listing.viewHistory': 'History',
     'listing.promoteTo': 'Promote to {{target}}',
     'listing.promotedFrom': 'Promoted from: {{sources}}',
-    notConfigured:
-      'The environment manager is not configured. Set env_manager.public_url in the console configuration to enable promotions.',
+    notConfigured: 'Promotions are available on the Control Plane console only.',
     'diff.added': 'Added',
     'diff.updated': 'Updated',
     'diff.deleted': 'Deleted',
@@ -1450,6 +1449,13 @@ const translations = {
     'demote.title': 'Demote configuration',
     'preview.error': 'Failed to load the promotion preview',
     'apply.success': 'Configuration applied successfully',
+    'apply.queued': 'Configuration queued and will be applied shortly',
+    'apply.jobPending': 'Configuration is queued and will be applied as soon as the data plane is reached.',
+    'apply.jobFailed': 'The data plane rejected this configuration.',
+    'apply.jobRefresh': 'Check again',
+    'secrets.pending': 'Asking the Data Plane which credentials it already holds.',
+    'secrets.pendingHint':
+      'This Control Plane pod holds no connection to it, so the question was passed to one that does.',
     'apply.error': 'Failed to apply the configuration. Please try again.',
     'environment.add': 'Add Environment',
     'environment.createTitle': 'Register environment',

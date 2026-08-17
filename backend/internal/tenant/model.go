@@ -58,11 +58,6 @@ type CreateTenantRequest struct {
 	// environment is registered for promotion as the tenant is created; without one there is nowhere
 	// to apply to, so only the tenant is created and the environment is registered later.
 	DataPlane *DataPlane `json:"dataPlane,omitempty"`
-	// AdminUsername and AdminPassword seed the first environment of an organization. A later
-	// environment is a copy of the first and has whatever administrators that one has, so they are
-	// ignored there.
-	AdminUsername string `json:"adminUsername,omitempty"`
-	AdminPassword string `json:"adminPassword,omitempty"`
 }
 
 // ControlPlane is how an environment reaches the control plane it reads from.
@@ -83,6 +78,20 @@ type DataPlane struct {
 	// BaseURL is where that deployment serves its own users. Nothing calls it; it is recorded so an
 	// operator can follow it, and so the environment's Console can be pointed at it.
 	BaseURL string `json:"baseUrl,omitempty"`
+}
+
+// RegisterEnvironmentRequest registers an existing tenant as an environment of its organization.
+//
+// A tenant created without a data plane has no environment: there was nowhere to apply to. This is
+// how one is registered once that data plane exists, without needing a token for the tenant itself.
+type RegisterEnvironmentRequest struct {
+	// DataPlane is the deployment this environment's configuration is applied to.
+	DataPlane DataPlane `json:"dataPlane" native:"required"`
+	// Rank orders the environment in its organization's promotion chain. The first environment of an
+	// organization is always rank 1, whatever is asked for. Omitted on a later one, it goes to the end.
+	Rank *int `json:"rank,omitempty"`
+	// ControlPlane describes reaching this server, which the environment reads its configuration from.
+	ControlPlane *ControlPlane `json:"controlPlane,omitempty"`
 }
 
 // CreateTenantResponse is the created tenant, and for an environment seeded from an existing one, what

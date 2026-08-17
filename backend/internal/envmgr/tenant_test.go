@@ -22,14 +22,13 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 
 	"github.com/thunder-id/thunderid/internal/system/deployment"
 )
 
 func TestRegistryGivesEachDeploymentItsOwnManager(t *testing.T) {
-	reg := newRegistry(t.TempDir(), nil)
+	reg := newRegistry(nil)
 
 	a, err := reg.serverFor(deployment.WithID(context.Background(), "tenant-a"))
 	if err != nil {
@@ -54,7 +53,7 @@ func TestRegistryGivesEachDeploymentItsOwnManager(t *testing.T) {
 }
 
 func TestRegistryRefusesARequestWithNoDeployment(t *testing.T) {
-	reg := newRegistry(t.TempDir(), nil)
+	reg := newRegistry(nil)
 
 	// Serving this from a default store would hand one deployment another's environments.
 	if _, err := reg.serverFor(context.Background()); err == nil {
@@ -62,20 +61,9 @@ func TestRegistryRefusesARequestWithNoDeployment(t *testing.T) {
 	}
 }
 
-func TestRegistryRefusesADeploymentIdThatEscapesTheDataDirectory(t *testing.T) {
-	root := t.TempDir()
-	reg := newRegistry(filepath.Join(root, "data"), nil)
-
-	for _, id := range []string{"../escape", "a/b", ".."} {
-		if _, err := reg.serverFor(deployment.WithID(context.Background(), id)); err == nil {
-			t.Fatalf("deployment id %q must be refused", id)
-		}
-	}
-}
-
 func TestInitializeRegistersTheSecretRoutes(t *testing.T) {
 	mux := http.NewServeMux()
-	if _, err := Initialize(mux, t.TempDir(), nil); err != nil {
+	if _, err := Initialize(mux, nil); err != nil {
 		t.Fatalf("initialize: %v", err)
 	}
 

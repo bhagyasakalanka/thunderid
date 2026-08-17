@@ -61,7 +61,7 @@ func (f *fileBasedStore) DeleteOrganizationUnit(ctx context.Context, id string) 
 
 // GetOrganizationUnit implements organizationUnitStoreInterface.
 func (f *fileBasedStore) GetOrganizationUnit(ctx context.Context, id string) (providers.OrganizationUnit, error) {
-	data, err := f.GenericFileBasedStore.Get(id)
+	data, err := f.GenericFileBasedStore.Get(ctx, id)
 	if err != nil {
 		return providers.OrganizationUnit{}, ErrOrganizationUnitNotFound
 	}
@@ -77,7 +77,7 @@ func (f *fileBasedStore) GetOrganizationUnit(ctx context.Context, id string) (pr
 func (f *fileBasedStore) GetOrganizationUnitByHandle(
 	ctx context.Context, handle string, parent *string,
 ) (providers.OrganizationUnit, error) {
-	list, err := f.GenericFileBasedStore.List()
+	list, err := f.GenericFileBasedStore.List(ctx)
 	if err != nil {
 		return providers.OrganizationUnit{}, err
 	}
@@ -127,7 +127,7 @@ func (f *fileBasedStore) GetOrganizationUnitByPath(
 func (f *fileBasedStore) GetOrganizationUnitList(
 	ctx context.Context, limit, offset int, fe *tidcommon.FilterGroup,
 ) ([]providers.OrganizationUnitBasic, error) {
-	list, err := f.GenericFileBasedStore.List()
+	list, err := f.GenericFileBasedStore.List(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +161,7 @@ func (f *fileBasedStore) GetOrganizationUnitList(
 
 // GetOrganizationUnitListCount implements organizationUnitStoreInterface.
 func (f *fileBasedStore) GetOrganizationUnitListCount(ctx context.Context, fe *tidcommon.FilterGroup) (int, error) {
-	list, err := f.GenericFileBasedStore.List()
+	list, err := f.GenericFileBasedStore.List(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -192,7 +192,7 @@ func (f *fileBasedStore) GetOrganizationUnitsByIDs(
 		idSet[id] = struct{}{}
 	}
 
-	list, err := f.GenericFileBasedStore.List()
+	list, err := f.GenericFileBasedStore.List(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +238,7 @@ func (f *fileBasedStore) IsOrganizationUnitDeclarative(ctx context.Context, id s
 func (f *fileBasedStore) CheckOrganizationUnitNameConflict(
 	ctx context.Context, name string, parent *string,
 ) (bool, error) {
-	list, err := f.GenericFileBasedStore.List()
+	list, err := f.GenericFileBasedStore.List(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -261,7 +261,7 @@ func (f *fileBasedStore) CheckOrganizationUnitNameConflict(
 func (f *fileBasedStore) CheckOrganizationUnitHandleConflict(
 	ctx context.Context, handle string, parent *string,
 ) (bool, error) {
-	list, err := f.GenericFileBasedStore.List()
+	list, err := f.GenericFileBasedStore.List(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -289,7 +289,7 @@ func (f *fileBasedStore) UpdateOrganizationUnit(ctx context.Context, ou provider
 func (f *fileBasedStore) GetOrganizationUnitChildrenCount(
 	ctx context.Context, id string, fe *tidcommon.FilterGroup,
 ) (int, error) {
-	list, err := f.GenericFileBasedStore.List()
+	list, err := f.GenericFileBasedStore.List(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -310,7 +310,7 @@ func (f *fileBasedStore) GetOrganizationUnitChildrenCount(
 func (f *fileBasedStore) GetOrganizationUnitChildrenList(
 	ctx context.Context, id string, limit, offset int, fe *tidcommon.FilterGroup,
 ) ([]providers.OrganizationUnitBasic, error) {
-	list, err := f.GenericFileBasedStore.List()
+	list, err := f.GenericFileBasedStore.List(ctx)
 	if err != nil {
 		return nil, err
 	}

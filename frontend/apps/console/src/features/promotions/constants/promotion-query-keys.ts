@@ -23,6 +23,7 @@ const PromotionQueryKeys = {
   VARIABLES: 'promotion-variables',
   SECRETS: 'promotion-secrets',
   PROMOTION_PREVIEW: 'promotion-preview',
+  DATA_PLANE_JOB: 'promotion-data-plane-job',
 } as const;
 
 export default PromotionQueryKeys;

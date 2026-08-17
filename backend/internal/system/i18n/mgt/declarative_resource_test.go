@@ -21,6 +21,7 @@ package mgt
 import (
 	"context"
 	"errors"
+	"github.com/stretchr/testify/mock"
 	"os"
 	"path/filepath"
 	"testing"
@@ -78,7 +79,7 @@ func (s *DeclarativeResourceTestSuite) TestGetResourceByID() {
 		},
 	}
 
-	s.mockStore.On("GetTranslations").Return(translations, nil)
+	s.mockStore.On("GetTranslations", mock.Anything).Return(translations, nil)
 
 	resource, name, err := s.exporter.GetResourceByID(context.Background(), "en-US")
 	assert.Nil(s.T(), err)
@@ -93,7 +94,7 @@ func (s *DeclarativeResourceTestSuite) TestGetResourceByID() {
 }
 
 func (s *DeclarativeResourceTestSuite) TestGetResourceByID_NotFound() {
-	s.mockStore.On("GetTranslations").Return(map[string]map[string]Translation{}, nil)
+	s.mockStore.On("GetTranslations", mock.Anything).Return(map[string]map[string]Translation{}, nil)
 
 	_, _, err := s.exporter.GetResourceByID(context.Background(), "fr-FR")
 	assert.NotNil(s.T(), err)
@@ -101,7 +102,7 @@ func (s *DeclarativeResourceTestSuite) TestGetResourceByID_NotFound() {
 }
 
 func (s *DeclarativeResourceTestSuite) TestGetResourceByID_StoreError() {
-	s.mockStore.On("GetTranslations").Return(nil, errors.New("db error"))
+	s.mockStore.On("GetTranslations", mock.Anything).Return(nil, errors.New("db error"))
 
 	_, _, err := s.exporter.GetResourceByID(context.Background(), "en-US")
 	assert.NotNil(s.T(), err)
@@ -156,7 +157,7 @@ func (s *DeclarativeResourceTestSuite) TestValidateResourceMissingTranslations()
 
 func (s *DeclarativeResourceTestSuite) TestGetAllResourceIDs() {
 	languages := []string{"en-US", "fr-FR"}
-	s.mockStore.On("GetDistinctLanguages").Return(languages, nil)
+	s.mockStore.On("GetDistinctLanguages", mock.Anything).Return(languages, nil)
 
 	ids, err := s.exporter.GetAllResourceIDs(context.Background())
 	assert.Nil(s.T(), err)
@@ -166,7 +167,7 @@ func (s *DeclarativeResourceTestSuite) TestGetAllResourceIDs() {
 }
 
 func (s *DeclarativeResourceTestSuite) TestGetAllResourceIDs_StoreError() {
-	s.mockStore.On("GetDistinctLanguages").Return(nil, errors.New("db error"))
+	s.mockStore.On("GetDistinctLanguages", mock.Anything).Return(nil, errors.New("db error"))
 
 	ids, err := s.exporter.GetAllResourceIDs(context.Background())
 	assert.NotNil(s.T(), err)
@@ -311,7 +312,7 @@ translations:
 	err = loadDeclarativeResources(store)
 	assert.NoError(s.T(), err)
 
-	exists, err := store.IsTranslationExists("es-ES")
+	exists, err := store.IsTranslationExists(context.Background(), "es-ES")
 	assert.NoError(s.T(), err)
 	assert.True(s.T(), exists)
 }

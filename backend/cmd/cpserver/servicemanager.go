@@ -120,7 +120,7 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 	pkiService, err := pki.Initialize()
 	fatalOnError(ctx, logger, err, "Failed to initialize certificate service")
 
-	runtimeCryptoSvc, _, err := kmprovider.Initialize(pkiService)
+	runtimeCryptoSvc, configCryptoSvc, err := kmprovider.Initialize(pkiService)
 	fatalOnError(ctx, logger, err, "Failed to initialize key manager provider")
 
 	envVarService, err := environmentvariable.Initialize(mux)
@@ -388,6 +388,11 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 	// Tokens are issued per data plane when an environment is registered and held encrypted here, so
 	// the handshake knows which data plane connected instead of believing the id it claims.
 	dataPlaneTokens = dataplanetoken.New()
+	// A credential queued for a data plane is encrypted at rest with the server's configuration key.
+	if envManager != nil && configCryptoSvc != nil {
+		envManager.SetSecretSealer(configSealer{crypto: configCryptoSvc})
+	}
+
 	channelServer = channel.InitializeServer(mux, channel.ServerConfig{
 		Enabled:    chCfg.Enabled,
 		Path:       chCfg.Path,
@@ -402,6 +407,9 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 	if envManager != nil {
 		envManager.SetDataPlanes(&channelDataPlanes{server: channelServer})
 		envManager.SetDataPlaneTokenIssuer(dataPlaneTokens)
+		// Work queued by a pod that held no connection to its data plane waits in the database. This
+		// is what picks up the share of it this pod can deliver.
+		startJobWorker(ctx, envManager, channelServer)
 	}
 
 	return jwtService, runtimeCryptoSvc, importService, exportService, envManager, envVarService
@@ -507,16 +515,19 @@ func buildHashConfig() (cryptolib.HashConfig, error) {
 // of over HTTP; a nil result means promotion is not hosted here.
 func initEnvironmentManager(ctx context.Context, logger *log.Logger, mux *http.ServeMux,
 	cfg config.Config) envmgrRegistry {
-	dataDir := cfg.Server.SecurityConfig.EnvironmentManager.DataDir
-	reg, err := envmgr.Initialize(mux, dataDir, hashSecretForEnvManager)
+	// The environment manager keeps its environments and versions in their own datasource. Leaving it
+	// unconfigured is how a deployment that promotes by other means turns the module off, and without
+	// it there is nowhere for a captured version to go.
+	if strings.TrimSpace(cfg.Database.Environment.Type) == "" {
+		logger.Info(ctx, "No environment datasource is configured, so promotion is not hosted here")
+		return nil
+	}
+	reg, err := envmgr.Initialize(mux, hashSecretForEnvManager)
 	if err != nil {
 		logger.Error(ctx, "Failed to start the in-process environment manager", log.Error(err))
 		return nil
 	}
-	if reg == nil {
-		return nil
-	}
-	logger.Info(ctx, "Serving the environment manager from this server", log.String("dataDir", dataDir))
+	logger.Info(ctx, "Serving the environment manager from this server")
 	return reg
 }
 
@@ -527,6 +538,9 @@ type envmgrRegistry interface {
 	SetLocalControlPlane(cp envmgrservice.LocalControlPlane)
 	SetDataPlanes(planes envmgrservice.DataPlanes)
 	SetDataPlaneTokenIssuer(issuer envmgrservice.DataPlaneTokenIssuer)
+	SetSecretSealer(sealer envmgrservice.SecretSealer)
+	// DeliverPending carries out work queued for a data plane this pod holds a connection to.
+	DeliverPending(ctx context.Context, dataPlaneID string) error
 	SeedTenant(ctx context.Context, sourceDeploymentID, targetDeploymentID string) (*thunder.ImportResponse, error)
 	CreateEnvironment(ctx context.Context, deploymentID string,
 		in envmgrservice.CreateEnvironmentInput) (envmgrservice.CreateEnvironmentResult, error)

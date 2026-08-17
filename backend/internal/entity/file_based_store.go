@@ -65,7 +65,7 @@ func (f *entityFileBasedStore) CreateEntity(ctx context.Context, entity provider
 
 // GetEntity retrieves an entity by ID.
 func (f *entityFileBasedStore) GetEntity(ctx context.Context, id string) (providers.Entity, error) {
-	data, err := f.GenericFileBasedStore.Get(id)
+	data, err := f.GenericFileBasedStore.Get(ctx, id)
 	if err != nil {
 		return providers.Entity{}, ErrEntityNotFound
 	}
@@ -80,7 +80,7 @@ func (f *entityFileBasedStore) GetEntity(ctx context.Context, id string) (provid
 // GetEntityWithCredentials retrieves an entity with credentials from the file store.
 func (f *entityFileBasedStore) GetEntityWithCredentials(ctx context.Context, id string) (
 	*entityWithCredentials, error) {
-	data, err := f.GenericFileBasedStore.Get(id)
+	data, err := f.GenericFileBasedStore.Get(ctx, id)
 	if err != nil {
 		return nil, ErrEntityNotFound
 	}
@@ -133,7 +133,7 @@ func (f *entityFileBasedStore) DeleteEntity(ctx context.Context, id string) erro
 // IdentifyEntity identifies an entity with the given filters by linear search.
 func (f *entityFileBasedStore) IdentifyEntity(ctx context.Context,
 	filters map[string]interface{}) (*string, error) {
-	resources, err := f.listEntityResources()
+	resources, err := f.listEntityResources(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -159,7 +159,7 @@ func (f *entityFileBasedStore) IdentifyEntity(ctx context.Context,
 // SearchEntities searches for all entities matching the provided filters from the file store.
 func (f *entityFileBasedStore) SearchEntities(ctx context.Context,
 	filters map[string]interface{}) ([]providers.Entity, error) {
-	resources, err := f.listEntityResources()
+	resources, err := f.listEntityResources(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +182,7 @@ func (f *entityFileBasedStore) SearchEntities(ctx context.Context,
 // GetEntityListCount retrieves the total count of entities from the file store.
 func (f *entityFileBasedStore) GetEntityListCount(ctx context.Context, category string,
 	filters map[string]interface{}) (int, error) {
-	resources, err := f.listEntityResources()
+	resources, err := f.listEntityResources(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -203,7 +203,7 @@ func (f *entityFileBasedStore) GetEntityListCount(ctx context.Context, category 
 // GetEntityList retrieves entities from the file store with pagination and filtering.
 func (f *entityFileBasedStore) GetEntityList(ctx context.Context, category string,
 	limit, offset int, filters map[string]interface{}) ([]providers.Entity, error) {
-	resources, err := f.listEntityResources()
+	resources, err := f.listEntityResources(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -225,7 +225,7 @@ func (f *entityFileBasedStore) GetEntityList(ctx context.Context, category strin
 // GetEntityListCountByOUIDs retrieves the total count of entities by OU IDs.
 func (f *entityFileBasedStore) GetEntityListCountByOUIDs(ctx context.Context, category string,
 	ouIDs []string, filters map[string]interface{}) (int, error) {
-	resources, err := f.listEntityResources()
+	resources, err := f.listEntityResources(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -254,7 +254,7 @@ func (f *entityFileBasedStore) GetEntityListCountByOUIDs(ctx context.Context, ca
 // GetEntityListByOUIDs retrieves entities scoped to OU IDs with pagination and filtering.
 func (f *entityFileBasedStore) GetEntityListByOUIDs(ctx context.Context, category string,
 	ouIDs []string, limit, offset int, filters map[string]interface{}) ([]providers.Entity, error) {
-	resources, err := f.listEntityResources()
+	resources, err := f.listEntityResources(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -385,8 +385,8 @@ func (f *entityFileBasedStore) LoadIndexedAttributes(_ []string) error {
 }
 
 // listEntityResources lists all entity resources from the in-memory store.
-func (f *entityFileBasedStore) listEntityResources() ([]*entityStoreEntry, error) {
-	list, err := f.GenericFileBasedStore.List()
+func (f *entityFileBasedStore) listEntityResources(ctx context.Context) ([]*entityStoreEntry, error) {
+	list, err := f.GenericFileBasedStore.List(ctx)
 	if err != nil {
 		return nil, err
 	}

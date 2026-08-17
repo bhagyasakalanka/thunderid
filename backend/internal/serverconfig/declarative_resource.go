@@ -79,7 +79,9 @@ func validateServerConfigDoc(data interface{}, fileStore *fileBasedStore,
 	if !doc.Name.IsValid() {
 		return fmt.Errorf("serverconfig: unsupported server config %q", doc.Name)
 	}
-	if _, exists := fileStore.GetByName(doc.Name); exists {
+	// Loading is not a read on behalf of a deployment: this is the uniqueness check as the file is
+	// parsed, before any request exists.
+	if _, exists := fileStore.GetByName(context.Background(), doc.Name); exists {
 		return fmt.Errorf("serverconfig: server config %q defined more than once", doc.Name)
 	}
 	handler, ok := handlers[doc.Name]

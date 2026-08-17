@@ -120,13 +120,13 @@ func TestPromoteRejectsEnvironmentsWithNoEdge(t *testing.T) {
 		Name: "c", Rank: intp(3), Target: model.Target{DataPlaneID: "c"},
 	})
 	// Declare a -> b only, leaving c unreachable from a.
-	if _, err := svc.UpdateEnvironmentEdges(a.ID, []string{b.ID}); err != nil {
+	if _, err := svc.UpdateEnvironmentEdges(context.Background(), a.ID, []string{b.ID}); err != nil {
 		t.Fatalf("set edges: %v", err)
 	}
-	if _, err := svc.UpdateEnvironmentEdges(b.ID, []string{}); err != nil {
+	if _, err := svc.UpdateEnvironmentEdges(context.Background(), b.ID, []string{}); err != nil {
 		t.Fatalf("set edges: %v", err)
 	}
-	_, _ = svc.UploadVersion(a.ID, bundleOf("app-a"), nil, "v1")
+	_, _ = svc.UploadVersion(context.Background(), a.ID, bundleOf("app-a"), nil, "v1")
 
 	if _, err := svc.Promote(context.Background(), PromoteInput{FromEnvID: a.ID, ToEnvID: c.ID}); err !=
 		ErrNoPromotionPath {
@@ -149,10 +149,10 @@ func TestUpdateEnvironmentEdgesRejectsCycle(t *testing.T) {
 	b, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
 		Name: "b", Rank: intp(2), Target: model.Target{DataPlaneID: "b"},
 	})
-	if _, err := svc.UpdateEnvironmentEdges(a.ID, []string{b.ID}); err != nil {
+	if _, err := svc.UpdateEnvironmentEdges(context.Background(), a.ID, []string{b.ID}); err != nil {
 		t.Fatalf("a -> b: %v", err)
 	}
-	if _, err := svc.UpdateEnvironmentEdges(b.ID, []string{a.ID}); err == nil {
+	if _, err := svc.UpdateEnvironmentEdges(context.Background(), b.ID, []string{a.ID}); err == nil {
 		t.Fatal("b -> a closes a cycle and must be rejected")
 	}
 }
@@ -165,11 +165,11 @@ func TestSummariesExposeGraphEdges(t *testing.T) {
 	prod, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
 		Name: "prod", Rank: intp(2), Target: model.Target{DataPlaneID: "prod"},
 	})
-	if _, err := svc.UpdateEnvironmentEdges(dev.ID, []string{prod.ID}); err != nil {
+	if _, err := svc.UpdateEnvironmentEdges(context.Background(), dev.ID, []string{prod.ID}); err != nil {
 		t.Fatalf("set edges: %v", err)
 	}
 
-	summaries, err := svc.ListEnvironmentSummaries()
+	summaries, err := svc.ListEnvironmentSummaries(context.Background())
 	if err != nil {
 		t.Fatalf("summaries: %v", err)
 	}

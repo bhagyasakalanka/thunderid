@@ -19,15 +19,20 @@
 import {useConfig} from '@thunderid/contexts';
 
 /**
- * Resolves the environment manager's base URL from the runtime configuration.
+ * Resolves the environment manager's base URL.
  *
- * The environment manager is a separate service from the management API, so it has its own
- * `env_manager.public_url` entry in config.js. It is optional: when it is absent the promotion
- * feature reports that it is not configured rather than calling an unknown host.
+ * The Control Plane serves the environment manager in process, on its own origin, so there is
+ * nothing to configure: the management API's base URL is the environment manager's too.
+ *
+ * Promotion is a Control Plane feature. Every other plane resolves to undefined and the feature
+ * reports that it is unavailable, rather than calling a host that does not serve it.
  */
 export default function useEnvManagerUrl(): string | undefined {
-  const {config} = useConfig();
-  const url: string | undefined = config.env_manager?.public_url;
+  const {config, getServerUrl} = useConfig();
+  if (config.plane !== 'cp') {
+    return undefined;
+  }
+  const url: string = getServerUrl();
 
   return url ? url.replace(/\/+$/, '') : undefined;
 }

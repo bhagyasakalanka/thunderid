@@ -103,18 +103,21 @@ func controlPlaneRequest(resources []bundle.Resource, values map[string]string,
 // creating a tenant and knows nothing of this service's environments.
 func (s *Service) SeedTenant(ctx context.Context, sourceDeploymentID,
 	targetDeploymentID string) (*thunder.ImportResponse, error) {
-	env, ok := s.EnvironmentForTenant(sourceDeploymentID)
+	env, ok, err := s.EnvironmentForTenant(ctx, sourceDeploymentID)
+	if err != nil {
+		return nil, err
+	}
 	if !ok {
 		return nil, fmt.Errorf("%w: no environment manages tenant %s", ErrNotFound, sourceDeploymentID)
 	}
-	seq, err := s.resolveSeq(env, "latest")
+	seq, err := s.resolveSeq(ctx, env, "latest")
 	if err != nil {
 		return nil, err
 	}
 	if seq == 0 {
 		return nil, fmt.Errorf("%w: %s has no captured version to seed from", ErrNoVersions, env.Name)
 	}
-	version, err := s.store.GetVersion(env.ID, seq)
+	version, err := s.store.GetVersion(ctx, env.ID, seq)
 	if err != nil {
 		return nil, err
 	}
@@ -132,17 +135,22 @@ func (s *Service) SeedTenant(ctx context.Context, sourceDeploymentID,
 }
 
 // EnvironmentForTenant finds the environment whose control plane is the given tenant.
-func (s *Service) EnvironmentForTenant(deploymentID string) (model.Environment, bool) {
+func (s *Service) EnvironmentForTenant(ctx context.Context, deploymentID string) (
+	model.Environment, bool, error) {
 	deploymentID = strings.TrimSpace(deploymentID)
 	if deploymentID == "" {
-		return model.Environment{}, false
+		return model.Environment{}, false, nil
 	}
-	for _, env := range s.store.ListEnvironments() {
+	envs, err := s.store.ListEnvironments(ctx)
+	if err != nil {
+		return model.Environment{}, false, err
+	}
+	for _, env := range envs {
 		if env.Source != nil && strings.EqualFold(strings.TrimSpace(env.Source.DeploymentID), deploymentID) {
-			return env, true
+			return env, true, nil
 		}
 	}
-	return model.Environment{}, false
+	return model.Environment{}, false, nil
 }
 
 // targetSecretOutcome reports what a promote did about the destination's credentials.

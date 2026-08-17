@@ -41,10 +41,7 @@ export default function EnvironmentChain(): JSX.Element {
   if (!baseUrl) {
     return (
       <Alert severity="info">
-        {t(
-          'promotions:notConfigured',
-          'The environment manager is not configured. Set env_manager.public_url in the console configuration to enable promotions.',
-        )}
+        {t('promotions:notConfigured', 'Promotions are available on the Control Plane console only.')}
       </Alert>
     );
   }
