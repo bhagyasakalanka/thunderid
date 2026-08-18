@@ -133,7 +133,7 @@ func (s *Server) updateEnvironmentEdges(w http.ResponseWriter, r *http.Request) 
 	if !decode(w, r, &req) {
 		return
 	}
-	env, err := s.svc.UpdateEnvironmentEdges(r.PathValue("id"), req.PromotesTo)
+	env, err := s.svc.UpdateEnvironmentEdges(r.Context(), r.PathValue("id"), req.PromotesTo)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -141,8 +141,8 @@ func (s *Server) updateEnvironmentEdges(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, env)
 }
 
-func (s *Server) listEnvironments(w http.ResponseWriter, _ *http.Request) {
-	summaries, err := s.svc.ListEnvironmentSummaries()
+func (s *Server) listEnvironments(w http.ResponseWriter, r *http.Request) {
+	summaries, err := s.svc.ListEnvironmentSummaries(r.Context())
 	if err != nil {
 		writeError(w, err)
 		return
@@ -150,8 +150,22 @@ func (s *Server) listEnvironments(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{"environments": summaries})
 }
 
+// getDataPlaneJob returns work queued for a data plane and, once delivered, what it answered.
+//
+// An apply or a credential is carried out by the pod holding that data plane's connection, which is
+// not always the pod that took the request. When it is not, the caller is given a job id and reads
+// the answer back here, from whichever pod serves the poll.
+func (s *Server) getDataPlaneJob(w http.ResponseWriter, r *http.Request) {
+	job, err := s.svc.JobStatus(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, job)
+}
+
 func (s *Server) getEnvironment(w http.ResponseWriter, r *http.Request) {
-	env, err := s.svc.GetEnvironment(r.PathValue("id"))
+	env, err := s.svc.GetEnvironment(r.Context(), r.PathValue("id"))
 	if err != nil {
 		writeError(w, err)
 		return
@@ -160,7 +174,7 @@ func (s *Server) getEnvironment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteEnvironment(w http.ResponseWriter, r *http.Request) {
-	if err := s.svc.DeleteEnvironment(r.PathValue("id")); err != nil {
+	if err := s.svc.DeleteEnvironment(r.Context(), r.PathValue("id")); err != nil {
 		writeError(w, err)
 		return
 	}
@@ -198,7 +212,7 @@ func (s *Server) createVersion(w http.ResponseWriter, r *http.Request) {
 	case "capture":
 		version, err = s.svc.CaptureVersion(r.Context(), envID, req.Note)
 	case "upload":
-		version, err = s.svc.UploadVersion(envID, req.Resources, req.Variables, req.Note)
+		version, err = s.svc.UploadVersion(r.Context(), envID, req.Resources, req.Variables, req.Note)
 	default:
 		writeErrorStatus(w, http.StatusBadRequest, "mode must be 'capture' or 'upload'")
 		return
@@ -211,7 +225,7 @@ func (s *Server) createVersion(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listVersions(w http.ResponseWriter, r *http.Request) {
-	versions, err := s.svc.ListVersions(r.PathValue("id"))
+	versions, err := s.svc.ListVersions(r.Context(), r.PathValue("id"))
 	if err != nil {
 		writeError(w, err)
 		return
@@ -224,7 +238,7 @@ func (s *Server) getVersion(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	version, err := s.svc.GetVersion(r.PathValue("id"), seq)
+	version, err := s.svc.GetVersion(r.Context(), r.PathValue("id"), seq)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -245,7 +259,7 @@ func (s *Server) checkVariables(w http.ResponseWriter, r *http.Request) {
 func (s *Server) diff(w http.ResponseWriter, r *http.Request) {
 	from := defaultQuery(r, "from", "applied")
 	to := defaultQuery(r, "to", "latest")
-	d, err := s.svc.Diff(r.PathValue("id"), from, to)
+	d, err := s.svc.Diff(r.Context(), r.PathValue("id"), from, to)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -398,7 +412,7 @@ func (s *Server) promotePreview(w http.ResponseWriter, r *http.Request) {
 		writeErrorStatus(w, http.StatusBadRequest, "fromEnv and toEnv are required")
 		return
 	}
-	d, err := s.svc.PromotePreview(fromEnv, toEnv, r.URL.Query().Get("version"))
+	d, err := s.svc.PromotePreview(r.Context(), fromEnv, toEnv, r.URL.Query().Get("version"))
 	if err != nil {
 		writeError(w, err)
 		return

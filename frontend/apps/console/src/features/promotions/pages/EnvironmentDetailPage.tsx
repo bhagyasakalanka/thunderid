@@ -42,6 +42,7 @@ import ControlPlaneDialog from '../components/ControlPlaneDialog';
 import DataPlaneStatusChip from '../components/DataPlaneStatusChip';
 import MissingVariablesNotice from '../components/MissingVariablesNotice';
 import PromoteDialog from '../components/PromoteDialog';
+import QueuedWorkNotice from '../components/QueuedWorkNotice';
 import RevertDialog from '../components/RevertDialog';
 import type {Environment, Version} from '../models/promotion';
 
@@ -56,6 +57,9 @@ export default function EnvironmentDetailPage(): JSX.Element {
   const {data: envData} = useGetEnvironments();
   const {data: versionData, isLoading, error} = useGetVersions(envId);
   const [applyVersionSeq, setApplyVersionSeq] = useState<string | null>(null);
+  // Work the data plane has not taken yet. An apply is delivered by the Control Plane pod holding
+  // that data plane's connection, which is not always the one that accepted the request.
+  const [queuedJobId, setQueuedJobId] = useState<string | undefined>(undefined);
   const [controlPlaneVersionSeq, setControlPlaneVersionSeq] = useState<string | null>(null);
   const applyVersion = useApplyVersion();
   const captureVersion = useCaptureVersion();
@@ -137,6 +141,8 @@ export default function EnvironmentDetailPage(): JSX.Element {
           </Stack>
         </PageTitle.Actions>
       </PageTitle>
+
+      <QueuedWorkNotice jobId={queuedJobId} onSettled={() => setQueuedJobId(undefined)} />
 
       <MissingVariablesNotice
         envId={envId}
@@ -228,6 +234,7 @@ export default function EnvironmentDetailPage(): JSX.Element {
         envId={envId}
         envName={environment?.name ?? envId}
         version={applyVersionSeq ?? ''}
+        onQueued={setQueuedJobId}
         onClose={() => setApplyVersionSeq(null)}
       />
 

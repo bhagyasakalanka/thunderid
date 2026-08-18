@@ -35,10 +35,6 @@ import (
 
 	"github.com/thunder-id/thunderid/internal/agent"
 	"github.com/thunder-id/thunderid/internal/application"
-	"github.com/thunder-id/thunderid/internal/authn/github"
-	"github.com/thunder-id/thunderid/internal/authn/google"
-	authnOAuth "github.com/thunder-id/thunderid/internal/authn/oauth"
-	authnOIDC "github.com/thunder-id/thunderid/internal/authn/oidc"
 	"github.com/thunder-id/thunderid/internal/cert"
 	"github.com/thunder-id/thunderid/internal/connection"
 	"github.com/thunder-id/thunderid/internal/dataplanetoken"
@@ -53,7 +49,7 @@ import (
 	"github.com/thunder-id/thunderid/internal/envmgr/thunder"
 	flowconfig "github.com/thunder-id/thunderid/internal/flow/config"
 	flowcore "github.com/thunder-id/thunderid/internal/flow/core"
-	"github.com/thunder-id/thunderid/internal/flow/executor"
+	"github.com/thunder-id/thunderid/internal/flow/executormeta"
 	"github.com/thunder-id/thunderid/internal/flow/graphbuilder"
 	"github.com/thunder-id/thunderid/internal/flow/interceptor"
 	flowmgt "github.com/thunder-id/thunderid/internal/flow/mgt"
@@ -121,7 +117,7 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 	pkiService, err := pki.Initialize()
 	fatalOnError(ctx, logger, err, "Failed to initialize certificate service")
 
-	runtimeCryptoSvc, _, err := kmprovider.Initialize(pkiService)
+	runtimeCryptoSvc, configCryptoSvc, err := kmprovider.Initialize(pkiService)
 	fatalOnError(ctx, logger, err, "Failed to initialize key manager provider")
 
 	envVarService, err := environmentvariable.Initialize(mux)
@@ -264,40 +260,9 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 
 	// Flow MANAGEMENT (CRUD + definition validation).
 	//
-	// TEMPORARY COUPLING: flow validation needs an executor/interceptor registry and a graph
-	// builder to check that flow nodes reference known executors and that the graph is well-formed.
-	// Building that registry links the flow/executor package, which transitively imports the Data
-	// Plane authn/oauth/idp-runtime/notification-otp packages. Validation only reads static executor
-	// metadata (GetMeta / IsRegistered) and never executes a node, so runtime dependencies are left
-	// nil where the executor constructor merely stores them. The federated-auth services below are
-	// the exception: three executor constructors (github/google/oidc) type-assert their auth service
-	// at construction, so the CP builds these lightweight services (never executed here) to satisfy
-	// them. Splitting executor metadata/registration from executor execution wiring (the follow-up
-	// flow refactor) removes both this link and the need for these services entirely.
-	oauthAuthnService := authnOAuth.Initialize(idpService, entityProvider)
-	oidcAuthnService := authnOIDC.Initialize(oauthAuthnService, jwtService)
-	googleAuthnService := google.Initialize(oidcAuthnService, jwtService)
-	githubAuthnService := github.Initialize(oauthAuthnService)
-
 	flowConfig := flowconfig.FromServerRuntime()
-	flowFactory, execRegistry, interceptorRegistry, graphBuilder := initializeFlowCoreAndExecutor(ctx, logger,
-		cacheManager, executor.ExecutorDependencies{
-			OUService:             ouService,
-			IDPService:            idpService,
-			JWTService:            jwtService,
-			EntityTypeService:     entityTypeService,
-			GroupService:          groupService,
-			RoleService:           roleService,
-			RoleAssignmentService: roleAssignmentService,
-			EntityProvider:        entityProvider,
-			OAuthSvc:              oauthAuthnService,
-			OIDCSvc:               oidcAuthnService,
-			GoogleSvc:             googleAuthnService,
-			GithubSvc:             githubAuthnService,
-		},
-		interceptor.InterceptorDependencies{},
-		flowConfig,
-	)
+	flowFactory, execRegistry, interceptorRegistry, graphBuilder := initializeFlowValidation(ctx, logger,
+		cacheManager, interceptor.InterceptorDependencies{}, flowConfig)
 
 	flowMgtService, flowMgtExporter, err := flowmgt.Initialize(
 		mux, mcpServer, cacheManager, flowFactory, execRegistry, interceptorRegistry, graphBuilder,
@@ -395,6 +360,11 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 	// Tokens are issued per data plane when an environment is registered and held encrypted here, so
 	// the handshake knows which data plane connected instead of believing the id it claims.
 	dataPlaneTokens = dataplanetoken.New()
+	// A credential queued for a data plane is encrypted at rest with the server's configuration key.
+	if envManager != nil && configCryptoSvc != nil {
+		envManager.SetSecretSealer(configSealer{crypto: configCryptoSvc})
+	}
+
 	channelServer = channel.InitializeServer(mux, channel.ServerConfig{
 		Enabled:    chCfg.Enabled,
 		Path:       chCfg.Path,
@@ -409,6 +379,9 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 	if envManager != nil {
 		envManager.SetDataPlanes(&channelDataPlanes{server: channelServer})
 		envManager.SetDataPlaneTokenIssuer(dataPlaneTokens)
+		// Work queued by a pod that held no connection to its data plane waits in the database. This
+		// is what picks up the share of it this pod can deliver.
+		startJobWorker(ctx, envManager, channelServer)
 	}
 
 	return jwtService, runtimeCryptoSvc, importService, exportService, envManager, envVarService
@@ -465,21 +438,25 @@ func fatalOnError(ctx context.Context, logger *log.Logger, err error, msg string
 // initializeFlowCoreAndExecutor initializes the flow core and executor registries used for flow
 // definition validation. On the CP the executor dependencies carry only management services; the
 // runtime dependencies are left nil because validation reads static executor metadata only.
-func initializeFlowCoreAndExecutor(
+// initializeFlowValidation initializes what flow definition validation and graph building need.
+//
+// The executor side is the static metadata catalog rather than the real registry: this plane
+// validates flows and never runs one, and constructing the executors would link the data-plane
+// services they are built with. The catalog honors the same configured subset, so a flow accepted
+// here is one the plane that runs it has registered.
+func initializeFlowValidation(
 	ctx context.Context,
 	logger *log.Logger,
 	cacheManager cache.CacheManagerInterface,
-	execDeps executor.ExecutorDependencies,
 	interceptorDeps interceptor.InterceptorDependencies,
 	flowConfig flowconfig.Config,
-) (flowcore.FlowFactoryInterface, executor.ExecutorRegistryInterface,
+) (flowcore.FlowFactoryInterface, flowcore.ExecutorMetadataProvider,
 	interceptor.InterceptorRegistryInterface, graphbuilder.GraphBuilderInterface) {
 	flowFactory, graphCache := flowcore.Initialize(cacheManager)
-	execDeps.FlowFactory = flowFactory
 	interceptorDeps.FlowFactory = flowFactory
 
-	execRegistry, err := executor.Initialize(execDeps, flowConfig.Flow)
-	fatalOnError(ctx, logger, err, "Failed to register flow executors")
+	execRegistry, err := executormeta.NewRegistry(flowConfig.Flow.Executors)
+	fatalOnError(ctx, logger, err, "Failed to build the flow executor metadata registry")
 	interceptorRegistry, err := interceptor.Initialize(interceptorDeps, flowConfig.Flow)
 	fatalOnError(ctx, logger, err, "Failed to initialize Interceptor registry")
 
@@ -514,16 +491,19 @@ func buildHashConfig() (cryptolib.HashConfig, error) {
 // of over HTTP; a nil result means promotion is not hosted here.
 func initEnvironmentManager(ctx context.Context, logger *log.Logger, mux *http.ServeMux,
 	cfg config.Config) envmgrRegistry {
-	dataDir := cfg.Server.SecurityConfig.EnvironmentManager.DataDir
-	reg, err := envmgr.Initialize(mux, dataDir, hashSecretForEnvManager)
+	// The environment manager keeps its environments and versions in their own datasource. Leaving it
+	// unconfigured is how a deployment that promotes by other means turns the module off, and without
+	// it there is nowhere for a captured version to go.
+	if strings.TrimSpace(cfg.Database.Environment.Type) == "" {
+		logger.Info(ctx, "No environment datasource is configured, so promotion is not hosted here")
+		return nil
+	}
+	reg, err := envmgr.Initialize(mux, hashSecretForEnvManager)
 	if err != nil {
 		logger.Error(ctx, "Failed to start the in-process environment manager", log.Error(err))
 		return nil
 	}
-	if reg == nil {
-		return nil
-	}
-	logger.Info(ctx, "Serving the environment manager from this server", log.String("dataDir", dataDir))
+	logger.Info(ctx, "Serving the environment manager from this server")
 	return reg
 }
 
@@ -534,6 +514,9 @@ type envmgrRegistry interface {
 	SetLocalControlPlane(cp envmgrservice.LocalControlPlane)
 	SetDataPlanes(planes envmgrservice.DataPlanes)
 	SetDataPlaneTokenIssuer(issuer envmgrservice.DataPlaneTokenIssuer)
+	SetSecretSealer(sealer envmgrservice.SecretSealer)
+	// DeliverPending carries out work queued for a data plane this pod holds a connection to.
+	DeliverPending(ctx context.Context, dataPlaneID string) error
 	SeedTenant(ctx context.Context, sourceDeploymentID, targetDeploymentID string) (*thunder.ImportResponse, error)
 	CreateEnvironment(ctx context.Context, deploymentID string,
 		in envmgrservice.CreateEnvironmentInput) (envmgrservice.CreateEnvironmentResult, error)

@@ -55,11 +55,6 @@ window.__THUNDERID_RUNTIME_CONFIG__ = {
   server: {
     public_url: 'https://localhost:8095',
   },
-  // Environment manager service, which holds configuration versions and drives promotion between
-  // environments. Omit this block to hide the Promotions feature.
-  env_manager: {
-    public_url: 'https://localhost:8095',
-  },
   trusted_issuer: {
     type: 'generic',
     public_url: 'https://api.asgardeo.io/t/b1zt/oauth2/token',

@@ -65,6 +65,8 @@ func registerTenantRoutes(mux *http.ServeMux, h *tenantHandler) {
 	}
 	mux.HandleFunc(middleware.WithCORS("POST "+basePath, h.HandleTenantPostRequest, opts1))
 	mux.HandleFunc(middleware.WithCORS("GET "+basePath, h.HandleTenantListRequest, opts1))
+	mux.HandleFunc(middleware.WithCORS("POST "+basePath+"/{id}/environment",
+		h.HandleEnvironmentPostRequest, opts1))
 	mux.HandleFunc(middleware.WithCORS("OPTIONS "+basePath,
 		func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNoContent)

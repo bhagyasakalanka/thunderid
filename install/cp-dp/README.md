@@ -18,75 +18,59 @@ repository root. Both carry a default `deployment.yaml`, which the ConfigMap bel
 
 ## Provisioning
 
-Before a plane's pods start, its database has to be provisioned. There is a script per plane in
-[scripts/](scripts/).
+Loading the schema is the whole of it. Neither plane is seeded, and nothing has to run before or
+alongside the pods.
 
-| Plane | Script | Run it | Seeds |
-|---|---|---|---|
-| Control Plane | [scripts/setup-control-plane.sh](scripts/setup-control-plane.sh) | Once, when the Control Plane is first stood up | The baseline, for the root tenant |
-| Data Plane | [scripts/setup-data-plane.sh](scripts/setup-data-plane.sh) | Once per environment, when it is first stood up | Nothing. Schema only |
+### Load the schema
 
-**A Data Plane seeds nothing.** It is fed by a Control Plane: its organization units, user types,
-applications, flows and themes all arrive on the first apply, so seeding any of them would leave a
-second copy for that apply to sit alongside. Loading the schema is all it needs before the Control
-Plane reaches it, which is also why it needs no admin credentials.
-
-These run **from outside the deployment**, from an operator's machine or a platform task. They are
-not part of the image and are not meant to run in a pod. What they need is an unpacked distribution
-for the plane, holding that deployment's `deployment.yaml`, and reach to its database.
+Each datasource named in `deployment.yaml` gets its schema from the matching script in the
+distribution's `dbscripts/`:
 
 ```
-tar/unzip the ThunderID Control Plane distribution somewhere, then:
-
-THUNDERID_HOME=/path/to/distribution \
-ADMIN_USERNAME=admin \
-ADMIN_PASSWORD=... \
-DB_CONFIG_PASSWORD=... DB_RUNTIME_TRANSIENT_PASSWORD=... \
-DB_ENTITY_PASSWORD=... DB_RUNTIME_PERSISTENT_PASSWORD=... \
-  ./scripts/setup-control-plane.sh
+psql -h "$DB_HOST" -U "$DB_USER" -d configdb           -f dbscripts/configdb/postgres.sql
+psql -h "$DB_HOST" -U "$DB_USER" -d entitydb           -f dbscripts/entitydb/postgres.sql
+psql -h "$DB_HOST" -U "$DB_USER" -d runtime_transient  -f dbscripts/runtime-transient/postgres.sql
+psql -h "$DB_HOST" -U "$DB_USER" -d runtime_persistent -f dbscripts/runtime-persistent/postgres.sql
+psql -h "$DB_HOST" -U "$DB_USER" -d environmentdb      -f dbscripts/environmentdb/postgres.sql
 ```
 
-`deployment.yaml` is read and never written: put the deployment's own configuration in the
-distribution first, and the script provisions what it describes. The database passwords come from the
-environment rather than from that file, because in a cluster it holds placeholders and the server
-resolves them at startup. Pass the same values, from the same Secret.
+`environmentdb` is the Control Plane's alone: it holds the environments and captured versions that
+promotion compares. A Data Plane runs no environment manager and configures no such datasource, so
+it loads the other four.
 
-Provisioning happens once. Re-running after a failure part way through is safe: a schema is loaded
-only into an empty database, key material is generated only when absent, and seeding upserts.
+These scripts create tables unconditionally, so run them against empty databases only.
 
-### What they do not do
+### Why there is nothing to seed
 
-**They do not generate key material.** TLS, token signing, and encryption keys are generated and
+**The Control Plane's own tenant holds no resources.** The tenant named by
+`server.system_deployment_id` is an identity rather than a resource owner. Callers authenticate
+against the trusted issuer, which is validated from `deployment.yaml` against the issuer's JWKS and
+reads no rows, and the plane issues no tokens of its own. Nothing seeds from it either: a new tenant
+copies the oldest tenant of its own organization, or, when there is none, is provisioned from the
+`bootstrap/` bundle in the image.
+
+That bundle exists for the tenants created through `/system/tenants`, which provision themselves as
+they are created. It stays in the image for that reason, and is never applied to the system tenant.
+
+**A Data Plane holds nothing either, at first.** It is fed by a Control Plane: its organization
+units, user types, applications, flows and themes all arrive on the first apply, so seeding any of
+them would leave a second copy for that apply to sit alongside.
+
+### What provisioning does not do
+
+**It does not generate key material.** TLS, token signing, and encryption keys are generated and
 mounted by whatever provisions the deployment. Every replica of a plane must mount the same ones,
 because a token signed by one has to verify on another, and data encrypted under one key cannot be
 read under a different one.
 
-The scripts still need that material reachable, because seeding the baseline loads `deployment.yaml`
-and loading it reads every file the configuration points at. Put the same material the pods will
-mount under the distribution first; the script checks up front and names anything missing rather than
-failing part way through.
+**It creates no secrets.** Everything is supplied through the environment: database passwords to the
+pods, and on a Data Plane the vault token, from which runtime secrets are resolved at startup and as
+they change. The database passwords come from there rather than from `deployment.yaml`, which holds
+placeholders the server resolves at startup.
 
-**They create no secrets.** Everything else is supplied through the environment: database passwords
-to the script and to the pods, and on a Data Plane the vault token, from which runtime secrets are
-resolved at startup and as they change.
-
-Everything the scripts do land in the database, so once they have run there is nothing to carry
-across.
-
-### What the scripts deliberately leave alone
-
-**The Control Plane's other tenants.** `setup-control-plane.sh` provisions only the tenant named by
-`server.system_deployment_id`, because in token mode nothing can call `/system/tenants` to create any
-other tenant until that one exists. Every tenant after it is created through that API, which
-provisions its baseline itself. Do not rerun the script per tenant.
-
-**Registering a Data Plane with its Control Plane.** That happens on the Control Plane, which issues
-the environment's channel token and shows it once. Put that token where `channel.client.auth_token`
-reads it from before starting the pods.
-
-PostgreSQL schema loading needs `psql` on the machine running the script. Without it the script says
-so and prints the exact command to run instead, rather than leaving a deployment pointed at an empty
-database.
+**It does not register a Data Plane with its Control Plane.** That happens on the Control Plane,
+which issues the environment's channel token and shows it once. Put that token where
+`channel.client.auth_token` reads it from before starting the pods.
 
 ## The audience a token binds to
 
@@ -137,6 +121,40 @@ volumes:
     configMap:
       name: thunderid-dp-config
 ```
+
+### The console's own configuration
+
+The image also carries `apps/console/config.js`, which the browser reads. It ships with development
+values and has to be replaced for any real deployment, in the same way as `deployment.yaml`, by
+mounting over `/opt/thunderid/apps/console/config.js`.
+
+**Leave `server.public_url` out.** With it and `hostname` both unset the console addresses whatever
+host served it, which behind a load balancer is the load balancer. A value hardcoded here is used in
+preference, so the console would load from the load balancer and then send every API call somewhere
+else, past it, and cross-origin:
+
+```js
+window.__THUNDERID_RUNTIME_CONFIG__ = {
+  plane: 'cp',
+  client: {
+    client_id: '<the console client registered at your issuer>',
+    resource_identifier: 'https://cp.example.com',
+    scopes: ['openid', 'profile', 'email', 'ou', 'tenant_instance:system', /* ... */],
+  },
+  // No server block: the console follows the host it was served from.
+  trusted_issuer: {
+    type: 'generic',
+    public_url: 'https://idp.example.com/oauth2/token',
+    client_id: '<the same client>',
+    scopes: ['openid', 'profile', 'email', 'tenant_instance:system'],
+  },
+};
+```
+
+The scopes carry the `tenant_instance` prefix because `security.system_permission_prefix` sets it: a
+scope names the instance it grants against, so a bare `system` from the issuer does not satisfy the
+permissions this plane checks. The issuer must also emit the deployment id claim named by
+`server.deployment_id_claim`; a token without it identifies no tenant and every request is refused.
 
 ## Secrets
 
@@ -202,10 +220,9 @@ already shared, so this is the only thing standing in the way of scaling it.
 
 ## Storage
 
-The Control Plane's `environment_manager.data_dir` holds environments and their captured versions,
-which is the history that promotion compares against. Back it with a PersistentVolumeClaim. The Data
-Plane needs no durable storage of its own: its configuration comes from the Control Plane, its
-secrets from the vault, and its data from Postgres.
+Neither plane needs durable storage of its own. The Control Plane keeps its environments and their
+captured versions in `environmentdb`, and a Data Plane's configuration comes from the Control Plane,
+its secrets from the vault, and its data from Postgres. Both are free to be rescheduled anywhere.
 
 ## Ports
 

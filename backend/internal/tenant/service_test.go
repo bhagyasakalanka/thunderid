@@ -377,3 +377,71 @@ func TestCreateTenant_WithoutADataPlaneRegistersNoEnvironment(t *testing.T) {
 	assert.Nil(t, seeder.registered)
 	assert.Nil(t, created.Environment)
 }
+
+// A tenant created before its data plane existed has no environment. Registering one later must be
+// possible with the system credentials the tenant was created with, rather than a token for the
+// tenant itself, which is what a platform provisioning it from outside actually holds.
+func TestRegisterEnvironment_RegistersAnExistingTenant(t *testing.T) {
+	store := newFakeStore()
+	seeder := &stubSeeder{}
+	svc := newTestService(store, func(context.Context, importer.ImportServiceInterface,
+		bootstrap.Options) error {
+		return nil
+	})
+	svc.SetBaselineSeeder(seeder)
+
+	// A tenant with no data plane: created, but with nowhere to apply to.
+	if _, svcErr := svc.CreateTenant(systemCtx(), CreateTenantRequest{Org: "acme", Env: "dev"}); svcErr != nil {
+		t.Fatalf("create tenant: %v", svcErr.Error.DefaultValue)
+	}
+	if seeder.registered != nil {
+		t.Fatal("expected no environment without a data plane")
+	}
+
+	env, svcErr := svc.RegisterEnvironment(systemCtx(), "acme:dev", RegisterEnvironmentRequest{
+		DataPlane: DataPlane{ID: "acme:dev", BaseURL: "https://dev.example"},
+	})
+	if svcErr != nil {
+		t.Fatalf("register environment: %v", svcErr.Error.DefaultValue)
+	}
+	if env == nil || seeder.registered == nil {
+		t.Fatal("expected the environment to be registered")
+	}
+	if seeder.registered.DeploymentID != "acme:dev" {
+		t.Fatalf("expected it registered against the tenant, got %q", seeder.registered.DeploymentID)
+	}
+	// The first environment of an organization is the bottom of its chain whatever is asked for.
+	if seeder.registered.Rank != 1 {
+		t.Fatalf("expected rank 1 for the organization's first environment, got %d", seeder.registered.Rank)
+	}
+	if seeder.registered.Name != "dev" {
+		t.Fatalf("expected the environment named after the deployment id, got %q", seeder.registered.Name)
+	}
+}
+
+// Only the system tenant provisions, and only a tenant that exists can be registered.
+func TestRegisterEnvironment_Refusals(t *testing.T) {
+	store := newFakeStore()
+	svc := newTestService(store, func(context.Context, importer.ImportServiceInterface,
+		bootstrap.Options) error {
+		return nil
+	})
+	svc.SetBaselineSeeder(&stubSeeder{})
+
+	req := RegisterEnvironmentRequest{DataPlane: DataPlane{ID: "acme:dev"}}
+
+	if _, svcErr := svc.RegisterEnvironment(deployment.WithID(context.Background(), "acme:dev"),
+		"acme:dev", req); svcErr == nil {
+		t.Fatal("expected a tenant's own token to be refused")
+	}
+	if _, svcErr := svc.RegisterEnvironment(systemCtx(), "acme:missing", req); svcErr == nil {
+		t.Fatal("expected an unknown tenant to be refused")
+	}
+	if _, svcErr := svc.RegisterEnvironment(systemCtx(), systemID, req); svcErr == nil {
+		t.Fatal("expected the system tenant to be refused")
+	}
+	if _, svcErr := svc.RegisterEnvironment(systemCtx(), "acme:dev",
+		RegisterEnvironmentRequest{}); svcErr == nil {
+		t.Fatal("expected a missing data plane to be refused")
+	}
+}

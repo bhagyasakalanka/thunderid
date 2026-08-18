@@ -23,6 +23,7 @@ import {
   Box,
   Button,
   Chip,
+  CircularProgress,
   DataGrid,
   IconButton,
   ListingTable,
@@ -32,9 +33,10 @@ import {
   Typography,
 } from '@wso2/oxygen-ui';
 import {KeyRound, RefreshCw} from '@wso2/oxygen-ui-icons-react';
-import {useMemo, useState, type JSX, type MouseEvent} from 'react';
+import {useEffect, useMemo, useState, type JSX, type MouseEvent} from 'react';
 import {useTranslation} from 'react-i18next';
 import {useParams} from 'react-router';
+import useDataPlaneJob from '../api/useDataPlaneJob';
 import useGetEnvironments from '../api/useGetEnvironments';
 import useGetEnvironmentSecrets from '../api/useGetEnvironmentSecrets';
 import GenerateMissingSecretsDialog from '../components/GenerateMissingSecretsDialog';
@@ -54,7 +56,20 @@ export default function EnvironmentSecretsPage(): JSX.Element {
   const dataGridLocaleText = useDataGridLocaleText();
 
   const {data: envData} = useGetEnvironments();
-  const {data, isLoading, error} = useGetEnvironmentSecrets(envId);
+  const {data, isLoading, error, refetch} = useGetEnvironmentSecrets(envId);
+
+  // This pod may hold no connection to the data plane, in which case the question was queued for one
+  // that does. Follow it and ask again once answered, rather than leaving the page saying the
+  // credentials are unknown until someone reloads.
+  const {data: pendingJob} = useDataPlaneJob(data?.pendingJobId);
+  const pendingSettled: boolean = pendingJob?.status === 'done' || pendingJob?.status === 'failed';
+  useEffect((): void => {
+    if (pendingSettled) {
+      refetch().catch(() => {
+        // Ignore; the next poll asks again.
+      });
+    }
+  }, [pendingSettled, refetch]);
 
   const [toSet, setToSet] = useState<SecretEntry | null>(null);
   const [toRegenerate, setToRegenerate] = useState<SecretEntry | null>(null);
@@ -220,7 +235,22 @@ export default function EnvironmentSecretsPage(): JSX.Element {
 
       {/* Without an answer from the secret service, "missing" would be a guess, and generating a
           credential on that guess would replace a working one. */}
-      {data && !data.checked && (
+      {/* Queued for another pod is "not yet", not "unavailable", so it reads differently. */}
+      {data && !data.checked && data.pendingJobId && !pendingSettled && (
+        <Alert severity="info" icon={<CircularProgress size={20} />} sx={{mb: 2}}>
+          <AlertTitle>
+            {t('promotions:secrets.pending', 'Asking the Data Plane which credentials it already holds.')}
+          </AlertTitle>
+          <Typography variant="body2">
+            {t(
+              'promotions:secrets.pendingHint',
+              'This Control Plane pod holds no connection to it, so the question was passed to one that does.',
+            )}
+          </Typography>
+        </Alert>
+      )}
+
+      {data && !data.checked && !(data.pendingJobId && !pendingSettled) && (
         <Alert severity="warning" sx={{mb: 2}}>
           <AlertTitle>
             {t(

@@ -129,6 +129,33 @@ export interface ApplyResult {
   diff: Diff;
   dryRun: boolean;
   import?: ImportResponse;
+  /**
+   * Identifies the queued work. An apply is delivered by the Control Plane pod holding the data
+   * plane's connection, which is not always the one that took the request.
+   */
+  jobId: string;
+  /**
+   * "done" when the data plane has taken the configuration, in which case import is set. "pending"
+   * means it is queued for another pod and the outcome is read back with jobId.
+   */
+  status: DataPlaneJobStatus;
+}
+
+/** How far a piece of queued work has got. */
+export type DataPlaneJobStatus = 'pending' | 'claimed' | 'done' | 'failed';
+
+/** Work queued for a data plane, and what it answered once delivered. */
+export interface DataPlaneJob {
+  id: string;
+  dataPlaneId: string;
+  envId?: string;
+  type: string;
+  status: DataPlaneJobStatus;
+  /** The data plane's answer, as JSON, once the status is "done". */
+  result?: string;
+  /** Why the delivery failed, when the status is "failed". */
+  error?: string;
+  attempts: number;
 }
 
 export interface PromoteResult {
@@ -199,6 +226,12 @@ export interface SecretList {
   checked: boolean;
   /** Why it could not be reached. Usually this environment's own credentials or endpoint. */
   checkError?: string;
+  /**
+   * Set when the Control Plane pod serving this request holds no connection to the data plane and
+   * queued the question for one that does. Following it and asking again is what turns `checked`
+   * true; it means "not yet", not "unavailable".
+   */
+  pendingJobId?: string;
 }
 
 /** The result of regenerating a credential. The value is returned only here. */

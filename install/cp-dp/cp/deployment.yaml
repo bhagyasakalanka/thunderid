@@ -40,12 +40,6 @@ server:
     # tenant_instance:system:user, and so on. Leaving it unset keeps the unprefixed names.
     system_permission_prefix: "tenant_instance"
 
-    environment_manager:
-      # Environments and their captured versions. This is the version history that promotion
-      # compares against, so it must be durable: back it with a PersistentVolumeClaim, not the
-      # pod's own filesystem.
-      data_dir: "/opt/thunderid/repository/envmgr"
-
     # The identity provider whose tokens are accepted for the management APIs.
     trusted_issuer:
       issuer: "https://idp.example.com/oauth2/token"
@@ -120,6 +114,22 @@ database:
       name: "runtime_persistent"
       username: "dbuser"
       password: "{{.DB_RUNTIME_PERSISTENT_PASSWORD}}"
+      sslmode: "require"
+      max_open_conns: 500
+      max_idle_conns: 100
+      conn_max_lifetime: 3600
+
+  # The environment manager's own datasource: environments and the captured versions promotion
+  # compares against. It is shared state, which is what lets more than one replica serve promotion.
+  # A Data Plane has no equivalent and configures none.
+  environment:
+    type: "postgres"
+    postgres:
+      hostname: "postgres.example.com"
+      port: 5432
+      name: "environmentdb"
+      username: "dbuser"
+      password: "{{.DB_ENVIRONMENT_PASSWORD}}"
       sslmode: "require"
       max_open_conns: 500
       max_idle_conns: 100

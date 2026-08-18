@@ -20,12 +20,15 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 
 	"github.com/thunder-id/thunderid/internal/envmgr/bundle"
 	"github.com/thunder-id/thunderid/internal/envmgr/model"
+	"github.com/thunder-id/thunderid/internal/envmgr/store"
+	"github.com/thunder-id/thunderid/internal/system/log"
 )
 
 // Secret kinds, matching the data plane's secret service.
@@ -80,6 +83,11 @@ type SecretEntry struct {
 	Kind string `json:"kind"`
 	// Held is whether the data plane's secret service already has it. Meaningless when Checked is false.
 	Held bool `json:"held"`
+	// JobID and Status are set when this entry is the result of setting a credential. The value is
+	// delivered by the pod holding the data plane's connection, which may not be the one that took
+	// the request, so a "pending" status means the answer is collected later by this id.
+	JobID  string `json:"jobId,omitempty"`
+	Status string `json:"status,omitempty"`
 }
 
 // SecretList is every secret an environment's version needs, with its status on the data plane.
@@ -94,6 +102,10 @@ type SecretList struct {
 	// cause is this environment's own credentials or endpoint, not a data plane that is down, and those
 	// look identical without it.
 	CheckError string `json:"checkError,omitempty"`
+	// PendingJobID is set when this pod could not ask the data plane and queued the question for one
+	// that can. Following it and asking again is what turns Checked true, rather than the listing
+	// being wrong until someone happens to reach the right pod.
+	PendingJobID string `json:"pendingJobId,omitempty"`
 }
 
 // ListSecrets reports every secret-backed placeholder of an environment's latest version and whether
@@ -102,18 +114,18 @@ type SecretList struct {
 // The list is derived from the configuration rather than from the secret service, so a credential that
 // was never captured still appears, which is the case an operator most needs to see.
 func (s *Service) ListSecrets(ctx context.Context, envID string) (SecretList, error) {
-	env, err := s.store.GetEnvironment(envID)
+	env, err := s.store.GetEnvironment(ctx, envID)
 	if err != nil {
 		return SecretList{}, err
 	}
-	seq, err := s.resolveSeq(env, "latest")
+	seq, err := s.resolveSeq(ctx, env, "latest")
 	if err != nil {
 		return SecretList{}, err
 	}
 	if seq == 0 {
 		return SecretList{}, ErrNoVersions
 	}
-	version, err := s.store.GetVersion(envID, seq)
+	version, err := s.store.GetVersion(ctx, envID, seq)
 	if err != nil {
 		return SecretList{}, err
 	}
@@ -128,6 +140,12 @@ func (s *Service) ListSecrets(ctx context.Context, envID string) (SecretList, er
 	list := SecretList{EnvID: envID, Seq: seq, Secrets: entries, Checked: checkErr == nil}
 	if checkErr != nil {
 		list.CheckError = checkErr.Error()
+		// The question was queued for the pod that can ask it, so this is "not yet" rather than
+		// "unavailable", and the caller is told what to follow.
+		var pending *pendingSecretNamesError
+		if errors.As(checkErr, &pending) {
+			list.PendingJobID = pending.jobID
+		}
 	}
 	return list, nil
 }
@@ -143,24 +161,28 @@ func (s *Service) SetSecret(ctx context.Context, envID, name, value string) (Sec
 	if value == "" {
 		return SecretEntry{}, fmt.Errorf("%w: a value is required", ErrValidation)
 	}
-	env, err := s.store.GetEnvironment(envID)
+	env, err := s.store.GetEnvironment(ctx, envID)
 	if err != nil {
 		return SecretEntry{}, err
 	}
-	entry := s.describeSecret(envID, name)
+	entry := s.describeSecret(ctx, envID, name)
 
 	body, err := s.secretBody(entry.Kind, value, fmt.Sprintf("Set %s", name))
 	if err != nil {
 		return SecretEntry{}, err
 	}
-	plane, err := s.dataPlaneFor(env)
+	job, err := s.queueSecret(ctx, env, name, body)
 	if err != nil {
 		return SecretEntry{}, err
 	}
-	if err := plane.PutSecret(ctx, name, body); err != nil {
-		return SecretEntry{}, fmt.Errorf("failed to store the secret on %s: %w", env.Name, err)
+	if job.Status == store.JobFailed {
+		return SecretEntry{}, fmt.Errorf("failed to store the secret on %s: %s", env.Name, job.Error)
 	}
-	entry.Held = true
+	// Held reports that the data plane has it. A job still pending has not reached it yet, so this
+	// says so rather than claiming a credential is in place before it is.
+	entry.Held = job.Status == store.JobDone
+	entry.JobID = job.ID
+	entry.Status = job.Status
 	return entry, nil
 }
 
@@ -170,7 +192,7 @@ func (s *Service) SetSecret(ctx context.Context, envID, name, value string) (Sec
 // Only a hashed credential can be generated: a replayed one, such as a gateway API key, is issued by
 // the third party and a random value would simply be wrong.
 func (s *Service) RegenerateSecret(ctx context.Context, envID, name string) (SecretEntry, string, error) {
-	entry := s.describeSecret(envID, name)
+	entry := s.describeSecret(ctx, envID, name)
 	if entry.Kind != KindHash {
 		return SecretEntry{}, "", fmt.Errorf(
 			"%w: %s is replayed to a third party, so it has to be set to the value that party issued",
@@ -219,10 +241,10 @@ func (s *Service) secretBody(kind, value, description string) (map[string]interf
 // describeSecret finds what the environment's configuration says about a placeholder. A name the
 // configuration does not mention still gets an entry, classified from the name, so a credential can be
 // set before the version that needs it is captured.
-func (s *Service) describeSecret(envID, name string) SecretEntry {
-	if env, err := s.store.GetEnvironment(envID); err == nil {
-		if seq, err := s.resolveSeq(env, "latest"); err == nil && seq > 0 {
-			if version, err := s.store.GetVersion(envID, seq); err == nil {
+func (s *Service) describeSecret(ctx context.Context, envID, name string) SecretEntry {
+	if env, err := s.store.GetEnvironment(ctx, envID); err == nil {
+		if seq, err := s.resolveSeq(ctx, env, "latest"); err == nil && seq > 0 {
+			if version, err := s.store.GetVersion(ctx, envID, seq); err == nil {
 				for _, entry := range secretEntriesOf(version) {
 					if entry.Name == name {
 						return entry
@@ -239,14 +261,57 @@ func (s *Service) describeSecret(envID, name string) SecretEntry {
 func (s *Service) heldSecrets(ctx context.Context, env model.Environment) (map[string]bool, error) {
 	plane, err := s.dataPlaneFor(env)
 	if err != nil {
-		return nil, err
+		return s.recordedSecretNames(ctx, env, err)
 	}
 	names, err := plane.SecretNames(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", env.Name, err)
+		return s.recordedSecretNames(ctx, env, fmt.Errorf("%s: %w", env.Name, err))
 	}
+
+	// This pod could ask, so record the answer for the pods that cannot.
+	env.SecretNames = names
+	env.SecretNamesAt = s.now().UTC()
+	if saveErr := s.store.SaveEnvironment(ctx, env); saveErr != nil {
+		// Recording is an optimization for other pods; the answer in hand is still good.
+		log.GetLogger().Warn(ctx, "Failed to record the credentials a data plane holds",
+			log.String("environment", env.Name), log.Error(saveErr))
+	}
+
 	held := make(map[string]bool, len(names))
 	for _, name := range names {
+		held[name] = true
+	}
+	return held, nil
+}
+
+// pendingSecretNamesError reports that the question was queued rather than answered, and carries the
+// job to follow. It is an error because nothing is known yet, and callers must not read that as
+// "nothing held".
+type pendingSecretNamesError struct {
+	jobID  string
+	reason error
+}
+
+func (e *pendingSecretNamesError) Error() string { return e.reason.Error() }
+func (e *pendingSecretNamesError) Unwrap() error { return e.reason }
+
+// recordedSecretNames answers from what the data plane last reported, for a pod that cannot reach it.
+//
+// A control plane pod holds connections only to the data planes that dialed it, so being unable to
+// ask is ordinary rather than a fault. Never having been told is different, and is reported as the
+// original failure so that "not held" is not presented as fact.
+func (s *Service) recordedSecretNames(ctx context.Context, env model.Environment,
+	reason error) (map[string]bool, error) {
+	if env.SecretNamesAt.IsZero() {
+		// Nothing to answer from, so ask through the queue: the pod holding the connection carries
+		// it out and records the answer, and the next request reads it here.
+		if job, qErr := s.queueSecretNames(ctx, env); qErr == nil {
+			return nil, &pendingSecretNamesError{jobID: job.ID, reason: reason}
+		}
+		return nil, reason
+	}
+	held := make(map[string]bool, len(env.SecretNames))
+	for _, name := range env.SecretNames {
 		held[name] = true
 	}
 	return held, nil

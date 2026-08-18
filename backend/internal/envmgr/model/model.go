@@ -94,6 +94,13 @@ type Environment struct {
 	// It is tracked separately from AppliedSeq because the two legitimately diverge: writing a version
 	// to the control plane leaves the data plane alone, and applying leaves the control plane alone.
 	// Comparing against the wrong one is what makes a later write compute the wrong changes.
+	// SecretNames is what this environment's data plane last reported holding, and SecretNamesAt when
+	// it said so. It is recorded because only the control plane pod holding that data plane's
+	// connection can ask: any other pod answers from this instead of failing. Names only, never
+	// values.
+	SecretNames   []string  `json:"secretNames,omitempty"`
+	SecretNamesAt time.Time `json:"secretNamesAt,omitempty"`
+
 	ControlPlaneSeq int       `json:"controlPlaneSeq"`
 	CreatedAt       time.Time `json:"createdAt"`
 	UpdatedAt       time.Time `json:"updatedAt"`
