@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -66,6 +67,7 @@ import (
 	"github.com/thunder-id/thunderid/internal/resource"
 	"github.com/thunder-id/thunderid/internal/role"
 	"github.com/thunder-id/thunderid/internal/runtimestore"
+	"github.com/thunder-id/thunderid/internal/secretstore"
 	"github.com/thunder-id/thunderid/internal/serverconfig"
 	"github.com/thunder-id/thunderid/internal/system/cache"
 	"github.com/thunder-id/thunderid/internal/system/cmodels"
@@ -86,15 +88,18 @@ import (
 	"github.com/thunder-id/thunderid/internal/system/kmprovider"
 	"github.com/thunder-id/thunderid/internal/system/kmprovider/defaultkm/pki"
 	"github.com/thunder-id/thunderid/internal/system/log"
+	"github.com/thunder-id/thunderid/internal/system/managedresource"
 	"github.com/thunder-id/thunderid/internal/system/mcp"
 	"github.com/thunder-id/thunderid/internal/system/observability"
 	"github.com/thunder-id/thunderid/internal/system/resourcedependency"
+	"github.com/thunder-id/thunderid/internal/system/secretresolver"
 	"github.com/thunder-id/thunderid/internal/system/services"
 	"github.com/thunder-id/thunderid/internal/system/sysauthz"
 	"github.com/thunder-id/thunderid/internal/system/template"
 	"github.com/thunder-id/thunderid/internal/user"
 	"github.com/thunder-id/thunderid/internal/vc/credential"
 	"github.com/thunder-id/thunderid/internal/vc/presentation"
+	engineconfig "github.com/thunder-id/thunderid/pkg/thunderidengine/config"
 	"github.com/thunder-id/thunderid/pkg/thunderidengine/providers"
 )
 
@@ -125,6 +130,22 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 	cmodels.SetConfigCryptoProvider(configCryptoSvc)
 
 	runtime := config.GetServerRuntime()
+
+	// Secret references in stored configuration are resolved against an external provider. The initial
+	// load happens before any consumer package is registered, so a reference met while serving a request
+	// is already in memory. A failed load is not fatal: the resolver refetches a name on demand, so the
+	// server still starts and recovers once the provider is reachable.
+	// The secret store is served from this process when a file is configured, so a deployment can
+	// resolve its kv: references without a separate provider service. The resolver below still reads
+	// through the configured URL, which may point back here.
+	localSecrets := initSecretStore(ctx, logger, mux, runtime.Config.Server.SecurityConfig.SecretProvider)
+
+	initSecretResolver(ctx, logger, runtime.Config.Server.SecurityConfig.SecretProvider, localSecrets)
+
+	// Resources applied from a control plane are recorded as owned by it, and this deployment's
+	// management APIs then refuse to change them. Installed before any consumer package so the first
+	// request is already guarded.
+	initManagedResources(ctx, logger, mux, runtime.Config.Server)
 	joseCfg := joseconfig.Config{
 		Issuer:         runtime.Config.JWT.Issuer,
 		ValidityPeriod: runtime.Config.JWT.ValidityPeriod,
@@ -182,7 +203,7 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 	entityProvider := entityprovider.InitializeEntityProvider(entityService)
 
 	userService, ouUserResolver, userExporter, err := user.Initialize(
-		mux, entityService, ouService, entityTypeService, ouAuthzService,
+		mux, entityService, ouService, entityTypeService, ouAuthzService, nil,
 	)
 	fatalOnError(ctx, logger, err, "Failed to initialize UserService")
 	exporters = append(exporters, userExporter)
@@ -227,7 +248,7 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 
 	// Register the /connections API as a thin layer over the identity-provider and
 	// notification-sender services.
-	connectionExporter, err := connection.Initialize(mux, idpService, notifSenderMgtSvc)
+	connectionExporter, err := connection.Initialize(mux, idpService, notifSenderMgtSvc, nil)
 	fatalOnError(ctx, logger, err, "Failed to initialize connection declarative resources")
 	exporters = append(exporters, connectionExporter)
 
@@ -407,12 +428,12 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 	// TODO: Remove entityService dependency after finalizing declarative resource loading pattern
 	applicationService, applicationExporter, err := application.Initialize(
 		mux, mcpServer, entityProvider, entityService, inboundClientService, ouService, i18nService,
-		runtimeCryptoSvc, serverConfigService)
+		runtimeCryptoSvc, serverConfigService, nil)
 	fatalOnError(ctx, logger, err, "Failed to initialize ApplicationService")
 	exporters = append(exporters, applicationExporter)
 
 	agentService, agentExporter, err := agent.Initialize(mux, entityService, inboundClientService, ouService,
-		roleService)
+		roleService, nil)
 	fatalOnError(ctx, logger, err, "Failed to initialize AgentService")
 	exporters = append(exporters, agentExporter)
 
@@ -687,4 +708,67 @@ func buildHashConfig() (cryptolib.HashConfig, error) {
 	default:
 		return cryptolib.HashConfig{}, fmt.Errorf("unrecognized password hashing algorithm %q", cfg.Algorithm)
 	}
+}
+
+// initSecretResolver installs the process-wide secret resolver and loads its cache.
+//
+// A load failure is logged rather than fatal: the resolver fetches a name on demand, so the server can
+// start and recover once the provider is reachable. A deployment with no provider configured installs a
+// disabled resolver, which leaves every stored value untouched.
+func initSecretResolver(ctx context.Context, logger *log.Logger, cfg engineconfig.SecretProviderConfig,
+	local *secretstore.Store) {
+	resolverCfg := secretresolver.Config{
+		BaseURL: cfg.URL,
+		Token:   cfg.Token,
+		Timeout: time.Duration(cfg.TimeoutSeconds) * time.Second,
+	}
+	// This server serves the store itself, so it reads it directly. Going back out over HTTP would
+	// mean presenting a token for its own management API, which it has no way to mint.
+	if local != nil {
+		resolverCfg.Local = func(context.Context) ([]byte, error) {
+			return json.Marshal(map[string]interface{}{"secrets": local.All()})
+		}
+	}
+	resolver := secretresolver.New(resolverCfg)
+	secretresolver.SetDefault(resolver)
+
+	if !resolver.Enabled() {
+		return
+	}
+	if err := resolver.LoadAll(ctx); err != nil {
+		logger.Warn(ctx, "Failed to load secrets from the secret provider; they will be fetched on demand",
+			log.Error(err))
+		return
+	}
+	// Count only: logging a secret name or value would defeat the point of the provider.
+	logger.Info(ctx, "Loaded secrets from the secret provider", log.Int("count", resolver.Count()))
+}
+
+// initManagedResources installs the registry that records which resources belong to a control plane.
+// It stays inert unless this deployment is configured as control plane managed, so a standalone
+// server behaves exactly as before.
+func initManagedResources(ctx context.Context, logger *log.Logger, mux *http.ServeMux,
+	cfg engineconfig.ServerConfig) {
+	registry := managedresource.New(cfg.ControlPlaneManaged, cfg.Identifier)
+	managedresource.SetDefault(registry)
+	if registry.Enabled() {
+		logger.Info(ctx, "Resources applied from the control plane are read only on this deployment")
+	}
+	managedresource.RegisterRoutes(mux)
+}
+
+// initSecretStore serves the secret store from this process when a file path is configured. A
+// failure is logged rather than fatal: the deployment may also have a standalone provider, and a
+// server that cannot serve its own store is still able to read from that one.
+func initSecretStore(ctx context.Context, logger *log.Logger, mux *http.ServeMux,
+	cfg engineconfig.SecretProviderConfig) *secretstore.Store {
+	store, err := secretstore.Initialize(mux, cfg.FilePath)
+	if err != nil {
+		logger.Error(ctx, "Failed to start the in-process secret store", log.Error(err))
+		return nil
+	}
+	if store != nil {
+		logger.Info(ctx, "Serving the secret store from this server", log.String("file", cfg.FilePath))
+	}
+	return store
 }

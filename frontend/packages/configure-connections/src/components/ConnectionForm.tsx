@@ -39,6 +39,10 @@ interface ConnectionFormProps {
   nameError?: string | null;
   /** Render the connection-name field (custom connections only; branded names are fixed). */
   showNameField?: boolean;
+  /** Render the redirect URI field (moved to a quick-copy section on the edit page). */
+  showRedirectUri?: boolean;
+  /** Show the stored configuration without offering to change it. */
+  isReadOnly?: boolean;
   onFieldChange: (name: string, value: string) => void;
   onSecretReplacingChange: (replacing: boolean) => void;
 }
@@ -52,6 +56,8 @@ export default function ConnectionForm({
   vendorDisplayName,
   nameError = null,
   showNameField = true,
+  showRedirectUri = true,
+  isReadOnly = false,
   onFieldChange,
   onSecretReplacingChange,
 }: ConnectionFormProps): JSX.Element {
@@ -125,6 +131,7 @@ export default function ConnectionForm({
                 control={
                   <Switch
                     checked={values[field.name] === 'true'}
+                    disabled={isReadOnly}
                     onChange={(e) => setField(field.name, e.target.checked ? 'true' : 'false')}
                     slotProps={{input: {'aria-label': label, role: 'switch'}}}
                   />
@@ -141,6 +148,7 @@ export default function ConnectionForm({
         } else if (field.kind === 'secret') {
           fieldContent = (
             <MaskedSecretField
+              disabled={isReadOnly}
               id={`connection-field-${field.name}`}
               label={label}
               value={values[field.name] ?? ''}
@@ -209,6 +217,7 @@ export default function ConnectionForm({
             <FormControl fullWidth required={required} error={Boolean(error)}>
               <FormLabel htmlFor={`connection-field-${field.name}`}>{label}</FormLabel>
               <TextField
+                disabled={isReadOnly}
                 id={`connection-field-${field.name}`}
                 fullWidth
                 value={values[field.name] ?? ''}

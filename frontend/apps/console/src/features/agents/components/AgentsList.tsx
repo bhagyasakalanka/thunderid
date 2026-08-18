@@ -11,12 +11,15 @@ import {useTranslation} from 'react-i18next';
 import {useNavigate} from 'react-router';
 import AgentDeleteDialog from './AgentDeleteDialog';
 import RouteConfig from '../../../configs/RouteConfig';
+import {useIsManagedResource} from '../../managed-resources';
 import useGetAgents from '../api/useGetAgents';
 import AgentConstants from '../constants/agent-constants';
 import type {BasicAgent} from '../models/agent';
 
 export default function AgentsList(): JSX.Element {
   const navigate = useNavigate();
+  // A agent applied from the control plane is read only here, the same as a declarative one.
+  const isManagedAgent = useIsManagedResource('agent');
   const {t} = useTranslation();
   const logger = useLogger('AgentsList');
   const dataGridLocaleText = useDataGridLocaleText();
@@ -103,7 +106,7 @@ export default function AgentsList(): JSX.Element {
         hideable: false,
         renderCell: (params: DataGrid.GridRenderCellParams<BasicAgent>): JSX.Element => (
           <ListingTable.RowActions>
-            {params.row.isReadOnly ? (
+            {params.row.isReadOnly || isManagedAgent(params.row.id) ? (
               <Tooltip title={t('common:status.readOnly', 'Read Only')}>
                 <IconButton size="small" disableRipple sx={{cursor: 'default'}}>
                   <Eye size={16} />
@@ -140,7 +143,7 @@ export default function AgentsList(): JSX.Element {
         ),
       },
     ],
-    [handleDeleteClick, handleEditClick, t],
+    [handleDeleteClick, handleEditClick, t, isManagedAgent],
   );
 
   if (error) {

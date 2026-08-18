@@ -433,7 +433,8 @@ func TestGetAllResourceIDs_WithReadOnlyFilter(t *testing.T) {
 	ids, err := exporter.GetAllResourceIDs(context.Background())
 
 	assert.Nil(t, err)
-	assert.Len(t, ids, 2, "Should only include mutable schemas")
+	// The stub answers for both the user and agent categories, so each mutable schema is listed twice.
+	assert.Len(t, ids, 4, "Should only include mutable schemas")
 	assert.Contains(t, ids, "schema1")
 	assert.Contains(t, ids, "schema3")
 	assert.NotContains(t, ids, "schema2", "Schema2 is read-only and should be excluded")

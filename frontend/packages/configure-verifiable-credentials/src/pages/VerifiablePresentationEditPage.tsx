@@ -12,6 +12,7 @@ import useGetVerifiablePresentation from '../api/useGetVerifiablePresentation';
 import useUpdateVerifiablePresentation from '../api/useUpdateVerifiablePresentation';
 import VerifiablePresentationDeleteDialog from '../components/VerifiablePresentationDeleteDialog';
 import VerifiablePresentationForm from '../components/VerifiablePresentationForm';
+import {useIsManagedResource, ManagedResourceNotice} from '@thunderid/contexts';
 import useVerifiableCredentialRoutes from '../hooks/useVerifiableCredentialRoutes';
 import type {UpdateVerifiablePresentationRequest} from '../models/presentation-requests';
 
@@ -34,6 +35,10 @@ export default function VerifiablePresentationEditPage(): JSX.Element {
   const {data, isLoading, error, refetch} = useGetVerifiablePresentation(vpId);
   const updateVP = useUpdateVerifiablePresentation();
   const [deleteOpen, setDeleteOpen] = useState<boolean>(false);
+
+  // Owned by the control plane: a change made here would be replaced by the next apply, and the
+  // server refuses it with 403, so the controls are not offered at all.
+  const isManaged: boolean = useIsManagedResource('presentation_definition')(vpId);
 
   const [name, setName] = useState<string>('');
   const [description, setDescription] = useState<string>('');
@@ -222,6 +227,8 @@ export default function VerifiablePresentationEditPage(): JSX.Element {
         </PageTitle.SubHeader>
       </PageTitle>
 
+      {isManaged && <ManagedResourceNotice />}
+
       <VerifiablePresentationForm
         initial={data}
         name={name}
@@ -240,6 +247,8 @@ export default function VerifiablePresentationEditPage(): JSX.Element {
         onErrorClear={() => {
           if (updateVP.isError) updateVP.reset();
         }}
+        isReadOnly={isManaged}
+        onDelete={isManaged ? undefined : (): void => setDeleteOpen(true)}
       />
 
       <VerifiablePresentationDeleteDialog

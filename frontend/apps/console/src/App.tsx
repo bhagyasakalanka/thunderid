@@ -13,6 +13,7 @@ import {ProtectedRoute} from '@thunderid/react-router';
 import {lazy, Suspense, type JSX} from 'react';
 import {BrowserRouter, Navigate, Outlet, Route, Routes} from 'react-router';
 import RouteConfig, {ROUTE_SEGMENTS} from './configs/RouteConfig';
+import PlaneRouteGuard from './components/PlaneRouteGuard';
 import AgentCreateProvider from './features/agents/contexts/AgentCreate/AgentCreateProvider';
 import ApplicationCreateProvider from './features/applications/contexts/ApplicationCreate/ApplicationCreateProvider';
 import OrganizationUnitDefaultFlowsSettings from './features/organization-units/OrganizationUnitDefaultFlowsSettings';
@@ -117,6 +118,18 @@ const ConnectionConfigureWizardPage = lazy(() =>
 const ConnectionCreateWizardPage = lazy(() =>
   import('@thunderid/configure-connections').then((m) => ({default: m.ConnectionCreateWizardPage})),
 );
+const PromotionsListPage = lazy(() => import('./features/promotions/pages/PromotionsListPage'));
+const EnvironmentDetailPage = lazy(() => import('./features/promotions/pages/EnvironmentDetailPage'));
+const EnvironmentSecretsPage = lazy(() => import('./features/promotions/pages/EnvironmentSecretsPage'));
+const EnvironmentVariablesListPage = lazy(
+  () => import('./features/environment-variables/pages/EnvironmentVariablesListPage'),
+);
+const EnvironmentVariableEditPage = lazy(
+  () => import('./features/environment-variables/pages/EnvironmentVariableEditPage'),
+);
+const CreateEnvironmentVariablePage = lazy(
+  () => import('./features/environment-variables/pages/CreateEnvironmentVariablePage'),
+);
 const FlowBuilderPage = lazy(() => import('./features/flows/pages/FlowBuilderPage'));
 const CreateRolePage = lazy(() => import('@thunderid/configure-roles').then((m) => ({default: m.CreateRolePage})));
 const RoleEditPage = lazy(() => import('@thunderid/configure-roles').then((m) => ({default: m.RoleEditPage})));
@@ -211,6 +224,14 @@ export default function App(): JSX.Element {
                   element={<ResourceServerEditPage />}
                 />
                 <Route path={ROUTE_SEGMENTS.settings} element={<SettingsPage />} />
+                <Route path="promotions" element={<PromotionsListPage />} />
+                <Route path="promotions/:envId" element={<EnvironmentDetailPage />} />
+                <Route path="promotions/:envId/secrets" element={<EnvironmentSecretsPage />} />
+                <Route path="environment-variables" element={<EnvironmentVariablesListPage />} />
+                <Route
+                  path="environment-variables/:environmentVariableId"
+                  element={<EnvironmentVariableEditPage />}
+                />
               </Route>
               {/* Organization Units - wrapped in OrganizationUnitProvider to preserve tree state across navigation */}
               <Route
@@ -516,6 +537,16 @@ export default function App(): JSX.Element {
                 <Route index element={<TranslationCreatePage />} />
               </Route>
               <Route
+              path="/environment-variables/create"
+              element={
+                <ProtectedRoute>
+                  <FullScreenLayout />
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<CreateEnvironmentVariablePage />} />
+            </Route>
+            <Route
                 path={RouteConfig.translations.list()}
                 element={
                   <ProtectedRoute>

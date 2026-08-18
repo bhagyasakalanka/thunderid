@@ -267,15 +267,15 @@ func (suite *ExportServiceTestSuite) TestExportResources_CompleteOAuthApplicatio
 	assert.Equal(suite.T(), "OAuth_Test_App_oauth-app-id.yaml", file.FileName)
 	assert.Equal(suite.T(), "applications", file.FolderPath)
 	assert.Contains(suite.T(), file.Content, "name: OAuth Test App")
-	assert.Contains(suite.T(), file.Content, "clientId: {{.O_AUTH_TEST_APP_CLIENT_ID}}")
-	assert.Contains(suite.T(), file.Content, "clientSecret: {{.O_AUTH_TEST_APP_CLIENT_SECRET}}")
+	assert.Contains(suite.T(), file.Content, "clientId: {{.APPLICATION_O_AUTH_TEST_APP_CLIENT_ID}}")
+	assert.Contains(suite.T(), file.Content, "clientSecret: {{.APPLICATION_O_AUTH_TEST_APP_CLIENT_SECRET}}")
 	assert.Contains(suite.T(), file.Content, "redirectUris:")
-	assert.Contains(suite.T(), file.Content, "{{- range .O_AUTH_TEST_APP_REDIRECT_URIS}}")
+	assert.Contains(suite.T(), file.Content, "{{- range .APPLICATION_O_AUTH_TEST_APP_REDIRECT_URIS}}")
 	assert.NotNil(suite.T(), result.EnvFile)
 	assert.Equal(suite.T(), ".env", result.EnvFile.FileName)
-	assert.Contains(suite.T(), result.EnvFile.Content, "O_AUTH_TEST_APP_CLIENT_ID=client123\n")
-	assert.Contains(suite.T(), result.EnvFile.Content, "O_AUTH_TEST_APP_CLIENT_SECRET=\n")
-	expectedRedirectURIs := "O_AUTH_TEST_APP_REDIRECT_URIS=[\"http://localhost:3000/callback\"]\n"
+	assert.Contains(suite.T(), result.EnvFile.Content, "APPLICATION_O_AUTH_TEST_APP_CLIENT_ID=client123\n")
+	assert.Contains(suite.T(), result.EnvFile.Content, "APPLICATION_O_AUTH_TEST_APP_CLIENT_SECRET=\n")
+	expectedRedirectURIs := "APPLICATION_O_AUTH_TEST_APP_REDIRECT_URIS=[\"http://localhost:3000/callback\"]\n"
 	assert.Contains(suite.T(), result.EnvFile.Content, expectedRedirectURIs)
 
 	assert.Equal(suite.T(), 1, result.Summary.ResourceTypes["application"])
@@ -931,7 +931,7 @@ func (suite *ExportServiceTestSuite) TestExportResources_IdentityProvider_Proper
 
 	// Only the secret field is parameterized, with a context-aware variable name:
 	// IDP_NAME + FIELD_NAME in UPPER_SNAKE_CASE.
-	assert.Contains(suite.T(), yamlContent, "clientSecret: {{.EXPORT_TEST_IDP_CLIENT_SECRET}}")
+	assert.Contains(suite.T(), yamlContent, "clientSecret: {{.CONNECTION_EXPORT_TEST_IDP_CLIENT_SECRET}}")
 
 	// Non-secret typed fields are exported as plain values under their camelCase keys.
 	assert.Contains(suite.T(), yamlContent, "clientId: test-client-123")
@@ -942,7 +942,7 @@ func (suite *ExportServiceTestSuite) TestExportResources_IdentityProvider_Proper
 	assert.Contains(suite.T(), yamlContent, "type: google")
 
 	assert.NotNil(suite.T(), result.EnvFile)
-	assert.Contains(suite.T(), result.EnvFile.Content, "EXPORT_TEST_IDP_CLIENT_SECRET=super-secret")
+	assert.Contains(suite.T(), result.EnvFile.Content, "CONNECTION_EXPORT_TEST_IDP_CLIENT_SECRET=super-secret")
 }
 
 // TestExportResources_IdentityProvider_PropertyStructure verifies that a connection with
@@ -2258,7 +2258,7 @@ func (suite *ExportServiceTestSuite) TestExportResourcesWithExporter_Notificatio
 	assert.Equal(suite.T(), resourceTypeConnection, files[0].ResourceType)
 	assert.Equal(suite.T(), senderID, files[0].ResourceID)
 	assert.NotEmpty(suite.T(), variables)
-	assert.Equal(suite.T(), "key1", variables["TEST_SENDER_AUTH_TOKEN"])
+	assert.Equal(suite.T(), "key1", variables["CONNECTION_TEST_SENDER_AUTH_TOKEN"])
 }
 
 // TestExportResourcesWithExporter_EntityType tests export with entity type exporter.
