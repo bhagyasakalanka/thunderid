@@ -110,14 +110,14 @@ func TestCanPromoteFollowsEdges(t *testing.T) {
 
 func TestPromoteRejectsEnvironmentsWithNoEdge(t *testing.T) {
 	svc := newTestService(t, &fakeClient{})
-	a, _ := svc.CreateEnvironment(CreateEnvironmentInput{
-		Name: "a", Rank: intp(1), Target: model.Target{BaseURL: "https://a"},
+	a, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "a", Rank: intp(1), Target: model.Target{DataPlaneID: "a"},
 	})
-	b, _ := svc.CreateEnvironment(CreateEnvironmentInput{
-		Name: "b", Rank: intp(2), Target: model.Target{BaseURL: "https://b"},
+	b, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "b", Rank: intp(2), Target: model.Target{DataPlaneID: "b"},
 	})
-	c, _ := svc.CreateEnvironment(CreateEnvironmentInput{
-		Name: "c", Rank: intp(3), Target: model.Target{BaseURL: "https://c"},
+	c, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "c", Rank: intp(3), Target: model.Target{DataPlaneID: "c"},
 	})
 	// Declare a -> b only, leaving c unreachable from a.
 	if _, err := svc.UpdateEnvironmentEdges(a.ID, []string{b.ID}); err != nil {
@@ -143,11 +143,11 @@ func TestPromoteRejectsEnvironmentsWithNoEdge(t *testing.T) {
 
 func TestUpdateEnvironmentEdgesRejectsCycle(t *testing.T) {
 	svc := newTestService(t, &fakeClient{})
-	a, _ := svc.CreateEnvironment(CreateEnvironmentInput{
-		Name: "a", Rank: intp(1), Target: model.Target{BaseURL: "https://a"},
+	a, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "a", Rank: intp(1), Target: model.Target{DataPlaneID: "a"},
 	})
-	b, _ := svc.CreateEnvironment(CreateEnvironmentInput{
-		Name: "b", Rank: intp(2), Target: model.Target{BaseURL: "https://b"},
+	b, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "b", Rank: intp(2), Target: model.Target{DataPlaneID: "b"},
 	})
 	if _, err := svc.UpdateEnvironmentEdges(a.ID, []string{b.ID}); err != nil {
 		t.Fatalf("a -> b: %v", err)
@@ -159,11 +159,11 @@ func TestUpdateEnvironmentEdgesRejectsCycle(t *testing.T) {
 
 func TestSummariesExposeGraphEdges(t *testing.T) {
 	svc := newTestService(t, &fakeClient{})
-	dev, _ := svc.CreateEnvironment(CreateEnvironmentInput{
-		Name: "dev", Rank: intp(1), Target: model.Target{BaseURL: "https://dev"},
+	dev, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "dev", Rank: intp(1), Target: model.Target{DataPlaneID: "dev"},
 	})
-	prod, _ := svc.CreateEnvironment(CreateEnvironmentInput{
-		Name: "prod", Rank: intp(2), Target: model.Target{BaseURL: "https://prod"},
+	prod, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "prod", Rank: intp(2), Target: model.Target{DataPlaneID: "prod"},
 	})
 	if _, err := svc.UpdateEnvironmentEdges(dev.ID, []string{prod.ID}); err != nil {
 		t.Fatalf("set edges: %v", err)

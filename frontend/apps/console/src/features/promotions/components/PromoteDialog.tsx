@@ -47,6 +47,11 @@ interface PromoteDialogProps {
   fromEnvName: string;
   toEnvId: string;
   toEnvName: string;
+  /**
+   * Whether the target environment's Data Plane is connected. A promotion writes to the target's
+   * Control Plane and does not need it, but applying to the Data Plane afterwards does.
+   */
+  toDataPlaneConnected?: boolean;
   /** Labels the action as a demotion when promoting to a lower ranked environment. */
   isDemotion?: boolean;
   /** Version of the source environment to promote. Defaults to its latest. */
@@ -64,6 +69,7 @@ export default function PromoteDialog({
   fromEnvName,
   toEnvId,
   toEnvName,
+  toDataPlaneConnected = false,
   isDemotion = false,
   version = undefined,
   onClose,
@@ -79,7 +85,15 @@ export default function PromoteDialog({
   // remembers, so the set stays correct as the preview loads without resynchronizing from the diff,
   // and without an effect that would fight the user's clicks.
   const [toggled, setToggled] = useState<Map<string, boolean>>(new Map());
-  const [applyNow, setApplyNow] = useState<boolean>(true);
+  // Off by default. A promotion writes the target's Control Plane; applying it to the Data Plane is a
+  // separate decision about changing something that is serving traffic, and it should be taken
+  // deliberately rather than carried along by the promotion.
+  //
+  // Applying reaches the target's Data Plane over the connection it holds open to this Control Plane.
+  // With no connection there is nothing to apply to, so the promotion is offered on its own: the
+  // configuration still lands in the target's Control Plane and is applied once it reconnects.
+  const [applyNow, setApplyNow] = useState<boolean>(false);
+  const canApply: boolean = toDataPlaneConnected;
 
   const changedKeys: string[] = useMemo(
     () =>
@@ -124,7 +138,7 @@ export default function PromoteDialog({
         toEnv: toEnvId,
         version,
         selection: Array.from(selectedKeys),
-        apply: applyNow,
+        apply: applyNow && canApply,
       },
       {onSuccess: () => onClose()},
     );
@@ -167,15 +181,23 @@ export default function PromoteDialog({
       <DialogActions>
         <FormControlLabel
           sx={{mr: 'auto'}}
+          disabled={!canApply}
           control={
             <Checkbox
-              checked={applyNow}
+              checked={applyNow && canApply}
+              disabled={!canApply}
               onChange={(event) => {
                 setApplyNow(event.target.checked);
               }}
             />
           }
-          label={t('promotions:promote.applyNow', 'Apply to the target data plane now')}
+          label={
+            canApply
+              ? t('promotions:promote.applyNow', 'Apply to the target data plane now')
+              : t('promotions:promote.dataPlaneOffline', '{{target}} is offline, so it cannot be applied to yet', {
+                  target: toEnvName,
+                })
+          }
         />
         <Button onClick={onClose} disabled={promote.isPending}>
           {t('common:actions.cancel', 'Cancel')}

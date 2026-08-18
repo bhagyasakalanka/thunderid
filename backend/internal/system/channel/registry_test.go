@@ -26,9 +26,10 @@ import (
 )
 
 type fakeConn struct {
-	id     string
-	seen   time.Time
-	closed bool
+	id       string
+	instance string
+	seen     time.Time
+	closed   bool
 
 	closeMsg string
 	// closeDelay simulates a slow graceful-close handshake, so tests can prove that eviction never
@@ -37,7 +38,16 @@ type fakeConn struct {
 	closedNow  bool
 }
 
-func (f *fakeConn) ID() string          { return f.id }
+func (f *fakeConn) ID() string { return f.id }
+
+// A connection with no instance set stands for a single-replica Data Plane.
+func (f *fakeConn) Instance() string {
+	if f.instance == "" {
+		return defaultInstance
+	}
+	return f.instance
+}
+
 func (f *fakeConn) LastSeen() time.Time { return f.seen }
 func (f *fakeConn) Close(reason string) {
 	time.Sleep(f.closeDelay)
@@ -108,4 +118,70 @@ func TestRegistryListSnapshots(t *testing.T) {
 	r.Register(&fakeConn{id: "dp-1", seen: time.Unix(10, 0)})
 	r.Register(&fakeConn{id: "dp-2", seen: time.Unix(20, 0)})
 	assert.Len(t, r.List(), 2)
+}
+
+// A Data Plane runs as several replicas and every one of them dials. Keying by the Data Plane alone
+// would make each new connection evict the last, leaving the connection flapping and commands landing
+// on whichever pod connected most recently.
+func TestReplicasOfOneDataPlaneCoexist(t *testing.T) {
+	r := NewRegistry[*fakeConn]()
+	a := &fakeConn{id: "org3:dev", instance: "pod-a"}
+	b := &fakeConn{id: "org3:dev", instance: "pod-b"}
+
+	r.Register(a)
+	r.Register(b)
+
+	assert.False(t, a.closedNow, "registering a sibling must not evict pod-a")
+	assert.Equal(t, 2, r.Instances("org3:dev"))
+}
+
+// A replica reconnecting replaces its own socket, which is what the single-socket policy is for.
+func TestAReplicaReconnectingEvictsOnlyItsOwnSocket(t *testing.T) {
+	r := NewRegistry[*fakeConn]()
+	first := &fakeConn{id: "org3:dev", instance: "pod-a"}
+	sibling := &fakeConn{id: "org3:dev", instance: "pod-b"}
+	r.Register(first)
+	r.Register(sibling)
+
+	again := &fakeConn{id: "org3:dev", instance: "pod-a"}
+	r.Register(again)
+
+	assert.True(t, first.closedNow, "pod-a's stale socket should be evicted")
+	assert.False(t, sibling.closedNow, "pod-b must be left alone")
+	assert.Equal(t, 2, r.Instances("org3:dev"))
+}
+
+// A command goes to one replica, not to all of them: they share a database, so applying an import on
+// one is visible to the others and sending it to each would apply it several times. Which one is
+// chosen rotates, so the replicas share the work.
+func TestDeliveryPicksOneReplicaAndRotates(t *testing.T) {
+	r := NewRegistry[*fakeConn]()
+	r.Register(&fakeConn{id: "org3:dev", instance: "pod-a"})
+	r.Register(&fakeConn{id: "org3:dev", instance: "pod-b"})
+
+	first, ok := r.Get("org3:dev")
+	assert.True(t, ok)
+	second, ok := r.Get("org3:dev")
+	assert.True(t, ok)
+	third, ok := r.Get("org3:dev")
+	assert.True(t, ok)
+
+	assert.NotEqual(t, first.Instance(), second.Instance(), "a second command should go to the sibling")
+	assert.Equal(t, first.Instance(), third.Instance(), "the rotation should come back around")
+}
+
+// Unregistering one replica leaves the rest serving.
+func TestUnregisteringOneReplicaLeavesTheOthers(t *testing.T) {
+	r := NewRegistry[*fakeConn]()
+	a := &fakeConn{id: "org3:dev", instance: "pod-a"}
+	b := &fakeConn{id: "org3:dev", instance: "pod-b"}
+	r.Register(a)
+	r.Register(b)
+
+	r.Unregister("org3:dev", a)
+
+	assert.Equal(t, 1, r.Instances("org3:dev"))
+	got, ok := r.Get("org3:dev")
+	assert.True(t, ok)
+	assert.Equal(t, "pod-b", got.Instance())
 }

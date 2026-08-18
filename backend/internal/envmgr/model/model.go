@@ -20,7 +20,6 @@
 package model
 
 import (
-	"strings"
 	"time"
 )
 
@@ -38,70 +37,28 @@ const (
 	OriginUploaded Origin = "uploaded"
 )
 
-// Credentials describes how to authenticate to a ThunderID server.
-//
-// Prefer ClientID and ClientSecret: the service exchanges them for an access token through the
-// client_credentials grant (presented as HTTP Basic auth at the token endpoint) and refreshes it as
-// it expires. A static Token is also accepted, but it is only practical for short-lived manual
-// testing because it expires and cannot be renewed.
-type Credentials struct {
-	Token        string `json:"token,omitempty"`
-	ClientID     string `json:"clientId,omitempty"`
-	ClientSecret string `json:"clientSecret,omitempty"`
-	// TokenURL overrides the token endpoint. Defaults to <baseUrl>/oauth2/token.
-	TokenURL string `json:"tokenUrl,omitempty"`
-	Scope    string `json:"scope,omitempty"`
-	// Resource is the RFC 8707 resource indicator naming the resource server the token is for.
-	// ThunderID requires it (or a configured default resource server) to issue a scoped token.
-	Resource string `json:"resource,omitempty"`
-}
-
 // Target identifies a data plane that a version is applied to.
-type Target struct {
-	BaseURL string `json:"baseUrl"`
-	// Credentials is embedded so its fields stay flat in the stored and API JSON.
-	Credentials
-	// SecretProvider is the service holding the secrets this data plane resolves. Naming it lets an
-	// apply check that every credential the configuration needs is present beforehand, rather than
-	// discovering a missing one when a login fails.
-	SecretProvider     *SecretProviderEndpoint `json:"secretProvider,omitempty"`
-	InsecureSkipVerify bool                    `json:"insecureSkipVerify,omitempty"`
-}
-
-// SecretEndpoint returns where this data plane's secrets are held, along with the credentials and TLS
-// setting for reaching it.
 //
-// A data plane serves its own store, so naming a separate service is only needed when the secrets
-// live somewhere else. With none named, the store on the data plane itself is used, reached with the
-// same credentials an apply already uses: it sits behind that server's management API, so there is no
-// second set to configure.
-func (t Target) SecretEndpoint() (string, Credentials, bool) {
-	if t.SecretProvider != nil && strings.TrimSpace(t.SecretProvider.BaseURL) != "" {
-		return t.SecretProvider.BaseURL,
-			Credentials{Token: t.SecretProvider.Token},
-			t.SecretProvider.InsecureSkipVerify
-	}
-	// The store is a path on the data plane, not a server of its own, so the token endpoint has to be
-	// named explicitly: a client that derived one from the base it is given would ask the store's own
-	// path for a token and be turned away unauthenticated.
-	creds := t.Credentials
-	if creds.ClientID != "" && strings.TrimSpace(creds.TokenURL) == "" {
-		creds.TokenURL = strings.TrimRight(t.BaseURL, "/") + "/oauth2/token"
-	}
-	return strings.TrimRight(t.BaseURL, "/") + "/secret-store", creds, t.InsecureSkipVerify
+// The data plane is named, not addressed. It dials the control plane and holds that connection open,
+// so the control plane reaches it over that channel rather than over its management API: there is no
+// URL to call and no credential to hold. DataPlaneID is the id the data plane presents when it
+// connects, and BaseURL is kept only to show an operator where that deployment serves.
+type Target struct {
+	DataPlaneID string `json:"dataPlaneId"`
+	BaseURL     string `json:"baseUrl,omitempty"`
 }
 
-// SecretProviderEndpoint locates a data plane's secret service.
-type SecretProviderEndpoint struct {
-	BaseURL            string `json:"baseUrl"`
-	Token              string `json:"token,omitempty"`
-	InsecureSkipVerify bool   `json:"insecureSkipVerify,omitempty"`
+// DataPlaneStatus reports whether a data plane is connected to this control plane. It is part of the
+// environment as read, not as stored: an operator about to promote needs to know the destination can
+// be reached, and nothing can be applied to a data plane that is not.
+type DataPlaneStatus struct {
+	Connected bool      `json:"connected"`
+	LastSeen  time.Time `json:"lastSeen,omitempty"`
 }
 
 // Source identifies a control plane that config is captured from.
 type Source struct {
 	BaseURL string `json:"baseUrl"`
-	Credentials
 	// DeploymentID is the tenant this environment's configuration lives in. It is fixed when the
 	// environment is registered and there is no way to change it afterwards, because it is the sole
 	// authority for which tenant a promotion into this environment may write to.
@@ -130,9 +87,16 @@ type Environment struct {
 	// then on. A key here is skipped by both promotion and apply.
 	Excluded []string `json:"excluded,omitempty"`
 	// AppliedSeq is the version sequence last applied to Target (0 when nothing has been applied).
-	AppliedSeq int       `json:"appliedSeq"`
-	CreatedAt  time.Time `json:"createdAt"`
-	UpdatedAt  time.Time `json:"updatedAt"`
+	AppliedSeq int `json:"appliedSeq"`
+	// ControlPlaneSeq is the version sequence last written into this environment's control plane
+	// tenant (0 when this service has written none).
+	//
+	// It is tracked separately from AppliedSeq because the two legitimately diverge: writing a version
+	// to the control plane leaves the data plane alone, and applying leaves the control plane alone.
+	// Comparing against the wrong one is what makes a later write compute the wrong changes.
+	ControlPlaneSeq int       `json:"controlPlaneSeq"`
+	CreatedAt       time.Time `json:"createdAt"`
+	UpdatedAt       time.Time `json:"updatedAt"`
 }
 
 // Version is an immutable snapshot of an environment's declarative configuration. The parameterized

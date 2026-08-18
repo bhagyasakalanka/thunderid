@@ -32,13 +32,14 @@ import {CloudDownload, CloudUpload, KeyRound, Undo2} from '@wso2/oxygen-ui-icons
 import {useMemo, useState, type JSX} from 'react';
 import {useTranslation} from 'react-i18next';
 import {useNavigate, useParams} from 'react-router';
-import useApplyToControlPlane from '../api/useApplyToControlPlane';
 import useApplyVersion from '../api/useApplyVersion';
 import useCaptureVersion from '../api/useCaptureVersion';
 import useCheckVariables from '../api/useCheckVariables';
 import useGetEnvironments from '../api/useGetEnvironments';
 import useGetVersions from '../api/useGetVersions';
 import ApplyDialog from '../components/ApplyDialog';
+import ControlPlaneDialog from '../components/ControlPlaneDialog';
+import DataPlaneStatusChip from '../components/DataPlaneStatusChip';
 import MissingVariablesNotice from '../components/MissingVariablesNotice';
 import PromoteDialog from '../components/PromoteDialog';
 import RevertDialog from '../components/RevertDialog';
@@ -55,8 +56,8 @@ export default function EnvironmentDetailPage(): JSX.Element {
   const {data: envData} = useGetEnvironments();
   const {data: versionData, isLoading, error} = useGetVersions(envId);
   const [applyVersionSeq, setApplyVersionSeq] = useState<string | null>(null);
+  const [controlPlaneVersionSeq, setControlPlaneVersionSeq] = useState<string | null>(null);
   const applyVersion = useApplyVersion();
-  const applyToControlPlane = useApplyToControlPlane();
   const captureVersion = useCaptureVersion();
   const {data: variableStatus} = useCheckVariables(envId);
 
@@ -84,7 +85,12 @@ export default function EnvironmentDetailPage(): JSX.Element {
       <PageTitle>
         <PageTitle.Header>{environment?.name ?? t('promotions:detail.title', 'Environment')}</PageTitle.Header>
         <PageTitle.SubHeader>
-          {t('promotions:detail.subtitle', 'Configuration version history. The most recent version is at the top.')}
+          <Stack direction="row" spacing={1} alignItems="center">
+            <span>
+              {t('promotions:detail.subtitle', 'Configuration version history. The most recent version is at the top.')}
+            </span>
+            <DataPlaneStatusChip status={environment?.dataPlane} />
+          </Stack>
         </PageTitle.SubHeader>
         <PageTitle.Actions>
           <Stack direction="row" spacing={1}>
@@ -197,9 +203,8 @@ export default function EnvironmentDetailPage(): JSX.Element {
                     version rather than assuming the newest, which is rarely the one being looked at. */}
                 <Button
                   startIcon={<CloudUpload size={16} />}
-                  disabled={applyToControlPlane.isPending}
                   onClick={() => {
-                    applyToControlPlane.mutate({envId, version: String(version.seq)});
+                    setControlPlaneVersionSeq(String(version.seq));
                   }}
                 >
                   {t('promotions:controlPlane.action', 'To Control Plane')}
@@ -224,6 +229,14 @@ export default function EnvironmentDetailPage(): JSX.Element {
         envName={environment?.name ?? envId}
         version={applyVersionSeq ?? ''}
         onClose={() => setApplyVersionSeq(null)}
+      />
+
+      <ControlPlaneDialog
+        open={controlPlaneVersionSeq !== null}
+        envId={envId}
+        envName={environment?.name ?? envId}
+        version={controlPlaneVersionSeq ?? ''}
+        onClose={() => setControlPlaneVersionSeq(null)}
       />
 
       {revertTo && environment && (

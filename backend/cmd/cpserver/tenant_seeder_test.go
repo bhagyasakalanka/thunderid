@@ -24,7 +24,6 @@ import (
 	"testing"
 
 	"github.com/thunder-id/thunderid/internal/envmgr"
-	"github.com/thunder-id/thunderid/internal/envmgr/model"
 	envmgrservice "github.com/thunder-id/thunderid/internal/envmgr/service"
 	"github.com/thunder-id/thunderid/internal/envmgr/thunder"
 	"github.com/thunder-id/thunderid/internal/system/deployment"
@@ -42,9 +41,9 @@ func (s *stubRegistry) SeedTenant(context.Context, string, string) (*thunder.Imp
 	return nil, s.seedErr
 }
 
-func (s *stubRegistry) CreateEnvironment(string, envmgrservice.CreateEnvironmentInput) (
-	model.Environment, error) {
-	return model.Environment{}, nil
+func (s *stubRegistry) CreateEnvironment(context.Context, string,
+	envmgrservice.CreateEnvironmentInput) (envmgrservice.CreateEnvironmentResult, error) {
+	return envmgrservice.CreateEnvironmentResult{}, nil
 }
 
 func (s *stubRegistry) CaptureSecret(context.Context, string, string,
@@ -53,6 +52,10 @@ func (s *stubRegistry) CaptureSecret(context.Context, string, string,
 }
 
 func (s *stubRegistry) SetLocalControlPlane(envmgrservice.LocalControlPlane) {}
+
+func (s *stubRegistry) SetDataPlanes(envmgrservice.DataPlanes) {}
+
+func (s *stubRegistry) SetDataPlaneTokenIssuer(envmgrservice.DataPlaneTokenIssuer) {}
 
 type stubExport struct{ deploymentID string }
 

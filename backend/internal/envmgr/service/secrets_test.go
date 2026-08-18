@@ -47,9 +47,9 @@ func secretsFixture(t *testing.T) (*Service, *fakeClient, model.Environment) {
 	svc.SetSecretHasher(func(value string) (HashedSecret, error) {
 		return HashedSecret{Hash: "hashed:" + value, Algorithm: "SHA256", Salt: "salt"}, nil
 	})
-	env, err := svc.CreateEnvironment(CreateEnvironmentInput{
+	env, err := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
 		Name:   "dev",
-		Target: model.Target{BaseURL: "https://dp"},
+		Target: model.Target{DataPlaneID: "dp"},
 		Source: &model.Source{BaseURL: "https://cp", DeploymentID: "tenant-a"},
 	})
 	if err != nil {
@@ -58,7 +58,7 @@ func secretsFixture(t *testing.T) (*Service, *fakeClient, model.Environment) {
 	if _, err := svc.CaptureVersion(context.Background(), env.ID, ""); err != nil {
 		t.Fatalf("capture: %v", err)
 	}
-	return svc, fake, env
+	return svc, fake, env.Environment
 }
 
 func TestListSecretsClassifiesByResourceAndReportsWhatTheDataPlaneHolds(t *testing.T) {
@@ -201,9 +201,9 @@ func TestPromoteWritesIntoTheDestinationsOwnTenant(t *testing.T) {
 	cp := &recordingControlPlane{}
 	svc.SetLocalControlPlane(cp)
 
-	stage, err := svc.CreateEnvironment(CreateEnvironmentInput{
+	stage, err := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
 		Name:   "stage",
-		Target: model.Target{BaseURL: "https://dp-b"},
+		Target: model.Target{DataPlaneID: "dp-b"},
 		Source: &model.Source{BaseURL: "https://cp", DeploymentID: "tenant-b"},
 	})
 	if err != nil {
@@ -226,9 +226,9 @@ func TestPromoteWritesIntoTheDestinationsOwnTenant(t *testing.T) {
 
 func TestCaptureIsRefusedForAnEnvironmentFedByPromotion(t *testing.T) {
 	svc, _, dev := secretsFixture(t)
-	stage, err := svc.CreateEnvironment(CreateEnvironmentInput{
+	stage, err := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
 		Name:   "stage",
-		Target: model.Target{BaseURL: "https://dp-b"},
+		Target: model.Target{DataPlaneID: "dp-b"},
 		Source: &model.Source{BaseURL: "https://cp", DeploymentID: "tenant-b"},
 	})
 	if err != nil {

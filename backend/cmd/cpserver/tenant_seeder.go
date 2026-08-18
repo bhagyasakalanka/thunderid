@@ -127,18 +127,12 @@ func (s *environmentSeeder) RegisterEnvironment(ctx context.Context,
 		rank = &in.Rank
 	}
 
-	env, err := s.registry.CreateEnvironment(in.DeploymentID, envmgrservice.CreateEnvironmentInput{
+	env, err := s.registry.CreateEnvironment(ctx, in.DeploymentID, envmgrservice.CreateEnvironmentInput{
 		Name: in.Name,
 		Rank: rank,
 		Target: model.Target{
-			BaseURL: in.DataPlane.BaseURL,
-			Credentials: model.Credentials{
-				ClientID:     in.DataPlane.ClientID,
-				ClientSecret: in.DataPlane.ClientSecret,
-				Scope:        in.DataPlane.Scope,
-				Resource:     in.DataPlane.Resource,
-			},
-			InsecureSkipVerify: in.DataPlane.InsecureSkipVerify,
+			DataPlaneID: in.DataPlane.ID,
+			BaseURL:     in.DataPlane.BaseURL,
 		},
 		Source: &model.Source{
 			BaseURL:            s.controlPlaneURL,
@@ -152,7 +146,9 @@ func (s *environmentSeeder) RegisterEnvironment(ctx context.Context,
 	if err := s.setConsoleURLsForDataPlane(ctx, in.DeploymentID, in.DataPlane.BaseURL); err != nil {
 		return nil, err
 	}
-	return &tenant.EnvironmentSummary{ID: env.ID, Name: env.Name, Rank: env.Rank}, nil
+	return &tenant.EnvironmentSummary{
+		ID: env.ID, Name: env.Name, Rank: env.Rank, DataPlaneToken: env.DataPlaneToken,
+	}, nil
 }
 
 // seedFromExport reads the source tenant directly and writes it into the target. Both steps run in

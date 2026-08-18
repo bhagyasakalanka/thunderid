@@ -73,16 +73,16 @@ type ControlPlane struct {
 	InsecureSkipVerify bool `json:"insecureSkipVerify,omitempty"`
 }
 
-// DataPlane is where an environment's configuration is applied, and the credentials for reaching that
-// deployment's management API.
+// DataPlane is the deployment an environment's configuration is applied to.
+//
+// It is named rather than addressed. The data plane dials this control plane and holds that
+// connection open, and everything sent to it travels back down that connection, so there is no URL to
+// call and no credential to hold. ID is what the data plane presents when it connects.
 type DataPlane struct {
-	BaseURL      string `json:"baseUrl"`
-	ClientID     string `json:"clientId,omitempty"`
-	ClientSecret string `json:"clientSecret,omitempty"`
-	Scope        string `json:"scope,omitempty"`
-	// Resource is the resource indicator naming the resource server the token is issued for.
-	Resource           string `json:"resource,omitempty"`
-	InsecureSkipVerify bool   `json:"insecureSkipVerify,omitempty"`
+	ID string `json:"id"`
+	// BaseURL is where that deployment serves its own users. Nothing calls it; it is recorded so an
+	// operator can follow it, and so the environment's Console can be pointed at it.
+	BaseURL string `json:"baseUrl,omitempty"`
 }
 
 // CreateTenantResponse is the created tenant, and for an environment seeded from an existing one, what
@@ -102,6 +102,9 @@ type EnvironmentSummary struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	Rank int    `json:"rank"`
+	// DataPlaneToken is the credential this environment's Data Plane connects with, returned here and
+	// nowhere else. Mount it on that deployment; it cannot be read back afterwards, only reissued.
+	DataPlaneToken string `json:"dataPlaneToken,omitempty"`
 }
 
 // SeedSummary reports the copy that gave a new environment its configuration. A partial failure is

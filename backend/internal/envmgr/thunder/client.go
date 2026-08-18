@@ -29,38 +29,25 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
-	"sync"
 	"time"
 )
 
-// Credentials describes how the client authenticates. Either a static Token or a client_credentials
-// pair; the pair is preferred because the client can renew it as it expires.
+// Credentials is the bearer token the client presents.
+//
+// There is no client_credentials pair. The only server this client talks to is the control plane it
+// runs inside, always while serving a request, so the caller's own token is what it forwards. Data
+// planes are reached over the channel they dial out on and need no credential at all.
 type Credentials struct {
-	Token        string
-	ClientID     string
-	ClientSecret string
-	TokenURL     string
-	Scope        string
-	Resource     string
+	Token string
 }
 
-// Client talks to one ThunderID server (a control plane or a data plane).
+// Client talks to one ThunderID control plane.
 type Client struct {
 	baseURL string
 	creds   Credentials
 	http    *http.Client
-
-	// mu guards the cached client_credentials token.
-	mu       sync.Mutex
-	token    string
-	tokenExp time.Time
 }
-
-// tokenExpiryLeeway renews a token slightly before it actually expires, so a request already in
-// flight cannot be rejected for using a just-expired token.
-const tokenExpiryLeeway = 30 * time.Second
 
 // New builds a client for baseURL. When insecure is set, TLS certificate verification is skipped
 // (useful for self-signed local development servers).
@@ -74,75 +61,6 @@ func New(baseURL string, creds Credentials, insecure bool) *Client {
 		creds:   creds,
 		http:    &http.Client{Timeout: 60 * time.Second, Transport: transport},
 	}
-}
-
-// accessToken returns the bearer token to present, fetching or renewing one through the
-// client_credentials grant when a client id and secret are configured.
-func (c *Client) accessToken(ctx context.Context) (string, error) {
-	if c.creds.ClientID == "" {
-		return c.creds.Token, nil
-	}
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.token != "" && time.Now().Before(c.tokenExp.Add(-tokenExpiryLeeway)) {
-		return c.token, nil
-	}
-
-	tokenURL := c.creds.TokenURL
-	if tokenURL == "" {
-		tokenURL = c.baseURL + "/oauth2/token"
-	}
-
-	form := url.Values{"grant_type": {"client_credentials"}}
-	if c.creds.Scope != "" {
-		form.Set("scope", c.creds.Scope)
-	}
-	// ThunderID rejects a client_credentials request that names no resource server, unless one is
-	// configured as the default, so the resource indicator is passed through when supplied.
-	if c.creds.Resource != "" {
-		form.Set("resource", c.creds.Resource)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, strings.NewReader(form.Encode()))
-	if err != nil {
-		return "", fmt.Errorf("failed to build token request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	// The client_credentials pair is presented as HTTP Basic auth, per RFC 6749 section 2.3.1.
-	req.SetBasicAuth(c.creds.ClientID, c.creds.ClientSecret)
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("token request to %s failed: %w", tokenURL, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read token response: %w", err)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", &HTTPError{StatusCode: resp.StatusCode, Body: string(raw), URL: tokenURL}
-	}
-
-	var token struct {
-		AccessToken string `json:"access_token"`
-		ExpiresIn   int    `json:"expires_in"`
-	}
-	if err := json.Unmarshal(raw, &token); err != nil {
-		return "", fmt.Errorf("failed to decode token response: %w", err)
-	}
-	if token.AccessToken == "" {
-		return "", fmt.Errorf("token endpoint %s returned no access token", tokenURL)
-	}
-
-	expiresIn := token.ExpiresIn
-	if expiresIn <= 0 {
-		expiresIn = 3600
-	}
-	c.token = token.AccessToken
-	c.tokenExp = time.Now().Add(time.Duration(expiresIn) * time.Second)
-	return c.token, nil
 }
 
 // ExportResult is the parsed response of an export call.
@@ -391,12 +309,8 @@ func (c *Client) do(ctx context.Context, method, path string, body, out interfac
 		httpReq.Header.Set("Content-Type", "application/json")
 	}
 	httpReq.Header.Set("Accept", "application/json")
-	token, err := c.accessToken(ctx)
-	if err != nil {
-		return err
-	}
-	if token != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+token)
+	if c.creds.Token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.creds.Token)
 	}
 
 	resp, err := c.http.Do(httpReq)

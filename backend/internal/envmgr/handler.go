@@ -96,12 +96,26 @@ type createEnvironmentRequest struct {
 	Source     *model.Source `json:"source,omitempty"`
 }
 
+// regenerateDataPlaneToken issues a new token for an environment's data plane and returns it once.
+//
+// The previous token stops working immediately, so that data plane drops until the new one is in
+// place. That is what a rotation means; a credential that still worked afterwards would not have been
+// rotated.
+func (s *Server) regenerateDataPlaneToken(w http.ResponseWriter, r *http.Request) {
+	token, err := s.svc.RegenerateDataPlaneToken(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"dataPlaneToken": token})
+}
+
 func (s *Server) createEnvironment(w http.ResponseWriter, r *http.Request) {
 	var req createEnvironmentRequest
 	if !decode(w, r, &req) {
 		return
 	}
-	env, err := s.svc.CreateEnvironment(service.CreateEnvironmentInput{
+	env, err := s.svc.CreateEnvironment(r.Context(), service.CreateEnvironmentInput{
 		Name: req.Name, Rank: req.Rank, PromotesTo: req.PromotesTo, Target: req.Target, Source: req.Source,
 	})
 	if err != nil {

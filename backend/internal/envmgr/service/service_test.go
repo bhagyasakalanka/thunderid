@@ -94,13 +94,33 @@ func (f *fakeClient) lastImport() thunder.ImportRequest {
 	return f.imports[len(f.imports)-1]
 }
 
+// fakeDataPlanes hands every environment the same fake, standing in for the connections data planes
+// hold open to the control plane.
+type fakeDataPlanes struct {
+	plane     DataPlane
+	connected bool
+}
+
+func (f *fakeDataPlanes) For(dataPlaneID string) (DataPlane, error) {
+	if !f.connected {
+		return nil, fmt.Errorf("data plane %s is not connected", dataPlaneID)
+	}
+	return f.plane, nil
+}
+
+func (f *fakeDataPlanes) Status(string) model.DataPlaneStatus {
+	return model.DataPlaneStatus{Connected: f.connected}
+}
+
 func newTestService(t *testing.T, fake *fakeClient) *Service {
 	t.Helper()
 	st, err := store.New(t.TempDir())
 	if err != nil {
 		t.Fatalf("store: %v", err)
 	}
-	return New(st, func(string, thunder.Credentials, bool) ThunderClient { return fake })
+	svc := New(st, func(string, thunder.Credentials, bool) ThunderClient { return fake })
+	svc.SetDataPlanes(&fakeDataPlanes{plane: fake, connected: true})
+	return svc
 }
 
 // app returns a minimal application document.
@@ -120,7 +140,7 @@ func TestApplyTracksDeletions(t *testing.T) {
 	fake := &fakeClient{}
 	svc := newTestService(t, fake)
 
-	env, err := svc.CreateEnvironment(CreateEnvironmentInput{Name: "dev", Target: model.Target{BaseURL: "https://dp"}})
+	env, err := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "dev", Target: model.Target{DataPlaneID: "dp"}})
 	if err != nil {
 		t.Fatalf("create env: %v", err)
 	}
@@ -161,7 +181,7 @@ func TestApplyTracksDeletions(t *testing.T) {
 func TestApplyDryRunDoesNotRecord(t *testing.T) {
 	fake := &fakeClient{}
 	svc := newTestService(t, fake)
-	env, _ := svc.CreateEnvironment(CreateEnvironmentInput{Name: "dev", Target: model.Target{BaseURL: "https://dp"}})
+	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "dev", Target: model.Target{DataPlaneID: "dp"}})
 	_, _ = svc.UploadVersion(env.ID, bundleOf("app-a"), nil, "v1")
 
 	if _, err := svc.Apply(context.Background(), env.ID, "latest", true); err != nil {
@@ -183,9 +203,9 @@ func TestCaptureRecordsSecretKeysWithoutValues(t *testing.T) {
 		secrets:         map[string]string{"APP_A_CLIENT_SECRET": "never-read"},
 	}
 	svc := newTestService(t, fake)
-	env, _ := svc.CreateEnvironment(CreateEnvironmentInput{
+	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
 		Name:   "dev",
-		Target: model.Target{BaseURL: "https://dp"},
+		Target: model.Target{DataPlaneID: "dp"},
 		Source: &model.Source{BaseURL: "https://cp"},
 	})
 
@@ -214,9 +234,9 @@ func TestCaptureLetsControlPlaneVariablesOverrideTheExport(t *testing.T) {
 		envVars:         map[string]string{"APP_A_REDIRECT_URIS": `["https://configured"]`},
 	}
 	svc := newTestService(t, fake)
-	env, _ := svc.CreateEnvironment(CreateEnvironmentInput{
+	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
 		Name:   "dev",
-		Target: model.Target{BaseURL: "https://dp"},
+		Target: model.Target{DataPlaneID: "dp"},
 		Source: &model.Source{BaseURL: "https://cp"},
 	})
 
@@ -230,7 +250,7 @@ func TestCaptureLetsControlPlaneVariablesOverrideTheExport(t *testing.T) {
 func TestApplyOmitsSecretsSoTheDataPlaneFillsThem(t *testing.T) {
 	fake := &fakeClient{}
 	svc := newTestService(t, fake)
-	env, _ := svc.CreateEnvironment(CreateEnvironmentInput{Name: "dev", Target: model.Target{BaseURL: "https://dp"}})
+	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "dev", Target: model.Target{DataPlaneID: "dp"}})
 
 	resources := "resource_type: application\nid: app-a\nname: app-a\nclientSecret: {{.APP_A_CLIENT_SECRET}}"
 	stored, err := svc.store.AddVersion(model.Version{
@@ -260,7 +280,7 @@ func TestApplyOmitsSecretsSoTheDataPlaneFillsThem(t *testing.T) {
 
 func TestCaptureRequiresSource(t *testing.T) {
 	svc := newTestService(t, &fakeClient{})
-	env, _ := svc.CreateEnvironment(CreateEnvironmentInput{Name: "dev", Target: model.Target{BaseURL: "https://dp"}})
+	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "dev", Target: model.Target{DataPlaneID: "dp"}})
 	if _, err := svc.CaptureVersion(context.Background(), env.ID, ""); err != ErrNoSource {
 		t.Fatalf("expected ErrNoSource, got %v", err)
 	}
@@ -273,9 +293,9 @@ func TestApplyPicksUpVariablesAddedAfterCapture(t *testing.T) {
 			"redirectUris:\n  {{- range .APP_A_REDIRECT_URIS}}\n  - {{.}}\n  {{- end}}",
 	}
 	svc := newTestService(t, fake)
-	env, _ := svc.CreateEnvironment(CreateEnvironmentInput{
+	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
 		Name:   "dev",
-		Target: model.Target{BaseURL: "https://dp"},
+		Target: model.Target{DataPlaneID: "dp"},
 		Source: &model.Source{BaseURL: "https://cp"},
 	})
 	if _, err := svc.CaptureVersion(context.Background(), env.ID, ""); err != nil {
@@ -312,8 +332,8 @@ func TestApplyPicksUpVariablesAddedAfterCapture(t *testing.T) {
 
 func TestPromoteSelective(t *testing.T) {
 	svc := newTestService(t, &fakeClient{})
-	dev, _ := svc.CreateEnvironment(CreateEnvironmentInput{Name: "dev", Rank: intp(1), Target: model.Target{BaseURL: "https://dev"}})
-	prod, _ := svc.CreateEnvironment(CreateEnvironmentInput{Name: "prod", Rank: intp(2), Target: model.Target{BaseURL: "https://prod"}})
+	dev, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "dev", Rank: intp(1), Target: model.Target{DataPlaneID: "dev"}})
+	prod, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "prod", Rank: intp(2), Target: model.Target{DataPlaneID: "prod"}})
 
 	_, _ = svc.UploadVersion(dev.ID, bundleOf("app-a", "app-b"), nil, "dev-v1")
 
@@ -343,8 +363,8 @@ func TestPromoteSelective(t *testing.T) {
 func TestPromoteAllAndApply(t *testing.T) {
 	fake := &fakeClient{}
 	svc := newTestService(t, fake)
-	dev, _ := svc.CreateEnvironment(CreateEnvironmentInput{Name: "dev", Rank: intp(1), Target: model.Target{BaseURL: "https://dev"}})
-	prod, _ := svc.CreateEnvironment(CreateEnvironmentInput{Name: "prod", Rank: intp(2), Target: model.Target{BaseURL: "https://prod"}})
+	dev, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "dev", Rank: intp(1), Target: model.Target{DataPlaneID: "dev"}})
+	prod, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "prod", Rank: intp(2), Target: model.Target{DataPlaneID: "prod"}})
 	_, _ = svc.UploadVersion(dev.ID, bundleOf("app-a", "app-b"), nil, "dev-v1")
 
 	result, err := svc.Promote(context.Background(), PromoteInput{FromEnvID: dev.ID, ToEnvID: prod.ID, Apply: true})
@@ -362,7 +382,7 @@ func TestPromoteAllAndApply(t *testing.T) {
 
 func TestRevertRestoresAndAdvancesHead(t *testing.T) {
 	svc := newTestService(t, &fakeClient{})
-	env, _ := svc.CreateEnvironment(CreateEnvironmentInput{Name: "dev", Target: model.Target{BaseURL: "https://dp"}})
+	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "dev", Target: model.Target{DataPlaneID: "dp"}})
 	_, _ = svc.UploadVersion(env.ID, bundleOf("app-a"), nil, "v1")
 	_, _ = svc.UploadVersion(env.ID, bundleOf("app-a", "app-b"), nil, "v2")
 
@@ -385,7 +405,7 @@ func TestRevertRestoresAndAdvancesHead(t *testing.T) {
 
 func TestRevertToPreviousResolvesSecondNewest(t *testing.T) {
 	svc := newTestService(t, &fakeClient{})
-	env, _ := svc.CreateEnvironment(CreateEnvironmentInput{Name: "dev", Target: model.Target{BaseURL: "https://dp"}})
+	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "dev", Target: model.Target{DataPlaneID: "dp"}})
 	_, _ = svc.UploadVersion(env.ID, bundleOf("app-a"), nil, "v1")
 	_, _ = svc.UploadVersion(env.ID, bundleOf("app-a", "app-b"), nil, "v2")
 	_, _ = svc.UploadVersion(env.ID, bundleOf("app-a", "app-b", "app-c"), nil, "v3")
@@ -406,7 +426,7 @@ func TestRevertToPreviousResolvesSecondNewest(t *testing.T) {
 
 func TestRevertToPreviousRequiresTwoVersions(t *testing.T) {
 	svc := newTestService(t, &fakeClient{})
-	env, _ := svc.CreateEnvironment(CreateEnvironmentInput{Name: "dev", Target: model.Target{BaseURL: "https://dp"}})
+	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "dev", Target: model.Target{DataPlaneID: "dp"}})
 	_, _ = svc.UploadVersion(env.ID, bundleOf("app-a"), nil, "v1")
 
 	if _, err := svc.Revert(context.Background(), RevertInput{EnvID: env.ID, ToRef: "previous"}); err !=
@@ -418,11 +438,11 @@ func TestRevertToPreviousRequiresTwoVersions(t *testing.T) {
 func TestApplyAllPushesEveryEnvironment(t *testing.T) {
 	fake := &fakeClient{}
 	svc := newTestService(t, fake)
-	dev, _ := svc.CreateEnvironment(CreateEnvironmentInput{
-		Name: "dev", Rank: intp(1), Target: model.Target{BaseURL: "https://dev"},
+	dev, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "dev", Rank: intp(1), Target: model.Target{DataPlaneID: "dev"},
 	})
-	prod, _ := svc.CreateEnvironment(CreateEnvironmentInput{
-		Name: "prod", Rank: intp(2), Target: model.Target{BaseURL: "https://prod"},
+	prod, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "prod", Rank: intp(2), Target: model.Target{DataPlaneID: "prod"},
 	})
 	_, _ = svc.UploadVersion(dev.ID, bundleOf("app-a"), nil, "v1")
 	_, _ = svc.UploadVersion(prod.ID, bundleOf("app-a"), nil, "v1")
@@ -445,11 +465,11 @@ func TestApplyAllPushesEveryEnvironment(t *testing.T) {
 func TestApplyAllSkipsEnvironmentsWithoutAVersionAndKeepsGoing(t *testing.T) {
 	fake := &fakeClient{}
 	svc := newTestService(t, fake)
-	empty, _ := svc.CreateEnvironment(CreateEnvironmentInput{
-		Name: "empty", Rank: intp(1), Target: model.Target{BaseURL: "https://empty"},
+	empty, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "empty", Rank: intp(1), Target: model.Target{DataPlaneID: "empty"},
 	})
-	ready, _ := svc.CreateEnvironment(CreateEnvironmentInput{
-		Name: "ready", Rank: intp(2), Target: model.Target{BaseURL: "https://ready"},
+	ready, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "ready", Rank: intp(2), Target: model.Target{DataPlaneID: "ready"},
 	})
 	_, _ = svc.UploadVersion(ready.ID, bundleOf("app-a"), nil, "v1")
 
@@ -477,11 +497,10 @@ func TestCheckVariablesReportsSecretsTheDataPlaneLacks(t *testing.T) {
 		secretNames: []string{"APP_A_CLIENT_SECRET"},
 	}
 	svc := newTestService(t, fake)
-	env, _ := svc.CreateEnvironment(CreateEnvironmentInput{
+	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
 		Name: "dev",
 		Target: model.Target{
-			BaseURL:        "https://dp",
-			SecretProvider: &model.SecretProviderEndpoint{BaseURL: "https://kv"},
+			DataPlaneID: "dp",
 		},
 		Source: &model.Source{BaseURL: "https://cp"},
 	})
@@ -509,9 +528,9 @@ func TestCheckVariablesUsesTheDataPlanesOwnSecretStore(t *testing.T) {
 		secretNames: []string{"APP_A_CLIENT_SECRET"},
 	}
 	svc := newTestService(t, fake)
-	env, _ := svc.CreateEnvironment(CreateEnvironmentInput{
+	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
 		Name:   "dev",
-		Target: model.Target{BaseURL: "https://dp"},
+		Target: model.Target{DataPlaneID: "dp"},
 		Source: &model.Source{BaseURL: "https://cp"},
 	})
 	_, _ = svc.CaptureVersion(context.Background(), env.ID, "")
@@ -529,15 +548,14 @@ func TestCheckVariablesUsesTheDataPlanesOwnSecretStore(t *testing.T) {
 func TestPromoteLeavesTheDestinationsCredentialsAlone(t *testing.T) {
 	fake := &fakeClient{}
 	svc := newTestService(t, fake)
-	dev, _ := svc.CreateEnvironment(CreateEnvironmentInput{
-		Name: "dev", Rank: intp(1), Target: model.Target{BaseURL: "https://dev"},
+	dev, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "dev", Rank: intp(1), Target: model.Target{DataPlaneID: "dev"},
 		Source: &model.Source{BaseURL: "https://dev-cp", DeploymentID: "dev-tenant"},
 	})
-	stage, _ := svc.CreateEnvironment(CreateEnvironmentInput{
+	stage, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
 		Name: "stage", Rank: intp(2),
 		Target: model.Target{
-			BaseURL:        "https://stage",
-			SecretProvider: &model.SecretProviderEndpoint{BaseURL: "https://stage-kv"},
+			DataPlaneID: "stage",
 		},
 		Source: &model.Source{BaseURL: "https://stage-cp", DeploymentID: "stage-tenant"},
 	})
@@ -582,14 +600,13 @@ func TestPromoteNeverReadsTheDestinationsSecretStore(t *testing.T) {
 	// the destination's secret store belongs to the destination, and the source cannot manage it.
 	fake := &fakeClient{kvExisting: map[string][2]string{"APP_A_CLIENT_SECRET": {"hash", "the-hash"}}}
 	svc := newTestService(t, fake)
-	dev, _ := svc.CreateEnvironment(CreateEnvironmentInput{
-		Name: "dev", Rank: intp(1), Target: model.Target{BaseURL: "https://dev"},
+	dev, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "dev", Rank: intp(1), Target: model.Target{DataPlaneID: "dev"},
 	})
-	stage, _ := svc.CreateEnvironment(CreateEnvironmentInput{
+	stage, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
 		Name: "stage", Rank: intp(2),
 		Target: model.Target{
-			BaseURL:        "https://stage",
-			SecretProvider: &model.SecretProviderEndpoint{BaseURL: "https://stage-kv"},
+			DataPlaneID: "stage",
 		},
 	})
 	_, _ = svc.store.AddVersion(model.Version{
@@ -614,8 +631,8 @@ func TestControlPlaneWriteOmitsHashedCredentialsAndReferencesReplayableOnes(t *t
 	// reference to where the credential is held rather than as the credential.
 	fake := &fakeClient{}
 	svc := newTestService(t, fake)
-	dev, _ := svc.CreateEnvironment(CreateEnvironmentInput{
-		Name: "dev", Rank: intp(1), Target: model.Target{BaseURL: "https://dev"},
+	dev, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "dev", Rank: intp(1), Target: model.Target{DataPlaneID: "dev"},
 		Source: &model.Source{BaseURL: "https://dev-cp", DeploymentID: "dev-tenant"},
 	})
 	_, _ = svc.store.AddVersion(model.Version{
@@ -649,11 +666,10 @@ func TestControlPlaneWriteOmitsHashedCredentialsAndReferencesReplayableOnes(t *t
 func TestCaptureSecretForTenantRoutesToThatTenantsProvider(t *testing.T) {
 	fake := &fakeClient{}
 	svc := newTestService(t, fake)
-	_, _ = svc.CreateEnvironment(CreateEnvironmentInput{
+	_, _ = svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
 		Name: "dev", Rank: intp(1),
 		Target: model.Target{
-			BaseURL:        "https://dev",
-			SecretProvider: &model.SecretProviderEndpoint{BaseURL: "https://dev-kv"},
+			DataPlaneID: "dev",
 		},
 		Source: &model.Source{BaseURL: "https://cp", DeploymentID: "dev-tenant"},
 	})
@@ -677,7 +693,7 @@ func TestCaptureSecretForTenantRoutesToThatTenantsProvider(t *testing.T) {
 
 func TestVersionHistoryPruned(t *testing.T) {
 	svc := newTestService(t, &fakeClient{})
-	env, _ := svc.CreateEnvironment(CreateEnvironmentInput{Name: "dev", Target: model.Target{BaseURL: "https://dp"}})
+	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "dev", Target: model.Target{DataPlaneID: "dp"}})
 	for i := 0; i < 7; i++ {
 		if _, err := svc.UploadVersion(env.ID, bundleOf("app-"+strconv.Itoa(i)), nil, "v"); err != nil {
 			t.Fatalf("upload: %v", err)
@@ -698,11 +714,10 @@ func intp(i int) *int { return &i }
 func TestCheckVariablesClassifiesACredentialInAnOlderVersion(t *testing.T) {
 	svc := newTestService(t, &fakeClient{secretNames: []string{"ADMIN2_WSO2_COM_PASSWORD"}})
 
-	env, err := svc.CreateEnvironment(CreateEnvironmentInput{
+	env, err := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
 		Name: "dev",
 		Target: model.Target{
-			BaseURL:        "https://dp",
-			SecretProvider: &model.SecretProviderEndpoint{BaseURL: "https://secrets"},
+			DataPlaneID: "dp",
 		},
 	})
 	if err != nil {
@@ -736,14 +751,14 @@ func TestCheckVariablesClassifiesACredentialInAnOlderVersion(t *testing.T) {
 func setupPromotionPair(t *testing.T, fake *fakeClient) (*Service, model.Environment, model.Environment) {
 	t.Helper()
 	svc := newTestService(t, fake)
-	dev, _ := svc.CreateEnvironment(CreateEnvironmentInput{
-		Name: "dev", Rank: intp(1), Target: model.Target{BaseURL: "https://dev"}})
-	prod, _ := svc.CreateEnvironment(CreateEnvironmentInput{
-		Name: "prod", Rank: intp(2), Target: model.Target{BaseURL: "https://prod"}})
+	dev, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "dev", Rank: intp(1), Target: model.Target{DataPlaneID: "dev"}})
+	prod, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "prod", Rank: intp(2), Target: model.Target{DataPlaneID: "prod"}})
 	if _, err := svc.UploadVersion(dev.ID, bundleOf("app-a", "app-b"), nil, "dev-v1"); err != nil {
 		t.Fatalf("upload: %v", err)
 	}
-	return svc, dev, prod
+	return svc, dev.Environment, prod.Environment
 }
 
 func TestPromoteRemembersWhatWasHeldBack(t *testing.T) {
@@ -848,5 +863,366 @@ func TestApplyLeavesAHeldBackResourceAlone(t *testing.T) {
 		if d.ID == "app-b" {
 			t.Fatal("holding a resource back means leaving it alone, not deleting it from the data plane")
 		}
+	}
+}
+
+// The promotion view shows whether each environment's data plane is connected, because nothing can be
+// applied or promoted to one that is not, and an operator should see that before starting.
+func TestEnvironmentSummariesReportDataPlaneConnectivity(t *testing.T) {
+	fake := &fakeClient{}
+	svc := newTestService(t, fake)
+	planes := &fakeDataPlanes{plane: fake, connected: true}
+	svc.SetDataPlanes(planes)
+	if _, err := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "dev", Target: model.Target{DataPlaneID: "dev-dp"},
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	summaries, err := svc.ListEnvironmentSummaries()
+	if err != nil {
+		t.Fatalf("summaries: %v", err)
+	}
+	if !summaries[0].DataPlane.Connected {
+		t.Fatal("a connected data plane should be reported as connected")
+	}
+
+	planes.connected = false
+	summaries, err = svc.ListEnvironmentSummaries()
+	if err != nil {
+		t.Fatalf("summaries: %v", err)
+	}
+	if summaries[0].DataPlane.Connected {
+		t.Fatal("a data plane that dropped should be reported as disconnected")
+	}
+}
+
+// An environment that names no data plane cannot be applied to, and says so rather than failing at the
+// transport with something that reads like an outage.
+func TestApplyRefusesWhenTheDataPlaneIsNotConnected(t *testing.T) {
+	fake := &fakeClient{}
+	svc := newTestService(t, fake)
+	svc.SetDataPlanes(&fakeDataPlanes{plane: fake, connected: false})
+	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "dev", Target: model.Target{DataPlaneID: "dev-dp"},
+	})
+	_, _ = svc.store.AddVersion(model.Version{
+		EnvID: env.ID, Origin: model.OriginUploaded, CreatedAt: svc.now().UTC(), Resources: app("a"),
+	})
+
+	_, err := svc.Apply(context.Background(), env.ID, "latest", false)
+
+	if err == nil || !strings.Contains(err.Error(), "not connected") {
+		t.Fatalf("expected a disconnected data plane to be named, got %v", err)
+	}
+}
+
+// fakeTokenIssuer records what it was asked to issue and hands back a predictable token.
+type fakeTokenIssuer struct {
+	issued []string
+	n      int
+}
+
+func (f *fakeTokenIssuer) Issue(_ context.Context, dataPlaneID, _ string) (string, error) {
+	f.issued = append(f.issued, dataPlaneID)
+	f.n++
+	return fmt.Sprintf("token-%d", f.n), nil
+}
+
+// Registering an environment mints the credential its data plane connects with, and returns it once.
+// Asking an operator to invent one and configure it on both sides is the step this removes.
+func TestCreateEnvironmentIssuesTheDataPlaneToken(t *testing.T) {
+	svc := newTestService(t, &fakeClient{})
+	issuer := &fakeTokenIssuer{}
+	svc.SetDataPlaneTokenIssuer(issuer)
+
+	env, err := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name:   "dev",
+		Target: model.Target{DataPlaneID: "org1:dev"},
+		Source: &model.Source{BaseURL: "https://cp", DeploymentID: "org1:dev"},
+	})
+
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if env.DataPlaneToken != "token-1" {
+		t.Fatalf("expected the issued token to be returned once, got %q", env.DataPlaneToken)
+	}
+	if len(issuer.issued) != 1 || issuer.issued[0] != "org1:dev" {
+		t.Fatalf("expected a token for the environment's data plane, got %v", issuer.issued)
+	}
+}
+
+// A deployment using a single shared token issues none, and registering an environment still works.
+func TestCreateEnvironmentWithoutAnIssuerReturnsNoToken(t *testing.T) {
+	svc := newTestService(t, &fakeClient{})
+
+	env, err := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "dev", Target: model.Target{DataPlaneID: "org1:dev"},
+	})
+
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if env.DataPlaneToken != "" {
+		t.Fatalf("expected no token, got %q", env.DataPlaneToken)
+	}
+}
+
+// Rotation issues a new token for the same data plane.
+func TestRegenerateDataPlaneTokenIssuesAnotherForTheSameDataPlane(t *testing.T) {
+	svc := newTestService(t, &fakeClient{})
+	issuer := &fakeTokenIssuer{}
+	svc.SetDataPlaneTokenIssuer(issuer)
+	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "dev", Target: model.Target{DataPlaneID: "org1:dev"},
+	})
+
+	token, err := svc.RegenerateDataPlaneToken(context.Background(), env.ID)
+
+	if err != nil {
+		t.Fatalf("regenerate: %v", err)
+	}
+	if token != "token-2" {
+		t.Fatalf("expected a freshly issued token, got %q", token)
+	}
+	if len(issuer.issued) != 2 || issuer.issued[1] != "org1:dev" {
+		t.Fatalf("expected the same data plane to be reissued, got %v", issuer.issued)
+	}
+}
+
+// fakeControlPlane records the imports written into a control plane tenant.
+type fakeControlPlane struct {
+	imports []thunder.ImportRequest
+}
+
+func (f *fakeControlPlane) Hosts(string) bool { return true }
+
+func (f *fakeControlPlane) Import(_ context.Context, _ string,
+	req thunder.ImportRequest) (*thunder.ImportResponse, error) {
+	f.imports = append(f.imports, req)
+	return &thunder.ImportResponse{Summary: &thunder.ImportSummary{}}, nil
+}
+
+// Writing an older version to a control plane has to remove what the newer one added. Without that
+// the write is upsert-only: it restores the old resources but leaves everything created since, and
+// the tenant matches neither version.
+func TestApplyToControlPlaneRemovesWhatALaterVersionAdded(t *testing.T) {
+	fake := &fakeClient{}
+	svc := newTestService(t, fake)
+	cp := &fakeControlPlane{}
+	svc.SetLocalControlPlane(cp)
+	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name:   "dev",
+		Target: model.Target{DataPlaneID: "dev-dp"},
+		Source: &model.Source{BaseURL: "https://cp", DeploymentID: "dev-tenant"},
+	})
+	// Version 1 holds one application; version 2 adds a second.
+	_, _ = svc.store.AddVersion(model.Version{
+		EnvID: env.ID, Origin: model.OriginUploaded, CreatedAt: svc.now().UTC(), Resources: app("app-a"),
+	})
+	_, _ = svc.store.AddVersion(model.Version{
+		EnvID: env.ID, Origin: model.OriginUploaded, CreatedAt: svc.now().UTC(),
+		Resources: bundleOf("app-a", "app-b"),
+	})
+
+	if _, err := svc.ApplyToControlPlane(context.Background(), env.ID, "1"); err != nil {
+		t.Fatalf("apply to control plane: %v", err)
+	}
+
+	if len(cp.imports) != 1 {
+		t.Fatalf("expected one import, got %d", len(cp.imports))
+	}
+	deletions := cp.imports[0].Deletions
+	if len(deletions) != 1 || deletions[0].ID != "app-b" {
+		t.Fatalf("expected app-b to be removed, got %+v", deletions)
+	}
+}
+
+// Writing the version the tenant already holds removes nothing.
+func TestApplyToControlPlaneOfTheLatestVersionRemovesNothing(t *testing.T) {
+	fake := &fakeClient{}
+	svc := newTestService(t, fake)
+	cp := &fakeControlPlane{}
+	svc.SetLocalControlPlane(cp)
+	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name:   "dev",
+		Target: model.Target{DataPlaneID: "dev-dp"},
+		Source: &model.Source{BaseURL: "https://cp", DeploymentID: "dev-tenant"},
+	})
+	_, _ = svc.store.AddVersion(model.Version{
+		EnvID: env.ID, Origin: model.OriginUploaded, CreatedAt: svc.now().UTC(), Resources: app("app-a"),
+	})
+
+	if _, err := svc.ApplyToControlPlane(context.Background(), env.ID, "latest"); err != nil {
+		t.Fatalf("apply to control plane: %v", err)
+	}
+
+	if len(cp.imports[0].Deletions) != 0 {
+		t.Fatalf("expected no deletions, got %+v", cp.imports[0].Deletions)
+	}
+}
+
+// Writing a version to the control plane on its own leaves the data plane alone, so the two planes
+// hold different versions. The next control plane write has to compare against what that tenant was
+// written with, not against the newest capture, or it computes removals for resources that are no
+// longer there and misses the ones that are.
+func TestControlPlaneWritesCompareAgainstWhatTheTenantHolds(t *testing.T) {
+	svc := newTestService(t, &fakeClient{})
+	cp := &fakeControlPlane{}
+	svc.SetLocalControlPlane(cp)
+	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name:   "dev",
+		Target: model.Target{DataPlaneID: "dev-dp"},
+		Source: &model.Source{BaseURL: "https://cp", DeploymentID: "dev-tenant"},
+	})
+	_, _ = svc.store.AddVersion(model.Version{
+		EnvID: env.ID, Origin: model.OriginUploaded, CreatedAt: svc.now().UTC(), Resources: app("app-a"),
+	})
+	_, _ = svc.store.AddVersion(model.Version{
+		EnvID: env.ID, Origin: model.OriginUploaded, CreatedAt: svc.now().UTC(),
+		Resources: bundleOf("app-a", "app-b"),
+	})
+
+	// Write v1: the tenant loses app-b and now holds v1.
+	if _, err := svc.ApplyToControlPlane(context.Background(), env.ID, "1"); err != nil {
+		t.Fatalf("first write: %v", err)
+	}
+	if got := cp.imports[0].Deletions; len(got) != 1 || got[0].ID != "app-b" {
+		t.Fatalf("first write should remove app-b, got %+v", got)
+	}
+
+	// Write v2 next. The tenant holds v1, so app-b is being added back and nothing is removed.
+	// Comparing against the newest version instead would wrongly report app-b for deletion.
+	if _, err := svc.ApplyToControlPlane(context.Background(), env.ID, "2"); err != nil {
+		t.Fatalf("second write: %v", err)
+	}
+	if got := cp.imports[1].Deletions; len(got) != 0 {
+		t.Fatalf("second write should remove nothing, got %+v", got)
+	}
+}
+
+// The version the control plane holds is tracked separately from the one applied to the data plane,
+// because writing one leaves the other alone.
+func TestControlPlaneSeqIsTrackedApartFromAppliedSeq(t *testing.T) {
+	svc := newTestService(t, &fakeClient{})
+	svc.SetLocalControlPlane(&fakeControlPlane{})
+	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name:   "dev",
+		Target: model.Target{DataPlaneID: "dev-dp"},
+		Source: &model.Source{BaseURL: "https://cp", DeploymentID: "dev-tenant"},
+	})
+	_, _ = svc.store.AddVersion(model.Version{
+		EnvID: env.ID, Origin: model.OriginUploaded, CreatedAt: svc.now().UTC(), Resources: app("app-a"),
+	})
+	_, _ = svc.store.AddVersion(model.Version{
+		EnvID: env.ID, Origin: model.OriginUploaded, CreatedAt: svc.now().UTC(),
+		Resources: bundleOf("app-a", "app-b"),
+	})
+
+	if _, err := svc.ApplyToControlPlane(context.Background(), env.ID, "1"); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	stored, err := svc.store.GetEnvironment(env.ID)
+	if err != nil {
+		t.Fatalf("get environment: %v", err)
+	}
+	if stored.ControlPlaneSeq != 1 {
+		t.Fatalf("expected the control plane to be recorded at v1, got %d", stored.ControlPlaneSeq)
+	}
+	if stored.AppliedSeq != 0 {
+		t.Fatalf("a control plane write must not touch the data plane's version, got %d", stored.AppliedSeq)
+	}
+}
+
+// A promotion compares against what the destination is running, not its newest capture. Captures pile
+// up as drafts; until one is applied the environment has not moved, and comparing against the newest
+// would describe a destination state that nothing is running.
+func TestPromoteComparesAgainstWhatTheDestinationIsRunning(t *testing.T) {
+	svc := newTestService(t, &fakeClient{})
+	svc.SetLocalControlPlane(&fakeControlPlane{})
+	dev, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "dev", Rank: intp(1), Target: model.Target{DataPlaneID: "dev-dp"},
+		Source: &model.Source{BaseURL: "https://cp", DeploymentID: "dev-tenant"},
+	})
+	stage, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "stage", Rank: intp(2), Target: model.Target{DataPlaneID: "stage-dp"},
+		Source: &model.Source{BaseURL: "https://cp", DeploymentID: "stage-tenant"},
+	})
+
+	// Stage is running v1. A later capture adds app-b, but nothing has adopted it.
+	_, _ = svc.store.AddVersion(model.Version{
+		EnvID: stage.ID, Origin: model.OriginUploaded, CreatedAt: svc.now().UTC(), Resources: app("app-a"),
+	})
+	if _, err := svc.Apply(context.Background(), stage.ID, "1", false); err != nil {
+		t.Fatalf("apply v1 to stage: %v", err)
+	}
+	_, _ = svc.store.AddVersion(model.Version{
+		EnvID: stage.ID, Origin: model.OriginCaptured, CreatedAt: svc.now().UTC(),
+		Resources: bundleOf("app-a", "app-b"),
+	})
+
+	// Dev is running both applications.
+	_, _ = svc.store.AddVersion(model.Version{
+		EnvID: dev.ID, Origin: model.OriginUploaded, CreatedAt: svc.now().UTC(),
+		Resources: bundleOf("app-a", "app-b"),
+	})
+	if _, err := svc.Apply(context.Background(), dev.ID, "1", false); err != nil {
+		t.Fatalf("apply to dev: %v", err)
+	}
+
+	result, err := svc.Promote(context.Background(), PromoteInput{FromEnvID: dev.ID, ToEnvID: stage.ID})
+	if err != nil {
+		t.Fatalf("promote: %v", err)
+	}
+
+	// Against what stage runs, app-b is an addition. Against its newest capture it would read as
+	// unchanged, and the operator would be told a promotion changes nothing when it adds a resource.
+	if result.Preview.Summary.Added != 1 {
+		t.Fatalf("expected app-b to read as an addition, got %+v", result.Preview.Summary)
+	}
+}
+
+// A promotion moves what the source is running. A capture taken on top of that is a draft, and
+// promoting it would push work the source itself never adopted.
+func TestPromoteSendsWhatTheSourceIsRunning(t *testing.T) {
+	svc := newTestService(t, &fakeClient{})
+	svc.SetLocalControlPlane(&fakeControlPlane{})
+	dev, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "dev", Rank: intp(1), Target: model.Target{DataPlaneID: "dev-dp"},
+		Source: &model.Source{BaseURL: "https://cp", DeploymentID: "dev-tenant"},
+	})
+	stage, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "stage", Rank: intp(2), Target: model.Target{DataPlaneID: "stage-dp"},
+		Source: &model.Source{BaseURL: "https://cp", DeploymentID: "stage-tenant"},
+	})
+
+	// Dev is running v1; v2 is a capture that added app-b and was never applied.
+	_, _ = svc.store.AddVersion(model.Version{
+		EnvID: dev.ID, Origin: model.OriginUploaded, CreatedAt: svc.now().UTC(), Resources: app("app-a"),
+	})
+	if _, err := svc.Apply(context.Background(), dev.ID, "1", false); err != nil {
+		t.Fatalf("apply v1 to dev: %v", err)
+	}
+	_, _ = svc.store.AddVersion(model.Version{
+		EnvID: dev.ID, Origin: model.OriginCaptured, CreatedAt: svc.now().UTC(),
+		Resources: bundleOf("app-a", "app-b"),
+	})
+
+	result, err := svc.Promote(context.Background(), PromoteInput{FromEnvID: dev.ID, ToEnvID: stage.ID})
+	if err != nil {
+		t.Fatalf("promote: %v", err)
+	}
+
+	promoted, err := svc.store.GetVersion(stage.ID, result.NewVersion.Seq)
+	if err != nil {
+		t.Fatalf("get promoted version: %v", err)
+	}
+	if strings.Contains(promoted.Resources, "app-b") {
+		t.Fatalf("app-b was captured but never applied, so it must not promote:\n%s", promoted.Resources)
+	}
+	if !strings.Contains(promoted.Resources, "app-a") {
+		t.Fatalf("expected app-a to be promoted:\n%s", promoted.Resources)
 	}
 }

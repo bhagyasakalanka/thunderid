@@ -28,7 +28,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/thunder-id/thunderid/internal/envmgr/model"
 	"github.com/thunder-id/thunderid/internal/envmgr/service"
 	"github.com/thunder-id/thunderid/internal/envmgr/store"
 	"github.com/thunder-id/thunderid/internal/envmgr/thunder"
@@ -43,9 +42,11 @@ import (
 // environment at all: the id simply does not exist in the store the request is served from. That is
 // the same guarantee the row-scoped resources get, reached differently.
 type registry struct {
-	dataDir string
-	hasher  service.SecretHasher
-	localCP service.LocalControlPlane
+	dataDir     string
+	hasher      service.SecretHasher
+	localCP     service.LocalControlPlane
+	dataPlanes  service.DataPlanes
+	tokenIssuer service.DataPlaneTokenIssuer
 
 	mu      sync.Mutex
 	servers map[string]*Server
@@ -103,6 +104,8 @@ func (r *registry) serverForID(id string) (*Server, error) {
 	})
 	svc.SetSecretHasher(r.hasher)
 	svc.SetLocalControlPlane(r.localCP)
+	svc.SetDataPlanes(r.dataPlanes)
+	svc.SetDataPlaneTokenIssuer(r.tokenIssuer)
 	server := New(svc)
 	r.servers[id] = server
 	return server, nil
@@ -142,13 +145,13 @@ func (r *registry) SeedTenant(ctx context.Context, sourceDeploymentID,
 
 // CreateEnvironment registers an environment in the store its deployment belongs to, so a tenant
 // appears in its organization's promotion chain without a second call to set it up.
-func (r *registry) CreateEnvironment(deploymentID string,
-	in service.CreateEnvironmentInput) (model.Environment, error) {
+func (r *registry) CreateEnvironment(ctx context.Context, deploymentID string,
+	in service.CreateEnvironmentInput) (service.CreateEnvironmentResult, error) {
 	server, err := r.serverForID(deploymentID)
 	if err != nil {
-		return model.Environment{}, err
+		return service.CreateEnvironmentResult{}, err
 	}
-	return server.svc.CreateEnvironment(in)
+	return server.svc.CreateEnvironment(ctx, in)
 }
 
 // deploymentIDs lists the deployments that have an environment manager store on disk.
@@ -164,6 +167,28 @@ func (r *registry) deploymentIDs() ([]string, error) {
 		}
 	}
 	return ids, nil
+}
+
+// SetDataPlaneTokenIssuer installs what mints the credential a data plane connects with. It is set
+// after the fact because it is built alongside the channel server.
+func (r *registry) SetDataPlaneTokenIssuer(issuer service.DataPlaneTokenIssuer) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.tokenIssuer = issuer
+	for _, server := range r.servers {
+		server.svc.SetDataPlaneTokenIssuer(issuer)
+	}
+}
+
+// SetDataPlanes installs the connections this server reaches data planes over. It is set after the
+// fact because the channel server is built after the environment manager is mounted.
+func (r *registry) SetDataPlanes(planes service.DataPlanes) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.dataPlanes = planes
+	for _, server := range r.servers {
+		server.svc.SetDataPlanes(planes)
+	}
 }
 
 // SetLocalControlPlane installs the control plane a promotion writes into. It is set after the fact

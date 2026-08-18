@@ -20,8 +20,13 @@
 //
 // Configuration promoted from a Control Plane stores a reference such as "kv:MY_APP_CLIENT_SECRET"
 // rather than the secret itself, so no secret leaves the Control Plane. This package turns such a
-// reference into its value, reading from an in-memory map loaded once at startup from an external
-// secret provider and refreshed for a single name when a reference is not held.
+// reference into its value.
+//
+// Where it reads from depends on how the deployment holds its secrets. A store served by this same
+// process is read per reference, so a credential regenerated on the Control Plane takes effect as
+// soon as it lands. A standalone provider reached over HTTP is cached in memory, loaded once at
+// startup and refreshed for a single name when a reference is not held, because every miss there
+// costs an outbound call.
 package secretresolver
 
 import (
@@ -65,11 +70,37 @@ type Config struct {
 	BaseURL string
 	Token   string
 	Timeout time.Duration
-	// Local reads the secrets from a store held in this process, returning the same JSON body the
-	// provider serves from /secrets. It is set when this server serves its own store: reading that
-	// over HTTP would mean the server authenticating to its own management API, which it has no
-	// credentials to do. When set it is used in place of BaseURL.
-	Local func(ctx context.Context) ([]byte, error)
+	// Local reads one secret from a store held in this process. It is set when this server serves its
+	// own store: reading that over HTTP would mean the server authenticating to its own management
+	// API, which it has no credentials to do. When set it is used in place of BaseURL.
+	//
+	// It is consulted on every resolution rather than cached here. The store it reads is already an
+	// in-memory cache with its own freshness policy, so keeping a second copy would mean a credential
+	// regenerated on the control plane kept being rejected until this process restarted.
+	Local func(ctx context.Context, name string) (LocalSecret, bool, error)
+}
+
+// LocalSecret is one secret as a store in this process holds it.
+type LocalSecret struct {
+	Kind        string
+	Value       string
+	Algorithm   string
+	Salt        string
+	Iterations  int
+	KeySize     int
+	Memory      int
+	Parallelism int
+}
+
+// providerSecret converts a locally held secret into the shape resolution works in.
+func (l LocalSecret) providerSecret(name string) providerSecret {
+	p := providerSecret{Name: name, Kind: l.Kind, Value: l.Value, Algorithm: l.Algorithm}
+	p.Parameters.Salt = l.Salt
+	p.Parameters.Iterations = l.Iterations
+	p.Parameters.KeySize = l.KeySize
+	p.Parameters.Memory = l.Memory
+	p.Parameters.Parallelism = l.Parallelism
+	return p
 }
 
 // Resolver resolves secret references against a secret provider, caching what it loads.
@@ -194,18 +225,16 @@ func (r *Resolver) LoadAll(ctx context.Context) error {
 		return nil
 	}
 
+	// A local store is read per name, not preloaded: it is already in memory, and holding a second
+	// copy here is what would let a regenerated credential go stale.
+	if r.cfg.Local != nil {
+		return nil
+	}
+
 	var body struct {
 		Secrets map[string]providerSecret `json:"secrets"`
 	}
-	if r.cfg.Local != nil {
-		raw, err := r.cfg.Local(ctx)
-		if err != nil {
-			return err
-		}
-		if err := json.Unmarshal(raw, &body); err != nil {
-			return fmt.Errorf("failed to read the local secret store: %w", err)
-		}
-	} else if err := r.get(ctx, "/secrets", &body); err != nil {
+	if err := r.get(ctx, "/secrets", &body); err != nil {
 		return err
 	}
 
@@ -257,6 +286,16 @@ func (r *Resolver) ResolveHash(ctx context.Context, reference string) (Hash, boo
 	}
 
 	name := ReferenceName(reference)
+	if r.cfg.Local != nil {
+		local, found, err := r.cfg.Local(ctx, name)
+		if err != nil || !found {
+			return Hash{}, false, err
+		}
+		secret := local.providerSecret(name)
+		hash, ok := secret.hash()
+		return hash, ok, nil
+	}
+
 	r.mu.RLock()
 	cached, ok := r.hashes[name]
 	r.mu.RUnlock()
@@ -278,6 +317,8 @@ func (r *Resolver) ResolveHash(ctx context.Context, reference string) (Hash, boo
 }
 
 // Count reports how many secrets are cached. Intended for startup logging, which must not log values.
+// A resolver reading a local store caches nothing, so this is zero for one; the store reports its own
+// count instead.
 func (r *Resolver) Count() int {
 	if r == nil {
 		return 0
@@ -298,6 +339,10 @@ func (r *Resolver) Resolve(ctx context.Context, value string) (string, error) {
 	}
 
 	name := ReferenceName(value)
+	if r.cfg.Local != nil {
+		return r.resolveLocal(ctx, name)
+	}
+
 	r.mu.RLock()
 	secret, ok := r.secrets[name]
 	missedAt, missed := r.lastMiss[name]
@@ -317,26 +362,22 @@ func (r *Resolver) Resolve(ctx context.Context, value string) (string, error) {
 	return secret, nil
 }
 
+// resolveLocal reads a secret from the store held in this process. Nothing is cached: the store is
+// already in memory, and a copy here would outlive a credential being regenerated.
+func (r *Resolver) resolveLocal(ctx context.Context, name string) (string, error) {
+	local, found, err := r.cfg.Local(ctx, name)
+	if err != nil {
+		return "", err
+	}
+	if !found {
+		return "", fmt.Errorf("%w: %s", ErrSecretNotFound, name)
+	}
+	secret := local.providerSecret(name)
+	return secret.substitution()
+}
+
 // fetch reads a single secret from the provider and caches the outcome.
 func (r *Resolver) fetch(ctx context.Context, name string) (string, error) {
-	// A local store is read whole: it is already in memory, so there is nothing to save by asking
-	// for one name, and a secret added since startup is picked up the same way.
-	if r.cfg.Local != nil {
-		if err := r.LoadAll(ctx); err != nil {
-			return "", err
-		}
-		r.mu.RLock()
-		value, ok := r.secrets[name]
-		r.mu.RUnlock()
-		if !ok {
-			r.mu.Lock()
-			r.lastMiss[name] = time.Now()
-			r.mu.Unlock()
-			return "", ErrSecretNotFound
-		}
-		return value, nil
-	}
-
 	var body providerSecret
 	err := r.get(ctx, "/secrets/"+name, &body)
 	if err != nil {

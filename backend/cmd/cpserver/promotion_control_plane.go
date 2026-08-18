@@ -84,14 +84,19 @@ func (c *localControlPlane) Import(ctx context.Context, deploymentID string,
 		return nil, fmt.Errorf("this server hosts no import service")
 	}
 
+	// The request is re-encoded rather than copied field by field. The two types describe the same
+	// wire document, and listing the fields here meant a request could carry something this dropped on
+	// the floor: the deletions that make writing an older version remove what a newer one added went
+	// missing exactly that way, leaving a restore that only ever added and updated.
+	var importReq importer.ImportRequest
+	if err := reencode(req, &importReq); err != nil {
+		return nil, fmt.Errorf("failed to prepare the import: %w", err)
+	}
+
 	// The deployment is the only thing that changes: everything the import does afterwards reads the
 	// tenant from the context, so this is what makes the write land in the destination tenant.
 	scoped := deployment.WithID(ctx, deploymentID)
-	resp, svcErr := c.importService.ImportResources(scoped, &importer.ImportRequest{
-		Content:   req.Content,
-		Variables: req.Variables,
-		DryRun:    req.DryRun,
-	})
+	resp, svcErr := c.importService.ImportResources(scoped, &importReq)
 	if svcErr != nil {
 		return nil, fmt.Errorf("import into tenant %s failed: %s", deploymentID, svcErr.ErrorDescription)
 	}
