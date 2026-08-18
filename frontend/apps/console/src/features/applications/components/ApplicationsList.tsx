@@ -17,8 +17,6 @@ import RouteConfig from '../../../configs/RouteConfig';
 import ApplicationConstants from '../constants/application-constants';
 import getApplicationErrorMessage from '../utils/getApplicationErrorMessage';
 import {useIsManagedResource} from '../../managed-resources';
-import useGetApplications from '../api/useGetApplications';
-import type {BasicApplication} from '../models/application';
 import getTemplateMetadata from '../utils/getTemplateMetadata';
 
 export default function ApplicationsList(): JSX.Element {

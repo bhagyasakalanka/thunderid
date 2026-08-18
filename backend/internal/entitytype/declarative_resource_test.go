@@ -58,10 +58,6 @@ func (s *EntityTypeExporterTestSuite) TestGetAllResourceIDs_Success() {
 		},
 	}
 
-	agentResponse := &entitytype.EntityTypeListResponse{
-		Types: []entitytype.EntityTypeListItem{{ID: "agentType1", Name: "default"}},
-	}
-
 	s.mockService.EXPECT().
 		GetEntityTypeList(mock.Anything, entitytype.TypeCategoryUser, 100, 0, false).
 		Return(expectedResponse, nil).Once()
@@ -72,10 +68,9 @@ func (s *EntityTypeExporterTestSuite) TestGetAllResourceIDs_Success() {
 	ids, err := s.exporter.GetAllResourceIDs(context.Background())
 
 	assert.Nil(s.T(), err)
-	assert.Len(s.T(), ids, 3)
+	assert.Len(s.T(), ids, 2)
 	assert.Equal(s.T(), "schema1", ids[0])
 	assert.Equal(s.T(), "schema2", ids[1])
-	assert.Equal(s.T(), "agentType1", ids[2])
 }
 
 func (s *EntityTypeExporterTestSuite) TestGetAllResourceIDs_Error() {
@@ -104,9 +99,6 @@ func (s *EntityTypeExporterTestSuite) TestGetAllResourceIDs_EmptyList() {
 
 	s.mockService.EXPECT().
 		GetEntityTypeList(mock.Anything, entitytype.TypeCategoryUser, 100, 0, false).
-		Return(expectedResponse, nil)
-	s.mockService.EXPECT().
-		GetEntityTypeList(mock.Anything, entitytype.TypeCategoryAgent, 100, 0, false).
 		Return(expectedResponse, nil)
 
 	ids, err := s.exporter.GetAllResourceIDs(context.Background())
@@ -141,12 +133,8 @@ func (s *EntityTypeExporterTestSuite) TestGetResourceByID_Error() {
 		},
 	}
 
-	// An ID that exists in neither category: both lookups miss, and the caller sees the failure.
 	s.mockService.EXPECT().
 		GetEntityType(mock.Anything, entitytype.TypeCategoryUser, "schema1", mock.Anything).
-		Return(nil, expectedError)
-	s.mockService.EXPECT().
-		GetEntityType(mock.Anything, entitytype.TypeCategoryAgent, "schema1", mock.Anything).
 		Return(nil, expectedError)
 
 	resource, name, err := s.exporter.GetResourceByID(context.Background(), "schema1")
@@ -154,24 +142,6 @@ func (s *EntityTypeExporterTestSuite) TestGetResourceByID_Error() {
 	assert.Nil(s.T(), resource)
 	assert.Empty(s.T(), name)
 	assert.Equal(s.T(), expectedError, err)
-}
-
-// An agent type is found on the second attempt, since the first category does not hold it.
-func (s *EntityTypeExporterTestSuite) TestGetResourceByID_FindsAnAgentType() {
-	agentType := &entitytype.EntityType{ID: "agentType1", Name: "default"}
-
-	s.mockService.EXPECT().
-		GetEntityType(mock.Anything, entitytype.TypeCategoryUser, "agentType1", mock.Anything).
-		Return(nil, &tidcommon.ServiceError{Code: "ETS-1001"})
-	s.mockService.EXPECT().
-		GetEntityType(mock.Anything, entitytype.TypeCategoryAgent, "agentType1", mock.Anything).
-		Return(agentType, nil)
-
-	resource, name, err := s.exporter.GetResourceByID(context.Background(), "agentType1")
-
-	assert.Nil(s.T(), err)
-	assert.Equal(s.T(), agentType, resource)
-	assert.Equal(s.T(), "default", name)
 }
 
 func (s *EntityTypeExporterTestSuite) TestValidateResource_Success() {

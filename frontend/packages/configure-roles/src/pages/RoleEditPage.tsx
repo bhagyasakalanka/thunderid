@@ -353,10 +353,7 @@ export default function RoleEditPage(): JSX.Element {
       {/* Tab Panels */}
       <>
         <TabPanel value={activeTab} index={0}>
-          <EditGeneralSettings
-            role={role}
-            onDeleteClick={(role.isReadOnly === true || isManaged) ? undefined : () => setDeleteDialogOpen(true)}
-          />
+          <EditGeneralSettings role={role} />
         </TabPanel>
 
         <TabPanel value={activeTab} index={1}>
@@ -372,7 +369,9 @@ export default function RoleEditPage(): JSX.Element {
         </TabPanel>
 
         <TabPanel value={activeTab} index={3}>
-          <EditAdvancedSettings onDeleteClick={role.isReadOnly ? undefined : () => setDeleteDialogOpen(true)} />
+          <EditAdvancedSettings
+            onDeleteClick={role.isReadOnly === true || isManaged ? undefined : () => setDeleteDialogOpen(true)}
+          />
         </TabPanel>
       </>
 

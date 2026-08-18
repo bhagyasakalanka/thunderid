@@ -147,8 +147,8 @@ func (suite *LayoutServiceTestSuite) TestCreateLayout_HonorsProvidedID() {
 		Layout:      json.RawMessage(`{"structure": "grid"}`),
 	}
 
-	suite.mockStore.On("IsLayoutHandleConflict", "new-layout", "").Return(false, nil)
-	suite.mockStore.On("CreateLayout", "provided-layout-id",
+	suite.mockStore.On("IsLayoutHandleConflict", mock.Anything, "new-layout", "").Return(false, nil)
+	suite.mockStore.On("CreateLayout", mock.Anything, "provided-layout-id",
 		mock.AnythingOfType("CreateLayoutRequest")).Return(nil)
 
 	result, err := suite.service.CreateLayout(context.Background(), layoutRequest)

@@ -174,6 +174,7 @@ export default function App(): JSX.Element {
       <RoutesProvider paths={RouteConfig}>
         <ToastProvider>
           <WelcomeRedirect />
+          <PlaneRouteGuard />
           <Suspense fallback={<PageLoader />}>
             <Routes>
               <Route

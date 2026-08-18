@@ -238,7 +238,6 @@ export default function VerifiablePresentationEditPage(): JSX.Element {
         submitting={updateVP.isPending}
         submitLabel={t('common:actions.save')}
         onSubmit={handleSubmit}
-        onDelete={(): void => setDeleteOpen(true)}
         error={
           updateVP.error
             ? getErrorMessage(updateVP.error, tForErrors, 'update.error', 'Failed to update presentation definition')

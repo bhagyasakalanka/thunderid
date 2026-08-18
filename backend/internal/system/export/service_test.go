@@ -317,10 +317,10 @@ func (suite *ExportServiceTestSuite) TestExportResources_HyphenatedApplicationNa
 	assert.Len(suite.T(), result.Files, 1)
 
 	file := result.Files[0]
-	assert.Contains(suite.T(), file.Content, "clientId: {{.WAYFINDER_CONCIERGE_CLIENT_ID}}")
+	assert.Contains(suite.T(), file.Content, "clientId: {{.APPLICATION_WAYFINDER_CONCIERGE_CLIENT_ID}}")
 	assert.NotContains(suite.T(), file.Content, "WAYFINDER-CONCIERGE")
 	assert.NotNil(suite.T(), result.EnvFile)
-	assert.Contains(suite.T(), result.EnvFile.Content, "WAYFINDER_CONCIERGE_CLIENT_ID=client123\n")
+	assert.Contains(suite.T(), result.EnvFile.Content, "APPLICATION_WAYFINDER_CONCIERGE_CLIENT_ID=client123\n")
 
 	_, parseErr := template.New("export").Parse(file.Content)
 	assert.NoError(suite.T(), parseErr)
@@ -365,13 +365,13 @@ func (suite *ExportServiceTestSuite) TestExportResources_CollidingNormalizedName
 	require.NotNil(suite.T(), result)
 	assert.Len(suite.T(), result.Files, 3)
 
-	assert.Contains(suite.T(), result.Files[0].Content, "clientId: {{.WAYFINDER_CONCIERGE_CLIENT_ID}}")
-	assert.Contains(suite.T(), result.Files[1].Content, "clientId: {{.WAYFINDER_CONCIERGE_2_CLIENT_ID}}")
-	assert.Contains(suite.T(), result.Files[2].Content, "clientId: {{.WAYFINDER_CONCIERGE_3_CLIENT_ID}}")
+	assert.Contains(suite.T(), result.Files[0].Content, "clientId: {{.APPLICATION_WAYFINDER_CONCIERGE_CLIENT_ID}}")
+	assert.Contains(suite.T(), result.Files[1].Content, "clientId: {{.APPLICATION_WAYFINDER_CONCIERGE_2_CLIENT_ID}}")
+	assert.Contains(suite.T(), result.Files[2].Content, "clientId: {{.APPLICATION_WAYFINDER_CONCIERGE_3_CLIENT_ID}}")
 	require.NotNil(suite.T(), result.EnvFile)
-	assert.Contains(suite.T(), result.EnvFile.Content, "WAYFINDER_CONCIERGE_CLIENT_ID=client-one\n")
-	assert.Contains(suite.T(), result.EnvFile.Content, "WAYFINDER_CONCIERGE_2_CLIENT_ID=client-two\n")
-	assert.Contains(suite.T(), result.EnvFile.Content, "WAYFINDER_CONCIERGE_3_CLIENT_ID=client-three\n")
+	assert.Contains(suite.T(), result.EnvFile.Content, "APPLICATION_WAYFINDER_CONCIERGE_CLIENT_ID=client-one\n")
+	assert.Contains(suite.T(), result.EnvFile.Content, "APPLICATION_WAYFINDER_CONCIERGE_2_CLIENT_ID=client-two\n")
+	assert.Contains(suite.T(), result.EnvFile.Content, "APPLICATION_WAYFINDER_CONCIERGE_3_CLIENT_ID=client-three\n")
 }
 
 // TestExportResources_MultipleApplications tests exporting multiple applications.

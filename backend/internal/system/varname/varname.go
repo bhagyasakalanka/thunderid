@@ -67,9 +67,11 @@ func sanitizeVariableName(name string) string {
 	}
 
 	sanitized := strings.Trim(result.String(), "_")
-	// A name must not start with a digit, so a leading digit is prefixed.
+	// A name must not start with a digit, so a leading digit is prefixed with an underscore. The
+	// prefix matches the exporter's own sanitizer, because a placeholder and the variable captured for
+	// it have to spell the same name.
 	if sanitized != "" && sanitized[0] >= '0' && sanitized[0] <= '9' {
-		return "V_" + sanitized
+		return "_" + sanitized
 	}
 	return sanitized
 }

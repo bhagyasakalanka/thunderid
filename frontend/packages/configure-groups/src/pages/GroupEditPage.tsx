@@ -350,10 +350,7 @@ export default function GroupEditPage(): JSX.Element {
       {/* Tab Panels */}
       <>
         <TabPanel value={activeTab} index={0}>
-          <EditGeneralSettings
-            group={group}
-            onDeleteClick={(group.isReadOnly === true || isManaged) ? undefined : () => setDeleteDialogOpen(true)}
-          />
+          <EditGeneralSettings group={group} />
         </TabPanel>
 
         <TabPanel value={activeTab} index={1}>
@@ -361,7 +358,9 @@ export default function GroupEditPage(): JSX.Element {
         </TabPanel>
 
         <TabPanel value={activeTab} index={2}>
-          <EditAdvancedSettings onDeleteClick={group.isReadOnly ? undefined : () => setDeleteDialogOpen(true)} />
+          <EditAdvancedSettings
+            onDeleteClick={group.isReadOnly === true || isManaged ? undefined : () => setDeleteDialogOpen(true)}
+          />
         </TabPanel>
       </>
 

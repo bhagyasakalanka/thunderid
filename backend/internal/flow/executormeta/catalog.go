@@ -32,20 +32,6 @@ import (
 // data-plane services those constructors need. TestCatalogMatchesRegistry in the executor package
 // holds the two together: it registers the real executors and fails on any difference.
 var catalog = map[string]providers.ExecutorMeta{
-	ExecutorNameCriteriaRevocation: {
-		SupportedFlowTypes: []providers.FlowType{"ADMINISTRATION"},
-	},
-	ExecutorNameSessionRevocation: {
-		SupportedFlowTypes: []providers.FlowType{"ADMINISTRATION"},
-	},
-	ExecutorNameUserDelete: {
-		SupportedFlowTypes: []providers.FlowType{"ADMINISTRATION"},
-	},
-	ExecutorNamePreDelete: {
-		SupportedFlowTypes: []providers.FlowType{"ADMINISTRATION"},
-		DefaultMode:        "revoke_all",
-		SupportedModes:     []string{"revoke_all"},
-	},
 	ExecutorNameAttributeCollect:             {},
 	ExecutorNameAttributeUniquenessValidator: {},
 	ExecutorNameAuthAssert: {
@@ -57,10 +43,14 @@ var catalog = map[string]providers.ExecutorMeta{
 	ExecutorNameConsent: {
 		SupportedProperties: []providers.ExecutorSupportedProperties{
 			{Property: "timeout"},
+			{Property: "failOnDeny"},
 		},
 	},
 	ExecutorNameCredentialSetter: {},
 	ExecutorNameCredentialsAuth:  {},
+	ExecutorNameCriteriaRevocation: {
+		SupportedFlowTypes: []providers.FlowType{"ADMINISTRATION"},
+	},
 	ExecutorNameEmailExecutor: {
 		SupportedModes: []string{ExecutorModeSend},
 		SupportedProperties: []providers.ExecutorSupportedProperties{
@@ -131,6 +121,9 @@ var catalog = map[string]providers.ExecutorMeta{
 		SupportedModes: []string{ExecutorModeGenerate, passkeyExecutorModeVerify},
 		SupportedProperties: []providers.ExecutorSupportedProperties{
 			{Property: propertyKeyMaxOTPAttempts},
+			{Property: "otpLength"},
+			{Property: "otpUseNumericOnly"},
+			{Property: "otpValidityPeriodSeconds"},
 		},
 	},
 	ExecutorNameOUCreation: {
@@ -150,15 +143,9 @@ var catalog = map[string]providers.ExecutorMeta{
 		},
 	},
 	ExecutorNamePasskeyAuth: {
-		SupportedModes: []string{
-			passkeyExecutorModeChallenge, passkeyExecutorModeVerify,
-			passkeyExecutorModeRegStart, passkeyExecutorModeRegFinish,
-		},
+		SupportedModes: []string{passkeyExecutorModeChallenge, passkeyExecutorModeVerify, passkeyExecutorModeRegStart, passkeyExecutorModeRegFinish},
 		SupportedProperties: []providers.ExecutorSupportedProperties{
-			{
-				Property: "relyingPartyId", IsRequired: true,
-				ApplicableModes: []string{passkeyExecutorModeChallenge, passkeyExecutorModeRegStart},
-			},
+			{Property: "relyingPartyId", IsRequired: true, ApplicableModes: []string{passkeyExecutorModeChallenge, passkeyExecutorModeRegStart}},
 			{Property: "relyingPartyName"},
 			{Property: "authenticatorSelection"},
 			{Property: "attestation"},
@@ -168,6 +155,11 @@ var catalog = map[string]providers.ExecutorMeta{
 		SupportedProperties: []providers.ExecutorSupportedProperties{
 			{Property: propertyKeyRequiredScopes},
 		},
+	},
+	ExecutorNamePreDelete: {
+		DefaultMode:        "revoke_all",
+		SupportedModes:     []string{"revoke_all"},
+		SupportedFlowTypes: []providers.FlowType{"ADMINISTRATION"},
 	},
 	ExecutorNameProvisioning: {
 		SupportedFlowTypes: []providers.FlowType{"AUTHENTICATION", "REGISTRATION", "USER_ONBOARDING"},
@@ -195,8 +187,14 @@ var catalog = map[string]providers.ExecutorMeta{
 	ExecutorNameSession: {
 		SupportedFlowTypes: []providers.FlowType{"AUTHENTICATION"},
 	},
+	ExecutorNameSessionRevocation: {
+		SupportedFlowTypes: []providers.FlowType{"ADMINISTRATION"},
+	},
 	ExecutorNameSessionSignOut: {
 		SupportedFlowTypes: []providers.FlowType{"SIGNOUT"},
+	},
+	ExecutorNameUserDelete: {
+		SupportedFlowTypes: []providers.FlowType{"ADMINISTRATION"},
 	},
 	ExecutorNameUserTypeResolver: {
 		SupportedProperties: []providers.ExecutorSupportedProperties{

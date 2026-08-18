@@ -70,7 +70,7 @@ func TestDeriveVariableNameProducesValidTemplateIdentifiers(t *testing.T) {
 		t.Fatalf("separators not collapsed: %q", got)
 	}
 	// A leading digit would be an invalid identifier.
-	if got := DeriveVariableName("", "1app", "password"); got != "V_1APP_PASSWORD" {
+	if got := DeriveVariableName("", "1app", "password"); got != "_1APP_PASSWORD" {
 		t.Fatalf("leading digit not handled: %q", got)
 	}
 

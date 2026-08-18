@@ -2,7 +2,7 @@
   "private": true,
   "name": "@thunderid/contexts",
   "version": "0.0.0",
-  "description": "Shared React contexts for ⚡️ ThunderID applications",
+  "description": "Shared React contexts for \u26a1\ufe0f ThunderID applications",
   "keywords": [
     "thunderid",
     "contexts",
@@ -73,7 +73,10 @@
     "access": "public"
   },
   "dependencies": {
+    "@tanstack/react-query": "catalog:",
+    "@thunderid/react": "catalog:",
     "lucide-react": "catalog:",
+    "react-i18next": "catalog:",
     "tslib": "catalog:"
   },
   "peerDependencies": {

@@ -77,7 +77,7 @@ export default function AgentEditPage(): JSX.Element {
   const isManagedAgent = useIsManagedResource('agent');
   const isManaged: boolean = isManagedAgent(agentId ?? '');
 
-  const {data: fetchedAgent, isLoading, error, isError, refetch} = useGetAgent(agentId ?? '');
+  const {data: fetchedAgent, isLoading, error, refetch} = useGetAgent(agentId ?? '');
   // A resource the control plane owns is read only here, and saying so on the object
   // itself is what makes every section of this page and its children treat it that way,
   // rather than each one having to learn about ownership separately.
@@ -519,7 +519,6 @@ export default function AgentEditPage(): JSX.Element {
           saveLabel={t('agents:edit.page.save', 'Save')}
           savingLabel={t('agents:edit.page.saving', 'Saving…')}
           isSaving={updateAgent.isPending}
-          saveDisabled={hasAnyValidationError || agent.isReadOnly === true}
           error={
             updateAgent.error
               ? getErrorMessage(
