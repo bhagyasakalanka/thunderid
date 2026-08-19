@@ -157,9 +157,9 @@ export default function PromoteDialog({
         )}
 
         <MissingVariablesNotice
-        missing={variableStatus?.missing ?? []}
-        missingSecrets={variableStatus?.missingSecrets ?? []}
-      />
+          missing={variableStatus?.missing ?? []}
+          missingSecrets={variableStatus?.missingSecrets ?? []}
+        />
 
         {diff && <PromotionBody diff={diff} selectedKeys={selectedKeys} onToggle={handleToggle} />}
       </DialogContent>

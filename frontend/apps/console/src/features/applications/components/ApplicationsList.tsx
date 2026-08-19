@@ -4,7 +4,7 @@
 import {QueryErrorNotice, ResourceAvatar} from '@thunderid/components';
 import {useGetApplications} from '@thunderid/configure-applications';
 import type {BasicApplication} from '@thunderid/configure-applications';
-import {useConfig,useIsManagedResource} from '@thunderid/contexts';
+import {useConfig, useIsManagedResource} from '@thunderid/contexts';
 import {useDataGridLocaleText} from '@thunderid/hooks';
 import {useLogger} from '@thunderid/logger/react';
 import {Box, Chip, IconButton, Tooltip, Typography, ListingTable, DataGrid} from '@wso2/oxygen-ui';

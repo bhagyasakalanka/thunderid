@@ -251,7 +251,7 @@ export default function RoleEditPage(): JSX.Element {
             ) : (
               <>
                 <Typography variant="h3">{editedRole.name ?? role.name}</Typography>
-                {!((role.isReadOnly === true || isManaged) || isManaged) && (
+                {!(role.isReadOnly === true || isManaged || isManaged) && (
                   <IconButton
                     size="small"
                     aria-label={t('edit.page.editName', 'Edit role name')}
@@ -303,7 +303,7 @@ export default function RoleEditPage(): JSX.Element {
                 <Typography component="span" variant="body2" color="text.secondary">
                   {effectiveDescription || t('edit.page.description.empty', 'No description')}
                 </Typography>
-                {!((role.isReadOnly === true || isManaged) || isManaged) && (
+                {!(role.isReadOnly === true || isManaged || isManaged) && (
                   <IconButton
                     size="small"
                     aria-label={t('edit.page.editDescription', 'Edit role description')}
@@ -360,12 +360,12 @@ export default function RoleEditPage(): JSX.Element {
           <EditPermissionsSettings
             permissions={editedRole.permissions ?? serverPermissions}
             onPermissionsChange={handlePermissionsChange}
-            isReadOnly={(role.isReadOnly === true || isManaged)}
+            isReadOnly={role.isReadOnly === true || isManaged}
           />
         </TabPanel>
 
         <TabPanel value={activeTab} index={2}>
-          <EditAssignmentsSettings roleId={role.id} isReadOnly={(role.isReadOnly === true || isManaged)} />
+          <EditAssignmentsSettings roleId={role.id} isReadOnly={role.isReadOnly === true || isManaged} />
         </TabPanel>
 
         <TabPanel value={activeTab} index={3}>

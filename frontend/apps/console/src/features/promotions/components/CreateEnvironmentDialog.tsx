@@ -239,8 +239,6 @@ export default function CreateEnvironmentDialog({open, onClose}: {open: boolean;
               </FormControl>
             )}
           />
-
-
         </Stack>
       </DialogContent>
       <DialogActions>

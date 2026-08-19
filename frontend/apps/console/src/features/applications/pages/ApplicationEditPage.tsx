@@ -1,7 +1,13 @@
 // Copyright 2025-2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {ManagedResourceNotice, PageLoadingAnimation, QueryErrorNotice, ResourceAvatar, UnsavedChangesBar} from '@thunderid/components';
+import {
+  ManagedResourceNotice,
+  PageLoadingAnimation,
+  QueryErrorNotice,
+  ResourceAvatar,
+  UnsavedChangesBar,
+} from '@thunderid/components';
 import {OAuth2GrantTypes, TokenEndpointAuthMethods, useGetApplication} from '@thunderid/configure-applications';
 import type {Application, OAuth2Config} from '@thunderid/configure-applications';
 import {useIsManagedResource} from '@thunderid/contexts';
@@ -465,7 +471,7 @@ export default function ApplicationEditPage() {
             ) : (
               <>
                 <Typography variant="h3">{editedApp.name ?? application.name}</Typography>
-                {!((application.isReadOnly === true || isManaged) || isManaged) && (
+                {!(application.isReadOnly === true || isManaged || isManaged) && (
                   <IconButton
                     size="small"
                     onClick={() => {
@@ -527,7 +533,7 @@ export default function ApplicationEditPage() {
                 <Typography variant="body2" color="text.secondary">
                   {editedApp.description ?? application.description ?? t('applications:edit.page.description.empty')}
                 </Typography>
-                {!((application.isReadOnly === true || isManaged) || isManaged) && (
+                {!(application.isReadOnly === true || isManaged || isManaged) && (
                   <IconButton
                     size="small"
                     onClick={() => {

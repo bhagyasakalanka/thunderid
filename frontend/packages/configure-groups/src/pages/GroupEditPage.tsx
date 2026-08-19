@@ -240,7 +240,7 @@ export default function GroupEditPage(): JSX.Element {
             ) : (
               <>
                 <Typography variant="h3">{editedGroup.name ?? group.name}</Typography>
-                {!((group.isReadOnly === true || isManaged) || isManaged) && (
+                {!(group.isReadOnly === true || isManaged || isManaged) && (
                   <IconButton
                     size="small"
                     aria-label="Edit group name"
@@ -302,7 +302,7 @@ export default function GroupEditPage(): JSX.Element {
                 <Typography variant="body2" color="text.secondary">
                   {effectiveDescription || t('edit.page.description.empty', 'No description')}
                 </Typography>
-                {!((group.isReadOnly === true || isManaged) || isManaged) && (
+                {!(group.isReadOnly === true || isManaged || isManaged) && (
                   <IconButton
                     size="small"
                     aria-label="Edit group description"

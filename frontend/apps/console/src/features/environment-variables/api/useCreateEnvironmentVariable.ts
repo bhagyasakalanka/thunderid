@@ -6,10 +6,7 @@ import {useConfig, useToast} from '@thunderid/contexts';
 import {useThunderID} from '@thunderid/react';
 import {useTranslation} from 'react-i18next';
 import EnvironmentVariableQueryKeys from '../constants/environment-variable-query-keys';
-import type {
-  CreateEnvironmentVariableRequest,
-  EnvironmentVariable,
-} from '../models/environment-variable';
+import type {CreateEnvironmentVariableRequest, EnvironmentVariable} from '../models/environment-variable';
 
 export default function useCreateEnvironmentVariable(): UseMutationResult<
   EnvironmentVariable,

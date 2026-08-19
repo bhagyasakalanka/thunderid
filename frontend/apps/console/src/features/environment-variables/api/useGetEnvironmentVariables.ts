@@ -5,10 +5,7 @@ import {useQuery, type UseQueryResult} from '@tanstack/react-query';
 import {useConfig} from '@thunderid/contexts';
 import {useThunderID} from '@thunderid/react';
 import EnvironmentVariableQueryKeys from '../constants/environment-variable-query-keys';
-import type {
-  EnvironmentVariableListParams,
-  EnvironmentVariableListResponse,
-} from '../models/environment-variable';
+import type {EnvironmentVariableListParams, EnvironmentVariableListResponse} from '../models/environment-variable';
 
 export default function useGetEnvironmentVariables(
   params?: EnvironmentVariableListParams,

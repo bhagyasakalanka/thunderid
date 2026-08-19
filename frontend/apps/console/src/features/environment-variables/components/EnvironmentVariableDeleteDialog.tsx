@@ -1,15 +1,7 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {
-  Alert,
-  Button,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogContentText,
-  DialogTitle,
-} from '@wso2/oxygen-ui';
+import {Alert, Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle} from '@wso2/oxygen-ui';
 import {type JSX} from 'react';
 import {useTranslation} from 'react-i18next';
 import useDeleteEnvironmentVariable from '../api/useDeleteEnvironmentVariable';
@@ -56,12 +48,7 @@ export default function EnvironmentVariableDeleteDialog({
         <Button onClick={onClose} disabled={deleteEnvironmentVariable.isPending}>
           {t('common:actions.cancel', 'Cancel')}
         </Button>
-        <Button
-          variant="contained"
-          color="error"
-          onClick={handleDelete}
-          disabled={deleteEnvironmentVariable.isPending}
-        >
+        <Button variant="contained" color="error" onClick={handleDelete} disabled={deleteEnvironmentVariable.isPending}>
           {deleteEnvironmentVariable.isPending
             ? t('common:status.deleting', 'Deleting...')
             : t('common:actions.delete', 'Delete')}

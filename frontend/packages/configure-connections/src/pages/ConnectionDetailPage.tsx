@@ -319,7 +319,6 @@ export default function ConnectionDetailPage(): JSX.Element | null {
                   onSecretReplacingChange={setSecretReplacing}
                 />
               </SettingsCard>
-
             </Stack>
           </TabPanel>
 

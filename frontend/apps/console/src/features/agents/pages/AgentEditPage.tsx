@@ -1,7 +1,13 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {ManagedResourceNotice, PageLoadingAnimation, QueryErrorNotice, ResourceAvatar, UnsavedChangesBar} from '@thunderid/components';
+import {
+  ManagedResourceNotice,
+  PageLoadingAnimation,
+  QueryErrorNotice,
+  ResourceAvatar,
+  UnsavedChangesBar,
+} from '@thunderid/components';
 import {useGetAgentType, useGetAgentTypes} from '@thunderid/configure-agent-types';
 import {dropNonConformingOptionalAttributes} from '@thunderid/configure-users';
 import {useIsManagedResource} from '@thunderid/contexts';
@@ -429,7 +435,7 @@ export default function AgentEditPage(): JSX.Element {
             ) : (
               <>
                 <Typography variant="h3">{editedAgent.name ?? agent.name}</Typography>
-                {!((agent.isReadOnly === true || isManaged) || isManaged) && (
+                {!(agent.isReadOnly === true || isManaged || isManaged) && (
                   <IconButton
                     size="small"
                     onClick={() => {
@@ -476,7 +482,7 @@ export default function AgentEditPage(): JSX.Element {
                     agent.description ??
                     t('agents:edit.page.description.empty', 'No description')}
                 </Typography>
-                {!((agent.isReadOnly === true || isManaged) || isManaged) && (
+                {!(agent.isReadOnly === true || isManaged || isManaged) && (
                   <IconButton
                     size="small"
                     onClick={() => {
@@ -529,7 +535,7 @@ export default function AgentEditPage(): JSX.Element {
                 )
               : undefined
           }
-          saveDisabled={hasAnyValidationError || (agent.isReadOnly === true || isManaged)}
+          saveDisabled={hasAnyValidationError || agent.isReadOnly === true || isManaged}
           onReset={() => {
             if (updateAgent.isError) {
               updateAgent.reset(); // a save error is stale once the form resets

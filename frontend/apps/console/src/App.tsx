@@ -229,10 +229,7 @@ export default function App(): JSX.Element {
                 <Route path="promotions/:envId" element={<EnvironmentDetailPage />} />
                 <Route path="promotions/:envId/secrets" element={<EnvironmentSecretsPage />} />
                 <Route path="environment-variables" element={<EnvironmentVariablesListPage />} />
-                <Route
-                  path="environment-variables/:environmentVariableId"
-                  element={<EnvironmentVariableEditPage />}
-                />
+                <Route path="environment-variables/:environmentVariableId" element={<EnvironmentVariableEditPage />} />
               </Route>
               {/* Organization Units - wrapped in OrganizationUnitProvider to preserve tree state across navigation */}
               <Route
@@ -538,16 +535,16 @@ export default function App(): JSX.Element {
                 <Route index element={<TranslationCreatePage />} />
               </Route>
               <Route
-              path="/environment-variables/create"
-              element={
-                <ProtectedRoute>
-                  <FullScreenLayout />
-                </ProtectedRoute>
-              }
-            >
-              <Route index element={<CreateEnvironmentVariablePage />} />
-            </Route>
-            <Route
+                path="/environment-variables/create"
+                element={
+                  <ProtectedRoute>
+                    <FullScreenLayout />
+                  </ProtectedRoute>
+                }
+              >
+                <Route index element={<CreateEnvironmentVariablePage />} />
+              </Route>
+              <Route
                 path={RouteConfig.translations.list()}
                 element={
                   <ProtectedRoute>
