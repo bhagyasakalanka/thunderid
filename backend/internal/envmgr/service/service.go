@@ -46,7 +46,7 @@ import (
 type ThunderClient interface {
 	Export(ctx context.Context) (thunder.ExportResult, error)
 	SecretKeys(ctx context.Context) ([]string, error)
-	EnvironmentVariables(ctx context.Context) (map[string]string, error)
+	EnvironmentVariables(ctx context.Context, envID string) (map[string]string, error)
 	Import(ctx context.Context, req thunder.ImportRequest) (*thunder.ImportResponse, error)
 }
 
@@ -399,7 +399,7 @@ func (s *Service) CaptureVersion(ctx context.Context, envID, note string) (model
 	// The control plane only lists the secrets it still holds, and it forwards a credential to the data
 	// plane rather than keeping it. The bundle is the authority on which placeholders are credentials.
 	secretKeys = mergeKeys(secretKeys, bundle.SecretVariables(exported.Resources))
-	configured, err := client.EnvironmentVariables(ctx)
+	configured, err := client.EnvironmentVariables(ctx, envID)
 	if err != nil {
 		return model.Version{}, fmt.Errorf("reading environment variables failed: %w", err)
 	}
@@ -522,7 +522,7 @@ func (s *Service) resolveVariables(ctx context.Context, env model.Environment,
 	if err != nil {
 		return values
 	}
-	live, err := client.EnvironmentVariables(ctx)
+	live, err := client.EnvironmentVariables(ctx, env.ID)
 	if err != nil {
 		return values
 	}

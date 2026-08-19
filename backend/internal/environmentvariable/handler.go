@@ -59,7 +59,12 @@ func (h *environmentVariableHandler) HandleEnvironmentVariablePostRequest(w http
 	createRequest.Key = sysutils.SanitizeString(createRequest.Key)
 	createRequest.Description = sysutils.SanitizeString(createRequest.Description)
 
-	created, svcErr := h.environmentVariableService.CreateEnvironmentVariable(ctx, *createRequest)
+	envID, failed := extractAndValidateEnvID(w, r)
+	if failed {
+		return
+	}
+
+	created, svcErr := h.environmentVariableService.CreateEnvironmentVariable(ctx, envID, *createRequest)
 	if svcErr != nil {
 		handleError(ctx, w, svcErr)
 		return
@@ -83,7 +88,12 @@ func (h *environmentVariableHandler) HandleEnvironmentVariableListRequest(w http
 		limit = serverconst.DefaultPageSize
 	}
 
-	listResponse, svcErr := h.environmentVariableService.GetEnvironmentVariableList(ctx, limit, offset)
+	envID, failed := extractAndValidateEnvID(w, r)
+	if failed {
+		return
+	}
+
+	listResponse, svcErr := h.environmentVariableService.GetEnvironmentVariableList(ctx, envID, limit, offset)
 	if svcErr != nil {
 		handleError(ctx, w, svcErr)
 		return
@@ -97,7 +107,12 @@ func (h *environmentVariableHandler) HandleEnvironmentVariableListRequest(w http
 func (h *environmentVariableHandler) HandleEnvironmentVariableResolveRequest(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	values, svcErr := h.environmentVariableService.ResolveEnvironmentVariables(ctx)
+	envID, failed := extractAndValidateEnvID(w, r)
+	if failed {
+		return
+	}
+
+	values, svcErr := h.environmentVariableService.ResolveEnvironmentVariables(ctx, envID)
 	if svcErr != nil {
 		handleError(ctx, w, svcErr)
 		return
@@ -110,12 +125,16 @@ func (h *environmentVariableHandler) HandleEnvironmentVariableResolveRequest(w h
 func (h *environmentVariableHandler) HandleEnvironmentVariableGetRequest(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
+	envID, failed := extractAndValidateEnvID(w, r)
+	if failed {
+		return
+	}
 	id, failed := extractAndValidateID(w, r)
 	if failed {
 		return
 	}
 
-	result, svcErr := h.environmentVariableService.GetEnvironmentVariable(ctx, id)
+	result, svcErr := h.environmentVariableService.GetEnvironmentVariable(ctx, envID, id)
 	if svcErr != nil {
 		handleError(ctx, w, svcErr)
 		return
@@ -130,6 +149,10 @@ func (h *environmentVariableHandler) HandleEnvironmentVariablePutRequest(w http.
 	logger := log.GetLogger().With(
 		log.String(log.LoggerKeyComponentName, environmentVariableHandlerLoggerComponentName))
 
+	envID, failed := extractAndValidateEnvID(w, r)
+	if failed {
+		return
+	}
 	id, failed := extractAndValidateID(w, r)
 	if failed {
 		return
@@ -142,7 +165,7 @@ func (h *environmentVariableHandler) HandleEnvironmentVariablePutRequest(w http.
 	}
 	updateRequest.Description = sysutils.SanitizeString(updateRequest.Description)
 
-	updated, svcErr := h.environmentVariableService.UpdateEnvironmentVariable(ctx, id, *updateRequest)
+	updated, svcErr := h.environmentVariableService.UpdateEnvironmentVariable(ctx, envID, id, *updateRequest)
 	if svcErr != nil {
 		handleError(ctx, w, svcErr)
 		return
@@ -158,12 +181,16 @@ func (h *environmentVariableHandler) HandleEnvironmentVariableDeleteRequest(w ht
 	logger := log.GetLogger().With(
 		log.String(log.LoggerKeyComponentName, environmentVariableHandlerLoggerComponentName))
 
+	envID, failed := extractAndValidateEnvID(w, r)
+	if failed {
+		return
+	}
 	id, failed := extractAndValidateID(w, r)
 	if failed {
 		return
 	}
 
-	svcErr := h.environmentVariableService.DeleteEnvironmentVariable(ctx, id)
+	svcErr := h.environmentVariableService.DeleteEnvironmentVariable(ctx, envID, id)
 	if svcErr != nil {
 		handleError(ctx, w, svcErr)
 		return
@@ -208,6 +235,21 @@ func extractAndValidateID(w http.ResponseWriter, r *http.Request) (string, bool)
 		return "", true
 	}
 	return id, false
+}
+
+// extractAndValidateEnvID reads the environment a variable belongs to from the path.
+func extractAndValidateEnvID(w http.ResponseWriter, r *http.Request) (string, bool) {
+	envID := r.PathValue("envId")
+	if envID == "" {
+		errResp := apierror.ErrorResponse{
+			Code:        ErrorInvalidEnvironmentVariableRequest.Code,
+			Message:     ErrorInvalidEnvironmentVariableRequest.Error,
+			Description: ErrorInvalidEnvironmentVariableRequest.ErrorDescription,
+		}
+		sysutils.WriteErrorResponse(r.Context(), w, http.StatusBadRequest, errResp)
+		return "", true
+	}
+	return envID, false
 }
 
 // writeParseError writes a validation or parse-failure response for a malformed request body.

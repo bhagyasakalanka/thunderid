@@ -52,21 +52,29 @@ CREATE TABLE "ENVIRONMENT_VERSION" (
         ON DELETE CASCADE
 );
 
--- Deployment-scoped non-secret environment variables. KEY is the declarative placeholder the value
--- resolves (e.g. MY_APP_REDIRECT_URL); VALUE is stored in plaintext because it carries no
+-- Non-secret environment variables, held per environment. KEY is the declarative placeholder the
+-- value resolves (e.g. MY_APP_REDIRECT_URL); VALUE is stored in plaintext because it carries no
 -- confidential material.
+--
+-- A variable belongs to one environment of the organization, because its value is a property of the
+-- deployment it is applied to: a redirect URL differs between dev and prod even though the
+-- configuration referring to it is the same. Deleting an environment takes its variables with it.
 CREATE TABLE "ENVIRONMENT_VARIABLE" (
     DEPLOYMENT_ID VARCHAR(255) NOT NULL,
     ID            VARCHAR(36)  PRIMARY KEY,
+    ENV_ID        VARCHAR(36)  NOT NULL,
     KEY           VARCHAR(255) NOT NULL,
     VALUE         TEXT         NOT NULL,
     DESCRIPTION   VARCHAR(255),
     CREATED_AT    TEXT         DEFAULT (datetime('now')),
     UPDATED_AT    TEXT         DEFAULT (datetime('now')),
-    CONSTRAINT unique_environment_variable_key UNIQUE (DEPLOYMENT_ID, KEY)
+    CONSTRAINT unique_environment_variable_key UNIQUE (DEPLOYMENT_ID, ENV_ID, KEY),
+    CONSTRAINT fk_environment_variable_environment
+        FOREIGN KEY (DEPLOYMENT_ID, ENV_ID) REFERENCES "ENVIRONMENT" (DEPLOYMENT_ID, ID)
+        ON DELETE CASCADE
 );
 
-CREATE INDEX idx_environment_variable_deployment ON "ENVIRONMENT_VARIABLE" (DEPLOYMENT_ID);
+CREATE INDEX idx_environment_variable_environment ON "ENVIRONMENT_VARIABLE" (DEPLOYMENT_ID, ENV_ID);
 
 -- Work queued for a Data Plane, and what it answered.
 --

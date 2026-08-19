@@ -37,17 +37,19 @@ var environmentVariableKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$
 
 // EnvironmentVariableServiceInterface defines environment variable management operations.
 type EnvironmentVariableServiceInterface interface {
-	CreateEnvironmentVariable(ctx context.Context,
+	CreateEnvironmentVariable(ctx context.Context, envID string,
 		request CreateEnvironmentVariableRequest) (*EnvironmentVariable, *tidcommon.ServiceError)
-	GetEnvironmentVariable(ctx context.Context, id string) (*EnvironmentVariable, *tidcommon.ServiceError)
-	GetEnvironmentVariableList(ctx context.Context, limit,
+	GetEnvironmentVariable(ctx context.Context, envID,
+		id string) (*EnvironmentVariable, *tidcommon.ServiceError)
+	GetEnvironmentVariableList(ctx context.Context, envID string, limit,
 		offset int) (*EnvironmentVariableListResponse, *tidcommon.ServiceError)
-	UpdateEnvironmentVariable(ctx context.Context, id string,
+	UpdateEnvironmentVariable(ctx context.Context, envID, id string,
 		request UpdateEnvironmentVariableRequest) (*EnvironmentVariable, *tidcommon.ServiceError)
-	DeleteEnvironmentVariable(ctx context.Context, id string) *tidcommon.ServiceError
-	// ResolveEnvironmentVariables returns every key mapped to its value. Used by the config
-	// export/apply tooling to substitute declarative placeholders for a Data Plane.
-	ResolveEnvironmentVariables(ctx context.Context) (map[string]string, *tidcommon.ServiceError)
+	DeleteEnvironmentVariable(ctx context.Context, envID, id string) *tidcommon.ServiceError
+	// ResolveEnvironmentVariables returns every key mapped to its value for one environment. Used by
+	// the config export/apply tooling to substitute declarative placeholders for a Data Plane.
+	ResolveEnvironmentVariables(ctx context.Context,
+		envID string) (map[string]string, *tidcommon.ServiceError)
 }
 
 // environmentVariableService is the default implementation of EnvironmentVariableServiceInterface.
@@ -61,13 +63,13 @@ func newEnvironmentVariableService(store environmentVariableStoreInterface) Envi
 }
 
 // CreateEnvironmentVariable validates and stores a new environment variable.
-func (s *environmentVariableService) CreateEnvironmentVariable(ctx context.Context,
+func (s *environmentVariableService) CreateEnvironmentVariable(ctx context.Context, envID string,
 	request CreateEnvironmentVariableRequest) (*EnvironmentVariable, *tidcommon.ServiceError) {
 	if !environmentVariableKeyPattern.MatchString(request.Key) {
 		return nil, &ErrorInvalidEnvironmentVariableRequest
 	}
 
-	existing, err := s.store.GetEnvironmentVariableByKey(ctx, request.Key)
+	existing, err := s.store.GetEnvironmentVariableByKey(ctx, envID, request.Key)
 	if err != nil && !errors.Is(err, errEnvironmentVariableNotFound) {
 		return nil, s.internalError(ctx, "failed to check environment variable key uniqueness", err)
 	}
@@ -86,7 +88,7 @@ func (s *environmentVariableService) CreateEnvironmentVariable(ctx context.Conte
 		Value:       request.Value,
 		Description: request.Description,
 	}
-	if err := s.store.CreateEnvironmentVariable(ctx, created); err != nil {
+	if err := s.store.CreateEnvironmentVariable(ctx, envID, created); err != nil {
 		return nil, s.internalError(ctx, "failed to create environment variable", err)
 	}
 
@@ -95,8 +97,8 @@ func (s *environmentVariableService) CreateEnvironmentVariable(ctx context.Conte
 
 // GetEnvironmentVariable returns an environment variable by id, including its value.
 func (s *environmentVariableService) GetEnvironmentVariable(ctx context.Context,
-	id string) (*EnvironmentVariable, *tidcommon.ServiceError) {
-	stored, err := s.store.GetEnvironmentVariableByID(ctx, id)
+	envID, id string) (*EnvironmentVariable, *tidcommon.ServiceError) {
+	stored, err := s.store.GetEnvironmentVariableByID(ctx, envID, id)
 	if err != nil {
 		if errors.Is(err, errEnvironmentVariableNotFound) {
 			return nil, &ErrorEnvironmentVariableNotFound
@@ -107,14 +109,14 @@ func (s *environmentVariableService) GetEnvironmentVariable(ctx context.Context,
 }
 
 // GetEnvironmentVariableList returns a paginated list of environment variables.
-func (s *environmentVariableService) GetEnvironmentVariableList(ctx context.Context, limit,
-	offset int) (*EnvironmentVariableListResponse, *tidcommon.ServiceError) {
-	total, err := s.store.GetEnvironmentVariableCount(ctx)
+func (s *environmentVariableService) GetEnvironmentVariableList(ctx context.Context, envID string,
+	limit, offset int) (*EnvironmentVariableListResponse, *tidcommon.ServiceError) {
+	total, err := s.store.GetEnvironmentVariableCount(ctx, envID)
 	if err != nil {
 		return nil, s.internalError(ctx, "failed to count environment variables", err)
 	}
 
-	variables, err := s.store.GetEnvironmentVariableList(ctx, limit, offset)
+	variables, err := s.store.GetEnvironmentVariableList(ctx, envID, limit, offset)
 	if err != nil {
 		return nil, s.internalError(ctx, "failed to list environment variables", err)
 	}
@@ -127,22 +129,23 @@ func (s *environmentVariableService) GetEnvironmentVariableList(ctx context.Cont
 }
 
 // UpdateEnvironmentVariable updates an environment variable's value and description.
-func (s *environmentVariableService) UpdateEnvironmentVariable(ctx context.Context, id string,
+func (s *environmentVariableService) UpdateEnvironmentVariable(ctx context.Context, envID, id string,
 	request UpdateEnvironmentVariableRequest) (*EnvironmentVariable, *tidcommon.ServiceError) {
-	if err := s.store.UpdateEnvironmentVariableByID(ctx, id, request.Description, request.Value); err != nil {
+	err := s.store.UpdateEnvironmentVariableByID(ctx, envID, id, request.Description, request.Value)
+	if err != nil {
 		if errors.Is(err, errEnvironmentVariableNotFound) {
 			return nil, &ErrorEnvironmentVariableNotFound
 		}
 		return nil, s.internalError(ctx, "failed to update environment variable", err)
 	}
 
-	return s.GetEnvironmentVariable(ctx, id)
+	return s.GetEnvironmentVariable(ctx, envID, id)
 }
 
 // DeleteEnvironmentVariable removes an environment variable by id.
 func (s *environmentVariableService) DeleteEnvironmentVariable(ctx context.Context,
-	id string) *tidcommon.ServiceError {
-	if err := s.store.DeleteEnvironmentVariableByID(ctx, id); err != nil {
+	envID, id string) *tidcommon.ServiceError {
+	if err := s.store.DeleteEnvironmentVariableByID(ctx, envID, id); err != nil {
 		if errors.Is(err, errEnvironmentVariableNotFound) {
 			return &ErrorEnvironmentVariableNotFound
 		}
@@ -151,10 +154,10 @@ func (s *environmentVariableService) DeleteEnvironmentVariable(ctx context.Conte
 	return nil
 }
 
-// ResolveEnvironmentVariables returns every key mapped to its value for the deployment.
-func (s *environmentVariableService) ResolveEnvironmentVariables(
-	ctx context.Context) (map[string]string, *tidcommon.ServiceError) {
-	values, err := s.store.GetEnvironmentVariableValues(ctx)
+// ResolveEnvironmentVariables returns every key mapped to its value for one environment.
+func (s *environmentVariableService) ResolveEnvironmentVariables(ctx context.Context,
+	envID string) (map[string]string, *tidcommon.ServiceError) {
+	values, err := s.store.GetEnvironmentVariableValues(ctx, envID)
 	if err != nil {
 		return nil, s.internalError(ctx, "failed to read environment variable values", err)
 	}

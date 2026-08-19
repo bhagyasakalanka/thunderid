@@ -34,9 +34,12 @@ func Initialize(mux *http.ServeMux) (EnvironmentVariableServiceInterface, error)
 }
 
 // registerEnvironmentVariableRoutes registers the CRUD routes for the environment variable handler
-// under /environment-variables.
+// under one environment.
+//
+// A variable belongs to an environment, not to the organization: its value is a property of the
+// deployment it is applied to, so the environment is named in the path rather than inferred.
 func registerEnvironmentVariableRoutes(mux *http.ServeMux, h *environmentVariableHandler) {
-	const basePath = "/environment-variables"
+	const basePath = "/environments/{envId}/variables"
 
 	opts1 := middleware.CORSOptions{
 		AllowedMethods:   []string{"GET", "POST"},

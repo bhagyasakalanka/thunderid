@@ -30,29 +30,45 @@ import (
 )
 
 // fakeStore is an in-memory environmentVariableStoreInterface.
+//
+// It keys rows by environment, because that is the isolation the real store enforces: two
+// environments may each hold a variable under the same key, and neither may read the other's.
 type fakeStore struct {
 	byID  map[string]EnvironmentVariable
+	envOf map[string]string
 	order []string
 }
 
 func newFakeStore() *fakeStore {
-	return &fakeStore{byID: map[string]EnvironmentVariable{}}
+	return &fakeStore{byID: map[string]EnvironmentVariable{}, envOf: map[string]string{}}
 }
 
-func (s *fakeStore) CreateEnvironmentVariable(_ context.Context, ev EnvironmentVariable) error {
+// idsIn lists the ids belonging to one environment, in insertion order.
+func (s *fakeStore) idsIn(envID string) []string {
+	out := []string{}
+	for _, id := range s.order {
+		if s.envOf[id] == envID {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+func (s *fakeStore) CreateEnvironmentVariable(_ context.Context, envID string, ev EnvironmentVariable) error {
 	s.byID[ev.ID] = ev
+	s.envOf[ev.ID] = envID
 	s.order = append(s.order, ev.ID)
 	return nil
 }
 
-func (s *fakeStore) GetEnvironmentVariableCount(_ context.Context) (int, error) {
-	return len(s.byID), nil
+func (s *fakeStore) GetEnvironmentVariableCount(_ context.Context, envID string) (int, error) {
+	return len(s.idsIn(envID)), nil
 }
 
-func (s *fakeStore) GetEnvironmentVariableList(_ context.Context, limit,
+func (s *fakeStore) GetEnvironmentVariableList(_ context.Context, envID string, limit,
 	offset int) ([]EnvironmentVariable, error) {
 	out := []EnvironmentVariable{}
-	for i, id := range s.order {
+	for i, id := range s.idsIn(envID) {
 		if i < offset {
 			continue
 		}
@@ -64,26 +80,27 @@ func (s *fakeStore) GetEnvironmentVariableList(_ context.Context, limit,
 	return out, nil
 }
 
-func (s *fakeStore) GetEnvironmentVariableByID(_ context.Context, id string) (EnvironmentVariable, error) {
+func (s *fakeStore) GetEnvironmentVariableByID(_ context.Context, envID, id string) (EnvironmentVariable, error) {
 	ev, ok := s.byID[id]
-	if !ok {
+	if !ok || s.envOf[id] != envID {
 		return EnvironmentVariable{}, errEnvironmentVariableNotFound
 	}
 	return ev, nil
 }
 
-func (s *fakeStore) GetEnvironmentVariableByKey(_ context.Context, key string) (EnvironmentVariable, error) {
-	for _, ev := range s.byID {
-		if ev.Key == key {
-			return ev, nil
+func (s *fakeStore) GetEnvironmentVariableByKey(_ context.Context, envID, key string) (EnvironmentVariable, error) {
+	for _, id := range s.idsIn(envID) {
+		if s.byID[id].Key == key {
+			return s.byID[id], nil
 		}
 	}
 	return EnvironmentVariable{}, errEnvironmentVariableNotFound
 }
 
-func (s *fakeStore) UpdateEnvironmentVariableByID(_ context.Context, id, description, value string) error {
+func (s *fakeStore) UpdateEnvironmentVariableByID(_ context.Context, envID, id, description,
+	value string) error {
 	ev, ok := s.byID[id]
-	if !ok {
+	if !ok || s.envOf[id] != envID {
 		return errEnvironmentVariableNotFound
 	}
 	ev.Description = description
@@ -92,17 +109,18 @@ func (s *fakeStore) UpdateEnvironmentVariableByID(_ context.Context, id, descrip
 	return nil
 }
 
-func (s *fakeStore) DeleteEnvironmentVariableByID(_ context.Context, id string) error {
-	if _, ok := s.byID[id]; !ok {
+func (s *fakeStore) DeleteEnvironmentVariableByID(_ context.Context, envID, id string) error {
+	if _, ok := s.byID[id]; !ok || s.envOf[id] != envID {
 		return errEnvironmentVariableNotFound
 	}
 	delete(s.byID, id)
+	delete(s.envOf, id)
 	return nil
 }
 
-func (s *fakeStore) GetEnvironmentVariableValues(_ context.Context) (map[string]string, error) {
+func (s *fakeStore) GetEnvironmentVariableValues(_ context.Context, envID string) (map[string]string, error) {
 	out := map[string]string{}
-	for _, id := range s.order {
+	for _, id := range s.idsIn(envID) {
 		ev := s.byID[id]
 		out[ev.Key] = ev.Value
 	}
@@ -113,36 +131,36 @@ func (s *fakeStore) GetEnvironmentVariableValues(_ context.Context) (map[string]
 // service must surface the generic internal error.
 type failingStore struct{}
 
-func (s *failingStore) CreateEnvironmentVariable(_ context.Context, _ EnvironmentVariable) error {
+func (s *failingStore) CreateEnvironmentVariable(_ context.Context, _ string, _ EnvironmentVariable) error {
 	return errStoreFailure
 }
 
-func (s *failingStore) GetEnvironmentVariableCount(_ context.Context) (int, error) {
+func (s *failingStore) GetEnvironmentVariableCount(_ context.Context, _ string) (int, error) {
 	return 0, errStoreFailure
 }
 
-func (s *failingStore) GetEnvironmentVariableList(_ context.Context, _,
+func (s *failingStore) GetEnvironmentVariableList(_ context.Context, _ string, _,
 	_ int) ([]EnvironmentVariable, error) {
 	return nil, errStoreFailure
 }
 
-func (s *failingStore) GetEnvironmentVariableByID(_ context.Context, _ string) (EnvironmentVariable, error) {
+func (s *failingStore) GetEnvironmentVariableByID(_ context.Context, _, _ string) (EnvironmentVariable, error) {
 	return EnvironmentVariable{}, errStoreFailure
 }
 
-func (s *failingStore) GetEnvironmentVariableByKey(_ context.Context, _ string) (EnvironmentVariable, error) {
+func (s *failingStore) GetEnvironmentVariableByKey(_ context.Context, _, _ string) (EnvironmentVariable, error) {
 	return EnvironmentVariable{}, errStoreFailure
 }
 
-func (s *failingStore) UpdateEnvironmentVariableByID(_ context.Context, _, _, _ string) error {
+func (s *failingStore) UpdateEnvironmentVariableByID(_ context.Context, _, _, _, _ string) error {
 	return errStoreFailure
 }
 
-func (s *failingStore) DeleteEnvironmentVariableByID(_ context.Context, _ string) error {
+func (s *failingStore) DeleteEnvironmentVariableByID(_ context.Context, _, _ string) error {
 	return errStoreFailure
 }
 
-func (s *failingStore) GetEnvironmentVariableValues(_ context.Context) (map[string]string, error) {
+func (s *failingStore) GetEnvironmentVariableValues(_ context.Context, _ string) (map[string]string, error) {
 	return nil, errStoreFailure
 }
 
@@ -196,13 +214,13 @@ func TestCreateEnvironmentVariable(t *testing.T) {
 			ctx := context.Background()
 
 			if test.existingKey != "" {
-				_, svcErr := svc.CreateEnvironmentVariable(ctx, CreateEnvironmentVariableRequest{
+				_, svcErr := svc.CreateEnvironmentVariable(ctx, "env-1", CreateEnvironmentVariableRequest{
 					Key: test.existingKey, Value: "first",
 				})
 				require.Nil(t, svcErr)
 			}
 
-			created, svcErr := svc.CreateEnvironmentVariable(ctx, test.request)
+			created, svcErr := svc.CreateEnvironmentVariable(ctx, "env-1", test.request)
 
 			if test.expectedErr != "" {
 				require.NotNil(t, svcErr)
@@ -238,14 +256,14 @@ func TestGetEnvironmentVariable(t *testing.T) {
 
 			id := missingID
 			if test.create {
-				created, svcErr := svc.CreateEnvironmentVariable(ctx, CreateEnvironmentVariableRequest{
+				created, svcErr := svc.CreateEnvironmentVariable(ctx, "env-1", CreateEnvironmentVariableRequest{
 					Key: "REDIRECT_URL", Value: "https://app/cb", Description: "callback",
 				})
 				require.Nil(t, svcErr)
 				id = created.ID
 			}
 
-			got, svcErr := svc.GetEnvironmentVariable(ctx, id)
+			got, svcErr := svc.GetEnvironmentVariable(ctx, "env-1", id)
 
 			if test.expectedErr != "" {
 				require.NotNil(t, svcErr)
@@ -282,13 +300,13 @@ func TestGetEnvironmentVariableList(t *testing.T) {
 			ctx := context.Background()
 
 			for _, key := range test.keys {
-				_, svcErr := svc.CreateEnvironmentVariable(ctx, CreateEnvironmentVariableRequest{
+				_, svcErr := svc.CreateEnvironmentVariable(ctx, "env-1", CreateEnvironmentVariableRequest{
 					Key: key, Value: "v" + key,
 				})
 				require.Nil(t, svcErr)
 			}
 
-			resp, svcErr := svc.GetEnvironmentVariableList(ctx, test.limit, test.offset)
+			resp, svcErr := svc.GetEnvironmentVariableList(ctx, "env-1", test.limit, test.offset)
 
 			require.Nil(t, svcErr)
 			assert.Equal(t, test.expectedTotal, resp.TotalResults)
@@ -324,14 +342,14 @@ func TestUpdateEnvironmentVariable(t *testing.T) {
 
 			id := missingID
 			if test.create {
-				created, svcErr := svc.CreateEnvironmentVariable(ctx, CreateEnvironmentVariableRequest{
+				created, svcErr := svc.CreateEnvironmentVariable(ctx, "env-1", CreateEnvironmentVariableRequest{
 					Key: "REDIRECT_URL", Value: "https://app/old",
 				})
 				require.Nil(t, svcErr)
 				id = created.ID
 			}
 
-			updated, svcErr := svc.UpdateEnvironmentVariable(ctx, id, test.request)
+			updated, svcErr := svc.UpdateEnvironmentVariable(ctx, "env-1", id, test.request)
 
 			if test.expectedErr != "" {
 				require.NotNil(t, svcErr)
@@ -364,14 +382,14 @@ func TestDeleteEnvironmentVariable(t *testing.T) {
 
 			id := missingID
 			if test.create {
-				created, svcErr := svc.CreateEnvironmentVariable(ctx, CreateEnvironmentVariableRequest{
+				created, svcErr := svc.CreateEnvironmentVariable(ctx, "env-1", CreateEnvironmentVariableRequest{
 					Key: "REDIRECT_URL", Value: "v",
 				})
 				require.Nil(t, svcErr)
 				id = created.ID
 			}
 
-			svcErr := svc.DeleteEnvironmentVariable(ctx, id)
+			svcErr := svc.DeleteEnvironmentVariable(ctx, "env-1", id)
 
 			if test.expectedErr != "" {
 				require.NotNil(t, svcErr)
@@ -380,7 +398,7 @@ func TestDeleteEnvironmentVariable(t *testing.T) {
 			}
 
 			require.Nil(t, svcErr)
-			_, svcErr = svc.GetEnvironmentVariable(ctx, id)
+			_, svcErr = svc.GetEnvironmentVariable(ctx, "env-1", id)
 			require.NotNil(t, svcErr)
 			assert.Equal(t, ErrorEnvironmentVariableNotFound.Code, svcErr.Code)
 		})
@@ -407,13 +425,13 @@ func TestResolveEnvironmentVariables(t *testing.T) {
 			ctx := context.Background()
 
 			for key, value := range test.created {
-				_, svcErr := svc.CreateEnvironmentVariable(ctx, CreateEnvironmentVariableRequest{
+				_, svcErr := svc.CreateEnvironmentVariable(ctx, "env-1", CreateEnvironmentVariableRequest{
 					Key: key, Value: value,
 				})
 				require.Nil(t, svcErr)
 			}
 
-			values, svcErr := svc.ResolveEnvironmentVariables(ctx)
+			values, svcErr := svc.ResolveEnvironmentVariables(ctx, "env-1")
 
 			require.Nil(t, svcErr)
 			assert.Equal(t, test.expected, values)
@@ -429,41 +447,43 @@ func TestServiceStoreFailuresReturnInternalError(t *testing.T) {
 		{
 			name: "Create",
 			call: func(ctx context.Context, svc EnvironmentVariableServiceInterface) *tidcommon.ServiceError {
-				_, svcErr := svc.CreateEnvironmentVariable(ctx, CreateEnvironmentVariableRequest{Key: "K", Value: "v"})
+				_, svcErr := svc.CreateEnvironmentVariable(ctx, "env-1",
+					CreateEnvironmentVariableRequest{Key: "K", Value: "v"})
 				return svcErr
 			},
 		},
 		{
 			name: "Get",
 			call: func(ctx context.Context, svc EnvironmentVariableServiceInterface) *tidcommon.ServiceError {
-				_, svcErr := svc.GetEnvironmentVariable(ctx, missingID)
+				_, svcErr := svc.GetEnvironmentVariable(ctx, "env-1", missingID)
 				return svcErr
 			},
 		},
 		{
 			name: "List",
 			call: func(ctx context.Context, svc EnvironmentVariableServiceInterface) *tidcommon.ServiceError {
-				_, svcErr := svc.GetEnvironmentVariableList(ctx, 10, 0)
+				_, svcErr := svc.GetEnvironmentVariableList(ctx, "env-1", 10, 0)
 				return svcErr
 			},
 		},
 		{
 			name: "Update",
 			call: func(ctx context.Context, svc EnvironmentVariableServiceInterface) *tidcommon.ServiceError {
-				_, svcErr := svc.UpdateEnvironmentVariable(ctx, missingID, UpdateEnvironmentVariableRequest{Value: "v"})
+				_, svcErr := svc.UpdateEnvironmentVariable(ctx, "env-1", missingID,
+					UpdateEnvironmentVariableRequest{Value: "v"})
 				return svcErr
 			},
 		},
 		{
 			name: "Delete",
 			call: func(ctx context.Context, svc EnvironmentVariableServiceInterface) *tidcommon.ServiceError {
-				return svc.DeleteEnvironmentVariable(ctx, missingID)
+				return svc.DeleteEnvironmentVariable(ctx, "env-1", missingID)
 			},
 		},
 		{
 			name: "Resolve",
 			call: func(ctx context.Context, svc EnvironmentVariableServiceInterface) *tidcommon.ServiceError {
-				_, svcErr := svc.ResolveEnvironmentVariables(ctx)
+				_, svcErr := svc.ResolveEnvironmentVariables(ctx, "env-1")
 				return svcErr
 			},
 		},
@@ -478,5 +498,49 @@ func TestServiceStoreFailuresReturnInternalError(t *testing.T) {
 			require.NotNil(t, svcErr)
 			assert.Equal(t, ErrorInternalServer.Code, svcErr.Code)
 		})
+	}
+}
+
+// The same key means different things in different environments: a redirect URL points at dev in one
+// and at prod in the next. Keys are therefore unique within an environment, not across the
+// organization, and one environment's variables are invisible to another.
+func TestEnvironmentVariablesAreIsolatedPerEnvironment(t *testing.T) {
+	ctx := context.Background()
+	svc := newEnvironmentVariableService(newFakeStore())
+
+	dev, svcErr := svc.CreateEnvironmentVariable(ctx, "env-dev", CreateEnvironmentVariableRequest{
+		Key: "APP_REDIRECT_URL", Value: "https://dev.example.com/callback",
+	})
+	if svcErr != nil {
+		t.Fatalf("create in dev: %v", svcErr)
+	}
+	prod, svcErr := svc.CreateEnvironmentVariable(ctx, "env-prod", CreateEnvironmentVariableRequest{
+		Key: "APP_REDIRECT_URL", Value: "https://prod.example.com/callback",
+	})
+	if svcErr != nil {
+		t.Fatalf("the same key must be allowed in another environment: %v", svcErr)
+	}
+
+	values, svcErr := svc.ResolveEnvironmentVariables(ctx, "env-dev")
+	if svcErr != nil {
+		t.Fatalf("resolve dev: %v", svcErr)
+	}
+	if values["APP_REDIRECT_URL"] != "https://dev.example.com/callback" {
+		t.Fatalf("dev must resolve its own value, got %q", values["APP_REDIRECT_URL"])
+	}
+
+	// A second variable under the same key in the same environment is still a conflict.
+	if _, svcErr := svc.CreateEnvironmentVariable(ctx, "env-dev", CreateEnvironmentVariableRequest{
+		Key: "APP_REDIRECT_URL", Value: "https://other.example.com/callback",
+	}); svcErr == nil {
+		t.Fatal("a duplicate key within one environment must be refused")
+	}
+
+	// Neither environment can reach the other's variable by id.
+	if _, svcErr := svc.GetEnvironmentVariable(ctx, "env-dev", prod.ID); svcErr == nil {
+		t.Fatal("dev must not be able to read prod's variable")
+	}
+	if _, svcErr := svc.GetEnvironmentVariable(ctx, "env-prod", dev.ID); svcErr == nil {
+		t.Fatal("prod must not be able to read dev's variable")
 	}
 }

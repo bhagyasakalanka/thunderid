@@ -60,20 +60,21 @@ const (
 //
 // Only the Console is treated this way. Every other resource is configuration an operator wrote, and
 // where its URLs should point is their decision, not this server's.
-func (s *environmentSeeder) setConsoleURLsForDataPlane(ctx context.Context, deploymentID,
+func (s *environmentSeeder) setConsoleURLsForDataPlane(ctx context.Context, deploymentID, envID,
 	dataPlaneURL string) error {
 	if s.envVarService == nil {
 		return nil
 	}
 	console := strings.TrimSuffix(strings.TrimSpace(dataPlaneURL), "/") + "/console"
-	scoped := deployment.WithID(ctx, deploymentID)
+	// Variables sit in the organization's partition, alongside the environments they belong to.
+	scoped := deployment.WithID(ctx, organizationOf(deploymentID))
 
 	for key, value := range map[string]string{
 		consoleURLVariable: console,
 		// An array placeholder is read as a JSON array when it is not supplied as indexed values.
 		consoleRedirectURIsVariable: fmt.Sprintf("[%q]", console),
 	} {
-		_, svcErr := s.envVarService.CreateEnvironmentVariable(scoped,
+		_, svcErr := s.envVarService.CreateEnvironmentVariable(scoped, envID,
 			environmentvariable.CreateEnvironmentVariableRequest{
 				Key:         key,
 				Value:       value,
@@ -105,10 +106,20 @@ func (s *environmentSeeder) RegisterEnvironment(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	if err := s.setConsoleURLsForDataPlane(ctx, in.DeploymentID, in.DataPlane.BaseURL); err != nil {
+	if err := s.setConsoleURLsForDataPlane(ctx, in.DeploymentID, env.ID, in.DataPlane.BaseURL); err != nil {
 		return nil, err
 	}
 	return &tenant.EnvironmentSummary{
 		ID: env.ID, Name: env.Name, Rank: env.Rank, DataPlaneToken: env.DataPlaneToken,
 	}, nil
+}
+
+// organizationOf is the organization a deployment id belongs to. A deployment id names an environment
+// as "<org>:<env>", and an organization's environments and their variables share one partition.
+func organizationOf(deploymentID string) string {
+	org, _, found := strings.Cut(deploymentID, ":")
+	if !found || strings.TrimSpace(org) == "" {
+		return deploymentID
+	}
+	return org
 }

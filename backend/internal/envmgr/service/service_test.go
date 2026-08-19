@@ -62,7 +62,7 @@ func (f *fakeClient) SecretKeys(context.Context) ([]string, error) {
 	return keys, nil
 }
 
-func (f *fakeClient) EnvironmentVariables(context.Context) (map[string]string, error) {
+func (f *fakeClient) EnvironmentVariables(context.Context, string) (map[string]string, error) {
 	return f.envVars, nil
 }
 

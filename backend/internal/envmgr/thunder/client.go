@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -194,13 +195,13 @@ type environmentVariablesResponse struct {
 	Variables map[string]string `json:"variables"`
 }
 
-// EnvironmentVariables returns the non-secret variable values configured on the control plane, such
-// as redirect URLs. These are authoritative for an apply: they are what the operator set for this
-// deployment, so they override whatever the export happened to emit. A 403 or 404 is treated as an
+// EnvironmentVariables returns the non-secret variable values configured for one environment, such as
+// redirect URLs. These are authoritative for an apply: they are what the operator set for that
+// environment, so they override whatever the export happened to emit. A 403 or 404 is treated as an
 // empty map so capture still works against servers without the module.
-func (c *Client) EnvironmentVariables(ctx context.Context) (map[string]string, error) {
+func (c *Client) EnvironmentVariables(ctx context.Context, envID string) (map[string]string, error) {
 	var resp environmentVariablesResponse
-	err := c.do(ctx, http.MethodGet, "/environment-variables/resolve", nil, &resp)
+	err := c.do(ctx, http.MethodGet, "/environments/"+url.PathEscape(envID)+"/variables/resolve", nil, &resp)
 	if err != nil {
 		if isStatus(err, http.StatusForbidden) || isStatus(err, http.StatusNotFound) {
 			return map[string]string{}, nil
