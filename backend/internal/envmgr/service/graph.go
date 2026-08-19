@@ -212,21 +212,3 @@ func sortEnvironments(envs []model.Environment) {
 		return envs[i].Name < envs[j].Name
 	})
 }
-
-// isPromotionFed reports whether any environment promotes into this one, explicitly or by rank.
-//
-// Such an environment's configuration is authored elsewhere and arrives by promotion, so reading a
-// control plane for it would record something that is not its own state.
-func isPromotionFed(envs []model.Environment, envID string) bool {
-	for from, targets := range buildAdjacency(envs) {
-		if from == envID {
-			continue
-		}
-		for _, to := range targets {
-			if to == envID {
-				return true
-			}
-		}
-	}
-	return false
-}

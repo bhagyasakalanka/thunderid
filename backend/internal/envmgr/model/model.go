@@ -56,18 +56,11 @@ type DataPlaneStatus struct {
 	LastSeen  time.Time `json:"lastSeen,omitempty"`
 }
 
-// Source identifies a control plane that config is captured from.
-type Source struct {
-	BaseURL string `json:"baseUrl"`
-	// DeploymentID is the tenant this environment's configuration lives in. It is fixed when the
-	// environment is registered and there is no way to change it afterwards, because it is the sole
-	// authority for which tenant a promotion into this environment may write to.
-	DeploymentID       string `json:"deploymentId,omitempty"`
-	InsecureSkipVerify bool   `json:"insecureSkipVerify,omitempty"`
-}
-
-// Environment is a node in the promotion graph, bound to one data-plane target and an optional
-// control-plane source that config is captured from.
+// Environment is a node in the promotion graph, bound to one data-plane target.
+//
+// An environment is a resource of an organization rather than a deployment of its own: the
+// organization has a single workspace that every environment captures from, and an environment holds
+// the versions, variables and secrets that reach its own data plane.
 type Environment struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
@@ -80,7 +73,6 @@ type Environment struct {
 	// linear chain working without declaring edges.
 	PromotesTo []string `json:"promotesTo,omitempty"`
 	Target     Target   `json:"target"`
-	Source     *Source  `json:"source,omitempty"`
 	// Excluded lists resource keys a user chose not to promote into this environment. The choice is
 	// remembered rather than asked again on every run: a resource held back once stays held back until
 	// it is deliberately selected again, at which point it is dropped from this list and promotes from
@@ -88,12 +80,6 @@ type Environment struct {
 	Excluded []string `json:"excluded,omitempty"`
 	// AppliedSeq is the version sequence last applied to Target (0 when nothing has been applied).
 	AppliedSeq int `json:"appliedSeq"`
-	// ControlPlaneSeq is the version sequence last written into this environment's control plane
-	// tenant (0 when this service has written none).
-	//
-	// It is tracked separately from AppliedSeq because the two legitimately diverge: writing a version
-	// to the control plane leaves the data plane alone, and applying leaves the control plane alone.
-	// Comparing against the wrong one is what makes a later write compute the wrong changes.
 	// SecretNames is what this environment's data plane last reported holding, and SecretNamesAt when
 	// it said so. It is recorded because only the control plane pod holding that data plane's
 	// connection can ask: any other pod answers from this instead of failing. Names only, never
@@ -101,9 +87,8 @@ type Environment struct {
 	SecretNames   []string  `json:"secretNames,omitempty"`
 	SecretNamesAt time.Time `json:"secretNamesAt,omitempty"`
 
-	ControlPlaneSeq int       `json:"controlPlaneSeq"`
-	CreatedAt       time.Time `json:"createdAt"`
-	UpdatedAt       time.Time `json:"updatedAt"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // Version is an immutable snapshot of an environment's declarative configuration. The parameterized

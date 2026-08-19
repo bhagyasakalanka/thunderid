@@ -100,7 +100,6 @@ type CreateTenantResponse struct {
 	Tenant
 	// Seeded is absent for the first environment of an organization, which is provisioned from the
 	// bootstrap baseline rather than copied.
-	Seeded *SeedSummary `json:"seeded,omitempty"`
 	// Environment is the promotion entry registered for this tenant, absent when no data plane was
 	// given to apply to.
 	Environment *EnvironmentSummary `json:"environment,omitempty"`
@@ -114,15 +113,4 @@ type EnvironmentSummary struct {
 	// DataPlaneToken is the credential this environment's Data Plane connects with, returned here and
 	// nowhere else. Mount it on that deployment; it cannot be read back afterwards, only reissued.
 	DataPlaneToken string `json:"dataPlaneToken,omitempty"`
-}
-
-// SeedSummary reports the copy that gave a new environment its configuration. A partial failure is
-// reported rather than hidden: the tenant exists either way, and one that is half-populated needs to be
-// seen, not discovered later by a promotion that behaves oddly.
-type SeedSummary struct {
-	// From is the deployment id the configuration was copied from.
-	From           string `json:"from"`
-	TotalDocuments int    `json:"totalDocuments"`
-	Imported       int    `json:"imported"`
-	Failed         int    `json:"failed"`
 }

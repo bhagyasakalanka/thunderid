@@ -100,30 +100,52 @@ type Service struct {
 	dataPlanes DataPlanes
 	// tokens issues the credential a data plane connects with.
 	tokens DataPlaneTokenIssuer
-	// localCP is the control plane hosting this service, when it hosts one. It is how a promote reaches
-	// a tenant other than the caller's own.
-	localCP LocalControlPlane
+	// workspaceURL is where the control plane hosting this service answers. It is the organization
+	// workspace a capture reads.
+	workspaceURL string
+	// org is the organization whose environments this service manages.
+	org string
 	// sealer encrypts a queued payload that carries a credential. It is nil until the server installs
 	// one, and queueing a credential without it is refused rather than done in the clear.
 	sealer SecretSealer
 }
 
-// LocalControlPlane writes configuration into a named tenant of the control plane this service runs in.
-//
-// It exists because a tenant is resolved from the caller's token: a promotion into another tenant has
-// no token for that tenant and cannot get one, so it is carried out in process against the tenant the
-// environment names.
-type LocalControlPlane interface {
-	// Hosts reports whether a base URL is this very server, so a genuinely remote control plane is
-	// still reached over HTTP rather than written to locally by mistake.
-	Hosts(baseURL string) bool
-	Import(ctx context.Context, deploymentID string, req thunder.ImportRequest) (*thunder.ImportResponse, error)
+// SetWorkspaceURL installs the address of the control plane this service runs in, which is the
+// organization workspace a capture reads. It is separate from New because the address is resolved
+// from the server's configuration after this service is built.
+func (s *Service) SetWorkspaceURL(baseURL string) {
+	s.workspaceURL = baseURL
 }
 
-// SetLocalControlPlane installs the control plane this service runs in. It is separate from New because
-// the control plane's own services are built after this one.
-func (s *Service) SetLocalControlPlane(cp LocalControlPlane) {
-	s.localCP = cp
+// SetOrganization names the organization whose environments this service manages.
+func (s *Service) SetOrganization(org string) {
+	s.org = org
+}
+
+// dataPlaneDeploymentID is the deployment a data plane serves under.
+//
+// The control plane's own deployment is the organization, because the organization has a single
+// workspace. A data plane serves one environment of it, so it needs an id no other environment
+// shares: the organization and the environment together.
+func (s *Service) dataPlaneDeploymentID(env model.Environment) string {
+	org := strings.TrimSpace(s.org)
+	name := strings.TrimSpace(env.Name)
+	if org == "" || name == "" {
+		return org
+	}
+	return org + ":" + name
+}
+
+// workspaceClient reaches the organization workspace this service runs in.
+//
+// The caller's own token is forwarded, so a capture reads exactly what that caller is allowed to
+// read, and the organization it lands in is the one their token names. There is nothing to configure
+// per environment: every environment of an organization captures from the same workspace.
+func (s *Service) workspaceClient(ctx context.Context) (ThunderClient, error) {
+	if strings.TrimSpace(s.workspaceURL) == "" {
+		return nil, ErrNoWorkspace
+	}
+	return s.newClient(s.workspaceURL, callerCredentials(ctx), false), nil
 }
 
 // New builds a Service.
@@ -133,18 +155,15 @@ func New(st Store, factory ClientFactory) *Service {
 
 // Errors surfaced to the HTTP layer.
 var (
-	ErrNotFound     = store.ErrNotFound
-	ErrValidation   = errors.New("invalid request")
-	ErrNoSource     = errors.New("environment has no control-plane source configured")
-	ErrPromotionFed = errors.New(
-		"this environment receives its configuration by promotion, so there is nothing to capture")
+	ErrNotFound    = store.ErrNotFound
+	ErrValidation  = errors.New("invalid request")
+	ErrNoWorkspace = errors.New(
+		"this service does not know where its control plane answers, so there is nothing to capture")
 	ErrNoVersions        = errors.New("environment has no versions")
 	ErrNothingApplied    = errors.New("environment has nothing applied yet")
 	ErrNoPreviousVersion = errors.New("environment has no previous version to revert to")
 	ErrBadRef            = errors.New("invalid version reference")
 	ErrNoPromotionPath   = errors.New("no promotion path exists between these environments")
-	// ErrNoVersionSource is ErrNoSource under the name the capture path reads better with.
-	ErrNoVersionSource = ErrNoSource
 )
 
 // ---- environments ----
@@ -155,7 +174,6 @@ type CreateEnvironmentInput struct {
 	Rank       *int
 	PromotesTo []string
 	Target     model.Target
-	Source     *model.Source
 }
 
 // CreateEnvironment registers a new environment.
@@ -181,7 +199,6 @@ func (s *Service) CreateEnvironment(ctx context.Context,
 		Rank:       rank,
 		PromotesTo: in.PromotesTo,
 		Target:     in.Target,
-		Source:     in.Source,
 		CreatedAt:  now,
 		UpdatedAt:  now,
 	}
@@ -220,11 +237,7 @@ func (s *Service) issueDataPlaneToken(ctx context.Context, env model.Environment
 	if s.tokens == nil {
 		return "", nil
 	}
-	deploymentID := ""
-	if env.Source != nil {
-		deploymentID = env.Source.DeploymentID
-	}
-	token, err := s.tokens.Issue(ctx, env.Target.DataPlaneID, deploymentID)
+	token, err := s.tokens.Issue(ctx, env.Target.DataPlaneID, s.dataPlaneDeploymentID(env))
 	if err != nil {
 		return "", fmt.Errorf("failed to issue a token for %s: %w", env.Target.DataPlaneID, err)
 	}
@@ -355,27 +368,21 @@ func (s *Service) DeleteEnvironment(ctx context.Context, id string) error {
 
 // ---- versions ----
 
-// CaptureVersion pulls the current config from an environment's control-plane source (export plus
-// revealed secret values) and stores it as a new version.
+// CaptureVersion reads the organization's workspace as it currently stands and records it as a new
+// version of the given environment.
 func (s *Service) CaptureVersion(ctx context.Context, envID, note string) (model.Version, error) {
-	env, err := s.store.GetEnvironment(ctx, envID)
+	// Read only to establish that the environment exists, so a capture against an unknown one is
+	// refused before anything is exported.
+	if _, err := s.store.GetEnvironment(ctx, envID); err != nil {
+		return model.Version{}, err
+	}
+	// A capture always reads the organization's workspace as it stands, whichever environment it is
+	// recorded against. The environments are resources inside that one workspace rather than separate
+	// deployments, so there is no per-environment source to read from and nothing to configure.
+	client, err := s.workspaceClient(ctx)
 	if err != nil {
 		return model.Version{}, err
 	}
-	if env.Source == nil {
-		return model.Version{}, ErrNoVersionSource
-	}
-	// An environment fed by promotion has no configuration of its own to read: its control plane tenant
-	// holds what the promotion put there. Capturing would pull the caller's own tenant into this
-	// environment's history and present it as this environment's state.
-	envs, err := s.store.ListEnvironments(ctx)
-	if err != nil {
-		return model.Version{}, err
-	}
-	if isPromotionFed(envs, envID) {
-		return model.Version{}, ErrPromotionFed
-	}
-	client := s.newClient(env.Source.BaseURL, callerCredentials(ctx), env.Source.InsecureSkipVerify)
 	exported, err := client.Export(ctx)
 	if err != nil {
 		return model.Version{}, fmt.Errorf("export failed: %w", err)
@@ -511,12 +518,10 @@ func (s *Service) resolveVariables(ctx context.Context, env model.Environment,
 	for k, v := range version.Variables {
 		values[k] = v
 	}
-	if env.Source == nil {
+	client, err := s.workspaceClient(ctx)
+	if err != nil {
 		return values
 	}
-
-	client := s.newClient(env.Source.BaseURL, callerCredentials(ctx),
-		env.Source.InsecureSkipVerify)
 	live, err := client.EnvironmentVariables(ctx)
 	if err != nil {
 		return values
@@ -765,9 +770,7 @@ type PromoteResult struct {
 	NewVersion model.Version `json:"newVersion"`
 	// Secrets reports what happened to the target environment's credentials.
 	Secrets targetSecretOutcome `json:"secrets"`
-	// ControlPlane is the outcome of writing the configuration into the target's control plane tenant.
-	ControlPlane *thunder.ImportResponse `json:"controlPlane,omitempty"`
-	Applied      *ApplyResult            `json:"applied,omitempty"`
+	Applied *ApplyResult        `json:"applied,omitempty"`
 }
 
 // PromotePreview returns the diff of a source environment's version against the target environment's
@@ -829,22 +832,12 @@ func (s *Service) Promote(ctx context.Context, in PromoteInput) (PromoteResult, 
 		return PromoteResult{}, err
 	}
 
-	// The promoted configuration is written into the target's own control plane tenant, so switching to
-	// that tenant shows the promoted state. Redirect URLs are deliberately not required here: they are
-	// asked for when that tenant is applied to its data plane.
-	controlPlane, err := s.importIntoTargetControlPlane(ctx, targetEnv, promotedRes, vars,
-		secretKeysOf(source), deletionsFromDiff(diff.Compute(targetRes, promotedRes)))
-	if err != nil {
-		return PromoteResult{}, err
-	}
-
-	if controlPlane != nil {
-		s.recordControlPlaneSeq(ctx, targetEnv, newVersion.Seq)
-	}
-
+	// Promoting moves a version onto the destination environment and nothing else. There is no tenant
+	// of its own to write into: an organization has one workspace, and the environments are resources
+	// inside it. The promoted configuration reaches a running deployment only when it is applied.
 	result := PromoteResult{
 		Preview: preview, NewVersion: stripPayload(newVersion),
-		Secrets: secretOutcome, ControlPlane: controlPlane,
+		Secrets: secretOutcome,
 	}
 	if in.Apply {
 		applied, err := s.Apply(ctx, in.ToEnvID, strconv.Itoa(newVersion.Seq), in.DryRun)
@@ -854,75 +847,6 @@ func (s *Service) Promote(ctx context.Context, in PromoteInput) (PromoteResult, 
 		result.Applied = &applied
 	}
 	return result, nil
-}
-
-// ApplyToControlPlane writes a version into the environment's own control plane tenant, leaving the
-// data plane untouched.
-//
-// Promote and revert already do this as part of their work. This is the same write on its own, for
-// putting a tenant back in step after one of those failed part way, or for pushing a version to the
-// control plane without touching what is serving traffic.
-func (s *Service) ApplyToControlPlane(ctx context.Context, envID,
-	versionRef string) (*thunder.ImportResponse, error) {
-	env, err := s.store.GetEnvironment(ctx, envID)
-	if err != nil {
-		return nil, err
-	}
-	seq, err := s.resolveSeq(ctx, env, defaultRef(versionRef, "latest"))
-	if err != nil {
-		return nil, err
-	}
-	if seq == 0 {
-		return nil, ErrNoVersions
-	}
-	version, err := s.store.GetVersion(ctx, envID, seq)
-	if err != nil {
-		return nil, err
-	}
-
-	// Credentials are left as the tenant holds them, for the same reason a revert does: they are hashes
-	// this service cannot reproduce, and rewriting them would lock out every client that has one.
-	resp, err := s.importIntoTargetControlPlane(ctx, env, bundle.Parse(version.Resources),
-		version.Variables, secretKeysOf(version), s.controlPlaneDeletions(ctx, env, version))
-	if err != nil {
-		return nil, err
-	}
-	if resp != nil {
-		s.recordControlPlaneSeq(ctx, env, seq)
-	}
-	return resp, nil
-}
-
-// controlPlaneDeletions lists what the tenant holds that a version does not describe.
-//
-// The baseline is what was last written to that tenant, not the newest version. Those are the same
-// until a version is written to the control plane on its own, and then they are not: the tenant holds
-// what was written, while the newest version is whatever was captured before that. Comparing against
-// the newest one would compute removals for resources the tenant no longer has and miss the ones it
-// does.
-//
-// With nothing written by this service yet, the newest version stands in: a capture is a reading of
-// the tenant, so it is the best available account of what is there.
-func (s *Service) controlPlaneDeletions(ctx context.Context, env model.Environment,
-	version model.Version) []thunder.ResourceDeletion {
-	baseSeq, err := s.controlPlaneBaseline(ctx, env)
-	if err != nil || baseSeq == 0 || baseSeq == version.Seq {
-		return nil
-	}
-	base, err := s.store.GetVersion(ctx, env.ID, baseSeq)
-	if err != nil {
-		return nil
-	}
-	return deletionsFromDiff(diff.Compute(bundle.Parse(base.Resources), bundle.Parse(version.Resources)))
-}
-
-// controlPlaneBaseline is the version the control plane tenant currently reflects. It is what a write
-// into that tenant compares against, so the removals it computes match what is actually there.
-func (s *Service) controlPlaneBaseline(ctx context.Context, env model.Environment) (int, error) {
-	if env.ControlPlaneSeq > 0 {
-		return env.ControlPlaneSeq, nil
-	}
-	return s.store.LatestSeq(ctx, env.ID)
 }
 
 // promotionBaseline is the version an environment is taken to be at when promoting.
@@ -942,19 +866,6 @@ func (s *Service) promotionBaseline(ctx context.Context, env model.Environment) 
 	return s.store.LatestSeq(ctx, env.ID)
 }
 
-// recordControlPlaneSeq remembers which version a tenant was last written with, so the next write
-// compares against what is actually there.
-func (s *Service) recordControlPlaneSeq(ctx context.Context, env model.Environment, seq int) {
-	if seq <= 0 || env.ControlPlaneSeq == seq {
-		return
-	}
-	env.ControlPlaneSeq = seq
-	env.UpdatedAt = s.now().UTC()
-	// A failure here costs accuracy on the next comparison, not this write, so it is not worth
-	// failing the operation that just succeeded.
-	_ = s.store.SaveEnvironment(ctx, env)
-}
-
 // ---- revert ----
 
 // RevertInput is the input to Revert. ToRef accepts a version number or "previous", which targets the
@@ -972,9 +883,6 @@ type RevertResult struct {
 	Preview    diff.Diff     `json:"preview"`
 	NewVersion model.Version `json:"newVersion"`
 	Applied    *ApplyResult  `json:"applied,omitempty"`
-	// ControlPlane is the outcome of restoring the environment's own control plane tenant, which goes
-	// back with the data plane so the two describe the same state.
-	ControlPlane *thunder.ImportResponse `json:"controlPlane,omitempty"`
 }
 
 // Revert creates a new version that restores the content of an earlier version, optionally applying
@@ -1022,19 +930,6 @@ func (s *Service) Revert(ctx context.Context, in RevertInput) (RevertResult, err
 		return RevertResult{}, err
 	}
 	result := RevertResult{Preview: preview, NewVersion: stripPayload(newVersion)}
-
-	// A revert restores the environment as a whole, so its control plane goes back with it. Leaving it
-	// on the newer configuration would show a state that neither the operator asked for nor the data
-	// plane is running.
-	controlPlane, err := s.importIntoTargetControlPlane(ctx, env, bundle.Parse(target.Resources),
-		target.Variables, secretKeysOf(target), deletionsFromDiff(preview))
-	if err != nil {
-		return result, err
-	}
-	result.ControlPlane = controlPlane
-	if controlPlane != nil {
-		s.recordControlPlaneSeq(ctx, env, newVersion.Seq)
-	}
 
 	if in.Apply {
 		applied, err := s.Apply(ctx, in.EnvID, strconv.Itoa(newVersion.Seq), in.DryRun)
@@ -1137,8 +1032,6 @@ func (s *Service) resolveSeq(ctx context.Context, env model.Environment, ref str
 		return versions[1].Seq, nil
 	case "applied":
 		return env.AppliedSeq, nil
-	case "control-plane":
-		return s.controlPlaneBaseline(ctx, env)
 	case "promotable":
 		return s.promotionBaseline(ctx, env)
 	default:

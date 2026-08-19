@@ -46,7 +46,6 @@ import (
 	"github.com/thunder-id/thunderid/internal/environmentvariable"
 	"github.com/thunder-id/thunderid/internal/envmgr"
 	envmgrservice "github.com/thunder-id/thunderid/internal/envmgr/service"
-	"github.com/thunder-id/thunderid/internal/envmgr/thunder"
 	flowconfig "github.com/thunder-id/thunderid/internal/flow/config"
 	flowcore "github.com/thunder-id/thunderid/internal/flow/core"
 	"github.com/thunder-id/thunderid/internal/flow/executormeta"
@@ -341,14 +340,10 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 		serverConfigService,
 	)
 
-	// A promotion writes the promoted configuration into the destination environment's own tenant. That
-	// tenant is generally not the caller's, so the write is handed to the import service directly rather
-	// than sent over HTTP with the caller's token, which would land it back in the tenant it came from.
+	// A capture reads the organization's workspace, which is this very server, so the environment
+	// manager is told where that answers.
 	if envManager != nil {
-		envManager.SetLocalControlPlane(&localControlPlane{
-			importService: importService,
-			baseURL:       localControlPlaneURL(config.GetServerRuntime().Config),
-		})
+		envManager.SetWorkspaceURL(localControlPlaneURL(config.GetServerRuntime().Config))
 	}
 
 	// Register the health service.
@@ -511,13 +506,12 @@ func initEnvironmentManager(ctx context.Context, logger *log.Logger, mux *http.S
 // credential goes, and which control plane a promotion writes into.
 type envmgrRegistry interface {
 	localCaptureRouter
-	SetLocalControlPlane(cp envmgrservice.LocalControlPlane)
+	SetWorkspaceURL(baseURL string)
 	SetDataPlanes(planes envmgrservice.DataPlanes)
 	SetDataPlaneTokenIssuer(issuer envmgrservice.DataPlaneTokenIssuer)
 	SetSecretSealer(sealer envmgrservice.SecretSealer)
 	// DeliverPending carries out work queued for a data plane this pod holds a connection to.
 	DeliverPending(ctx context.Context, dataPlaneID string) error
-	SeedTenant(ctx context.Context, sourceDeploymentID, targetDeploymentID string) (*thunder.ImportResponse, error)
 	CreateEnvironment(ctx context.Context, deploymentID string,
 		in envmgrservice.CreateEnvironmentInput) (envmgrservice.CreateEnvironmentResult, error)
 }

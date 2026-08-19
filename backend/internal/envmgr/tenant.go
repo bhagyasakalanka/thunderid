@@ -20,7 +20,6 @@ package envmgr
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -39,11 +38,11 @@ import (
 // query carries the deployment, so the id simply does not resolve in the store the request is served
 // from. That is the same guarantee the row-scoped resources get.
 type registry struct {
-	hasher      service.SecretHasher
-	localCP     service.LocalControlPlane
-	dataPlanes  service.DataPlanes
-	tokenIssuer service.DataPlaneTokenIssuer
-	sealer      service.SecretSealer
+	hasher       service.SecretHasher
+	workspaceURL string
+	dataPlanes   service.DataPlanes
+	tokenIssuer  service.DataPlaneTokenIssuer
+	sealer       service.SecretSealer
 
 	mu      sync.Mutex
 	servers map[string]*Server
@@ -96,44 +95,13 @@ func (r *registry) serverForID(id string) (*Server, error) {
 	})
 	svc.SetSecretHasher(r.hasher)
 	svc.SetSecretSealer(r.sealer)
-	svc.SetLocalControlPlane(r.localCP)
+	svc.SetWorkspaceURL(r.workspaceURL)
+	svc.SetOrganization(id)
 	svc.SetDataPlanes(r.dataPlanes)
 	svc.SetDataPlaneTokenIssuer(r.tokenIssuer)
 	server := New(svc)
 	r.servers[id] = server
 	return server, nil
-}
-
-// ErrNoSeedSource is returned when no environment manages the tenant a copy was asked for. It is a
-// state rather than a failure: a tenant created moments ago has no environment registered against it
-// yet, and the caller is expected to fall back to reading that tenant directly.
-var ErrNoSeedSource = errors.New("no environment manages this tenant")
-
-// SeedTenant copies the configuration of the environment managing sourceDeploymentID into a newly
-// created tenant. It is how a second environment of an organization starts life as a copy of the
-// first; see service.SeedTenant for why that matters.
-//
-// Every deployment's store is searched, rather than the caller's alone, because the caller is the
-// system tenant creating a tenant on someone's behalf and keeps no environments of its own. This is
-// the one operation that reaches across the per-deployment isolation, and it is why it lives on the
-// registry rather than on a Server.
-func (r *registry) SeedTenant(ctx context.Context, sourceDeploymentID,
-	targetDeploymentID string) (*thunder.ImportResponse, error) {
-	deployments, err := store.Deployments(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for _, id := range deployments {
-		server, err := r.serverForID(id)
-		if err != nil {
-			continue
-		}
-		if _, ok, err := server.svc.EnvironmentForTenant(ctx, sourceDeploymentID); err != nil || !ok {
-			continue
-		}
-		return server.svc.SeedTenant(ctx, sourceDeploymentID, targetDeploymentID)
-	}
-	return nil, fmt.Errorf("%w: no environment manages tenant %s", ErrNoSeedSource, sourceDeploymentID)
 }
 
 // CreateEnvironment registers an environment in the store its deployment belongs to, so a tenant
@@ -190,20 +158,18 @@ func (r *registry) SetDataPlanes(planes service.DataPlanes) {
 	}
 }
 
-// SetLocalControlPlane installs the control plane a promotion writes into. It is set after the fact
-// because the control plane's own services are built after the environment manager is mounted.
-func (r *registry) SetLocalControlPlane(cp service.LocalControlPlane) {
+// SetWorkspaceURL installs the address of the control plane these managers run in, which is the
+// organization workspace a capture reads. It is set after the fact because it is resolved from the
+// server's configuration after the environment manager is mounted.
+func (r *registry) SetWorkspaceURL(baseURL string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.localCP = cp
+	r.workspaceURL = baseURL
 	for _, server := range r.servers {
-		server.svc.SetLocalControlPlane(cp)
+		server.svc.SetWorkspaceURL(baseURL)
 	}
 }
 
-// handler adapts one of the Server's methods into a request handler that first resolves the
-// deployment. The method is chosen from the resolved Server rather than bound up front, which is
-// what keeps the ported handler code unaware that there is more than one of it.
 func (r *registry) handler(pick func(*Server) http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		server, err := r.serverFor(req.Context())

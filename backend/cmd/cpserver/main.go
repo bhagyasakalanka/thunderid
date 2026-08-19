@@ -141,16 +141,12 @@ func main() {
 	if err != nil {
 		logger.Fatal(ctx, "Failed to initialize TenantService", log.Error(err))
 	}
-	// A second environment of an organization is a copy of its first, taken from the environment
-	// manager's record of what that environment holds. Without one hosted here, a new environment is
-	// created empty and the first promotion into it fills it.
+	// Registering a deployment as an environment of its organization is done through the environment
+	// manager, so the tenant service is given the way in when one is hosted here.
 	if envManager != nil {
 		tenantService.SetBaselineSeeder(&environmentSeeder{
-			registry:        envManager,
-			exportSvc:       exportService,
-			importSvc:       importService,
-			controlPlaneURL: localControlPlaneURL(*cfg),
-			envVarService:   envVarService,
+			registry:      envManager,
+			envVarService: envVarService,
 		})
 	}
 

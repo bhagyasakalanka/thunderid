@@ -21,7 +21,6 @@ package tenant
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"regexp"
 	"strings"
@@ -63,13 +62,34 @@ func orgOf(deploymentID string) string {
 	return org
 }
 
+// isFirstOfOrganization reports whether an organization has no deployment yet, which makes the one
+// being created its first.
+//
+// The first environment is the bottom of the promotion chain, so it is rank 1 whatever was asked for:
+// there is nothing to promote into it.
+func (s *tenantService) isFirstOfOrganization(ctx context.Context, org,
+	excluding string) (bool, *tidcommon.ServiceError) {
+	if strings.TrimSpace(org) == "" {
+		return true, nil
+	}
+	tenants, err := s.store.ListTenants(ctx)
+	if err != nil {
+		return false, s.internalError(ctx, "failed to list tenants", err)
+	}
+	for _, tenant := range tenants {
+		if tenant.DeploymentID != excluding && orgOf(tenant.DeploymentID) == org {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
 // BaselineSeeder copies an organization's existing configuration into a newly created tenant.
 //
 // It is supplied by the server rather than built here, because the configuration comes from the
 // environment manager, which is hosted alongside this service rather than owned by it. Without one, a
 // second environment is created empty and is populated by the first promotion into it.
 type BaselineSeeder interface {
-	SeedTenant(ctx context.Context, sourceDeploymentID, targetDeploymentID string) (*SeedSummary, error)
 	// RegisterEnvironment records the tenant as an environment of its organization, so it takes part
 	// in promotion without a second call to set it up.
 	RegisterEnvironment(ctx context.Context, in RegisterEnvironmentInput) (*EnvironmentSummary, error)
@@ -84,8 +104,6 @@ type RegisterEnvironmentInput struct {
 	// Rank orders it in the promotion chain. Zero means the end of the chain.
 	Rank      int
 	DataPlane DataPlane
-	// ControlPlaneInsecureSkipVerify skips TLS verification when reading from the control plane.
-	ControlPlaneInsecureSkipVerify bool
 }
 
 // TenantServiceInterface defines platform tenant-management operations, usable only by the system
@@ -178,34 +196,24 @@ func (s *tenantService) CreateTenant(ctx context.Context,
 		return nil, &ErrorTenantConflict
 	}
 
-	seedFrom, svcErr := s.seedSourceFor(ctx, request.Org)
-	if svcErr != nil {
-		return nil, svcErr
-	}
-
 	id, err := utils.GenerateUUIDv7()
 	if err != nil {
 		return nil, s.internalError(ctx, "failed to generate tenant id", err)
 	}
 
-	// The first environment is the only one built from the baseline bundle. A later one is left empty
-	// here and filled by the seed below, which is what keeps its ids identical to its organization's.
-	var seeded *SeedSummary
-	if seedFrom == "" {
-		if svcErr := s.provision(ctx, deploymentID); svcErr != nil {
-			return nil, svcErr
-		}
-	} else {
-		seeded, svcErr = s.seed(ctx, seedFrom, deploymentID)
-		if svcErr != nil {
-			return nil, svcErr
-		}
+	// A deployment is provisioned from the baseline bundle. Nothing is copied from a sibling: an
+	// organization has one workspace, and its environments are resources inside it rather than
+	// deployments of their own.
+	if svcErr := s.provision(ctx, deploymentID); svcErr != nil {
+		return nil, svcErr
 	}
 
-	// The first environment of an organization is always rank 1: it is the bottom of the promotion
-	// chain, the one every other is copied from, and there is nothing to promote into it.
+	first, svcErr := s.isFirstOfOrganization(ctx, request.Org, deploymentID)
+	if svcErr != nil {
+		return nil, svcErr
+	}
 	rank := 0
-	if seedFrom == "" {
+	if first {
 		rank = 1
 	} else if request.Rank != nil {
 		rank = *request.Rank
@@ -219,7 +227,7 @@ func (s *tenantService) CreateTenant(ctx context.Context,
 	if err := s.store.CreateTenant(ctx, tenant); err != nil {
 		return nil, s.internalError(ctx, "failed to record tenant", err)
 	}
-	return &CreateTenantResponse{Tenant: tenant, Seeded: seeded, Environment: environment}, nil
+	return &CreateTenantResponse{Tenant: tenant, Environment: environment}, nil
 }
 
 // RegisterEnvironment registers an existing tenant as an environment of its organization.
@@ -251,26 +259,22 @@ func (s *tenantService) RegisterEnvironment(ctx context.Context, deploymentID st
 		return nil, &ErrorEnvironmentRegistrationUnavailable
 	}
 
-	// An organization's first environment is the bottom of its promotion chain, so it is rank 1
-	// whatever was asked for. A later one takes the requested rank, or goes to the end.
-	seedFrom, svcErr := s.seedSourceFor(ctx, orgOf(deploymentID))
+	first, svcErr := s.isFirstOfOrganization(ctx, orgOf(deploymentID), deploymentID)
 	if svcErr != nil {
 		return nil, svcErr
 	}
 	rank := 0
-	if seedFrom == "" || seedFrom == deploymentID {
+	if first {
 		rank = 1
 	} else if request.Rank != nil {
 		rank = *request.Rank
 	}
 
-	insecure := request.ControlPlane != nil && request.ControlPlane.InsecureSkipVerify
 	summary, err := s.seeder.RegisterEnvironment(ctx, RegisterEnvironmentInput{
-		Name:                           environmentNameOf(deploymentID),
-		DeploymentID:                   deploymentID,
-		Rank:                           rank,
-		DataPlane:                      request.DataPlane,
-		ControlPlaneInsecureSkipVerify: insecure,
+		Name:         environmentNameOf(deploymentID),
+		DeploymentID: deploymentID,
+		Rank:         rank,
+		DataPlane:    request.DataPlane,
 	})
 	if err != nil {
 		log.GetLogger().With(log.String(log.LoggerKeyComponentName, tenantLoggerComponentName)).
@@ -307,13 +311,11 @@ func (s *tenantService) registerEnvironment(ctx context.Context, request CreateT
 		return nil, nil
 	}
 
-	insecure := request.ControlPlane != nil && request.ControlPlane.InsecureSkipVerify
 	summary, err := s.seeder.RegisterEnvironment(ctx, RegisterEnvironmentInput{
-		Name:                           request.Env,
-		DeploymentID:                   deploymentID,
-		Rank:                           rank,
-		DataPlane:                      *request.DataPlane,
-		ControlPlaneInsecureSkipVerify: insecure,
+		Name:         request.Env,
+		DeploymentID: deploymentID,
+		Rank:         rank,
+		DataPlane:    *request.DataPlane,
 	})
 	if err != nil {
 		log.GetLogger().With(log.String(log.LoggerKeyComponentName, tenantLoggerComponentName)).
@@ -322,54 +324,6 @@ func (s *tenantService) registerEnvironment(ctx context.Context, request CreateT
 		svcErr := ErrorEnvironmentRegistrationFailed
 		svcErr.ErrorDescription = tidcommon.I18nMessage{
 			Key:          "error.tenantservice.environment_registration_failed_description",
-			DefaultValue: err.Error(),
-		}
-		return nil, &svcErr
-	}
-	return summary, nil
-}
-
-// seedSourceFor returns the deployment id a new environment of this organization is copied from, or
-// "" when the organization has none yet and the environment is its first.
-//
-// The organization's oldest environment is the source. That is the one provisioned from the baseline,
-// so it is the only one whose resources are not themselves a copy.
-func (s *tenantService) seedSourceFor(ctx context.Context, org string) (string, *tidcommon.ServiceError) {
-	tenants, err := s.store.ListTenants(ctx)
-	if err != nil {
-		return "", s.internalError(ctx, "failed to list tenants", err)
-	}
-
-	source := ""
-	oldest := ""
-	for _, tenant := range tenants {
-		if orgOf(tenant.DeploymentID) != org {
-			continue
-		}
-		if oldest == "" || tenant.CreatedAt < oldest {
-			oldest = tenant.CreatedAt
-			source = tenant.DeploymentID
-		}
-	}
-	return source, nil
-}
-
-// seed copies the organization's existing configuration into the new tenant.
-func (s *tenantService) seed(ctx context.Context, sourceDeploymentID,
-	targetDeploymentID string) (*SeedSummary, *tidcommon.ServiceError) {
-	if s.seeder == nil {
-		return nil, s.internalError(ctx, "no baseline seeder is configured",
-			fmt.Errorf("cannot seed %s from %s", targetDeploymentID, sourceDeploymentID))
-	}
-	summary, err := s.seeder.SeedTenant(ctx, sourceDeploymentID, targetDeploymentID)
-	if err != nil {
-		log.GetLogger().With(log.String(log.LoggerKeyComponentName, tenantLoggerComponentName)).
-			Error(ctx, "Failed to seed a tenant from its organization",
-				log.String("from", sourceDeploymentID), log.String("to", targetDeploymentID),
-				log.Error(err))
-		svcErr := ErrorSeedFailed
-		svcErr.ErrorDescription = tidcommon.I18nMessage{
-			Key:          "error.tenantservice.seed_failed_description",
 			DefaultValue: err.Error(),
 		}
 		return nil, &svcErr

@@ -20,7 +20,6 @@ package tenant
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -218,9 +217,6 @@ func noopRun(_ context.Context, _ importer.ImportServiceInterface, _ bootstrap.O
 
 // stubSeeder records what a later environment was copied from.
 type stubSeeder struct {
-	from       string
-	to         string
-	err        error
 	registered *RegisterEnvironmentInput
 }
 
@@ -230,43 +226,9 @@ func (s *stubSeeder) RegisterEnvironment(_ context.Context,
 	return &EnvironmentSummary{ID: "env-1", Name: in.Name, Rank: in.Rank}, nil
 }
 
-func (s *stubSeeder) SeedTenant(_ context.Context, sourceDeploymentID,
-	targetDeploymentID string) (*SeedSummary, error) {
-	s.from, s.to = sourceDeploymentID, targetDeploymentID
-	if s.err != nil {
-		return nil, s.err
-	}
-	return &SeedSummary{From: sourceDeploymentID, TotalDocuments: 3, Imported: 3}, nil
-}
-
-// The second environment of an organization is a copy of the first, not a second baseline. Building it
-// from the baseline bundle would give it its own organization unit, user types and themes under
-// different ids, and nothing could then be promoted into it.
-func TestCreateTenant_LaterEnvironmentIsSeededFromTheOrganizationsFirst(t *testing.T) {
-	store := newFakeStore()
-	store.registry["acme:dev"] = Tenant{ID: "1", DeploymentID: "acme:dev", CreatedAt: "2026-01-01T00:00:00Z"}
-	var provisioned []string
-	svc := newTestService(store, func(_ context.Context, _ importer.ImportServiceInterface,
-		opts bootstrap.Options) error {
-		provisioned = append(provisioned, opts.DeploymentID)
-		return nil
-	})
-	seeder := &stubSeeder{}
-	svc.SetBaselineSeeder(seeder)
-
-	created, svcErr := svc.CreateTenant(systemCtx(), CreateTenantRequest{Org: "acme", Env: "stage"})
-
-	require.Nil(t, svcErr)
-	assert.Empty(t, provisioned, "a seeded environment must not be provisioned from the baseline")
-	assert.Equal(t, "acme:dev", seeder.from)
-	assert.Equal(t, "acme:stage", seeder.to)
-	require.NotNil(t, created.Seeded)
-	assert.Equal(t, 3, created.Seeded.Imported)
-}
-
-// Another organization's environments say nothing about this one, so its first environment is still
-// provisioned from the baseline.
-func TestCreateTenant_FirstEnvironmentOfAnOrganizationIsProvisioned(t *testing.T) {
+// Every deployment is provisioned from the baseline bundle. Nothing is copied from a sibling: an
+// organization has one workspace, and its environments are resources inside it.
+func TestCreateTenant_IsProvisionedFromTheBaseline(t *testing.T) {
 	store := newFakeStore()
 	store.registry["other:dev"] = Tenant{ID: "1", DeploymentID: "other:dev", CreatedAt: "2026-01-01T00:00:00Z"}
 	var provisioned []string
@@ -282,41 +244,7 @@ func TestCreateTenant_FirstEnvironmentOfAnOrganizationIsProvisioned(t *testing.T
 
 	require.Nil(t, svcErr)
 	assert.Equal(t, []string{"acme:dev"}, provisioned)
-	assert.Empty(t, seeder.to)
-	assert.Nil(t, created.Seeded)
-}
-
-// The oldest environment is the source, because it is the only one whose resources are not themselves
-// a copy.
-func TestCreateTenant_SeedsFromTheOldestEnvironment(t *testing.T) {
-	store := newFakeStore()
-	store.registry["acme:stage"] = Tenant{ID: "2", DeploymentID: "acme:stage", CreatedAt: "2026-03-01T00:00:00Z"}
-	store.registry["acme:dev"] = Tenant{ID: "1", DeploymentID: "acme:dev", CreatedAt: "2026-01-01T00:00:00Z"}
-	svc := newTestService(store, noopRun)
-	seeder := &stubSeeder{}
-	svc.SetBaselineSeeder(seeder)
-
-	_, svcErr := svc.CreateTenant(systemCtx(), CreateTenantRequest{Org: "acme", Env: "prod"})
-
-	require.Nil(t, svcErr)
-	assert.Equal(t, "acme:dev", seeder.from)
-}
-
-// A seed that cannot be done is the caller's problem to act on, not this server's fault, so it is
-// reported as such rather than as an internal error with nothing to go on.
-func TestCreateTenant_SeedFailureIsReportedToTheCaller(t *testing.T) {
-	store := newFakeStore()
-	store.registry["acme:dev"] = Tenant{ID: "1", DeploymentID: "acme:dev", CreatedAt: "2026-01-01T00:00:00Z"}
-	svc := newTestService(store, noopRun)
-	svc.SetBaselineSeeder(&stubSeeder{err: errors.New("tenant acme:dev holds no configuration to copy")})
-
-	_, svcErr := svc.CreateTenant(systemCtx(), CreateTenantRequest{Org: "acme", Env: "stage"})
-
-	require.NotNil(t, svcErr)
-	assert.Equal(t, ErrorSeedFailed.Code, svcErr.Code)
-	assert.Contains(t, svcErr.ErrorDescription.DefaultValue, "no configuration to copy")
-	_, recorded := store.registry["acme:stage"]
-	assert.False(t, recorded, "a tenant that could not be seeded must not be recorded")
+	_ = created
 }
 
 // A tenant that names a data plane is registered for promotion as it is created, so an environment
@@ -341,8 +269,6 @@ func TestCreateTenant_RegistersTheEnvironmentWithItsRank(t *testing.T) {
 	assert.Equal(t, "acme:stage", seeder.registered.DeploymentID)
 	assert.Equal(t, 2, seeder.registered.Rank)
 	assert.Equal(t, "stage-dp", seeder.registered.DataPlane.ID)
-	// Without this a capture cannot read back from a control plane serving its own certificate.
-	assert.True(t, seeder.registered.ControlPlaneInsecureSkipVerify)
 	require.NotNil(t, created.Environment)
 	assert.Equal(t, 2, created.Environment.Rank)
 }

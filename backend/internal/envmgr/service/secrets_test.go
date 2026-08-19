@@ -21,11 +21,9 @@ package service
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 
 	"github.com/thunder-id/thunderid/internal/envmgr/model"
-	"github.com/thunder-id/thunderid/internal/envmgr/thunder"
 )
 
 // secretsFixture builds an environment holding one credential of each kind: an application's client
@@ -50,7 +48,6 @@ func secretsFixture(t *testing.T) (*Service, *fakeClient, model.Environment) {
 	env, err := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
 		Name:   "dev",
 		Target: model.Target{DataPlaneID: "dp"},
-		Source: &model.Source{BaseURL: "https://cp", DeploymentID: "tenant-a"},
 	})
 	if err != nil {
 		t.Fatalf("create environment: %v", err)
@@ -179,106 +176,6 @@ func TestSecretKindFallsBackToTheNameWhenTheBundleDoesNotExplainIt(t *testing.T)
 	}
 }
 
-// recordingControlPlane records which tenant a promotion wrote into.
-type recordingControlPlane struct {
-	deploymentID string
-	content      string
-	variables    map[string]interface{}
-}
-
-func (r *recordingControlPlane) Hosts(string) bool { return true }
-
-func (r *recordingControlPlane) Import(_ context.Context, deploymentID string,
-	req thunder.ImportRequest) (*thunder.ImportResponse, error) {
-	r.deploymentID = deploymentID
-	r.content = req.Content
-	r.variables = req.Variables
-	return &thunder.ImportResponse{}, nil
-}
-
-func TestPromoteWritesIntoTheDestinationsOwnTenant(t *testing.T) {
-	svc, _, dev := secretsFixture(t)
-	cp := &recordingControlPlane{}
-	svc.SetLocalControlPlane(cp)
-
-	stage, err := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
-		Name:   "stage",
-		Target: model.Target{DataPlaneID: "dp-b"},
-		Source: &model.Source{BaseURL: "https://cp", DeploymentID: "tenant-b"},
-	})
-	if err != nil {
-		t.Fatalf("create stage: %v", err)
-	}
-
-	if _, err := svc.Promote(context.Background(), PromoteInput{FromEnvID: dev.ID, ToEnvID: stage.ID}); err != nil {
-		t.Fatalf("promote: %v", err)
-	}
-
-	// Sending this over HTTP would carry the caller's token, whose tenant is the one promoted from, so
-	// the promoted configuration would be written back into the source tenant.
-	if cp.deploymentID != "tenant-b" {
-		t.Fatalf("expected the promotion to write into tenant-b, got %q", cp.deploymentID)
-	}
-	if cp.content == "" {
-		t.Fatal("the promoted configuration must be written, not just recorded as a version")
-	}
-}
-
-func TestCaptureIsRefusedForAnEnvironmentFedByPromotion(t *testing.T) {
-	svc, _, dev := secretsFixture(t)
-	stage, err := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
-		Name:   "stage",
-		Target: model.Target{DataPlaneID: "dp-b"},
-		Source: &model.Source{BaseURL: "https://cp", DeploymentID: "tenant-b"},
-	})
-	if err != nil {
-		t.Fatalf("create stage: %v", err)
-	}
-	_ = dev
-
-	// Capturing here would read whichever tenant the caller's token names and record it as this
-	// environment's own state.
-	if _, err := svc.CaptureVersion(context.Background(), stage.ID, ""); !errors.Is(err, ErrPromotionFed) {
-		t.Fatalf("expected capture to be refused, got %v", err)
-	}
-}
-
-func TestRevertRestoresTheControlPlaneWithoutSendingCredentials(t *testing.T) {
-	svc, _, dev := secretsFixture(t)
-	cp := &recordingControlPlane{}
-	svc.SetLocalControlPlane(cp)
-
-	// A second version, so there is something to revert away from.
-	if _, err := svc.CaptureVersion(context.Background(), dev.ID, "second"); err != nil {
-		t.Fatalf("capture: %v", err)
-	}
-
-	result, err := svc.Revert(context.Background(), RevertInput{EnvID: dev.ID, ToRef: "previous"})
-	if err != nil {
-		t.Fatalf("revert: %v", err)
-	}
-
-	// The environment is reverted as a whole, so its control plane goes back with the data plane.
-	if result.ControlPlane == nil || cp.content == "" {
-		t.Fatal("the restored configuration should have been written to the control plane")
-	}
-	if cp.deploymentID != dev.Source.DeploymentID {
-		t.Fatalf("expected the environment's own tenant, got %q", cp.deploymentID)
-	}
-	// A control plane holds no credential: the field is removed rather than written, so nothing here
-	// can replace what the data plane already verifies against.
-	if _, present := cp.variables["APPLICATION_APP_A_CLIENT_SECRET"]; present {
-		t.Fatal("no credential may be sent to a control plane")
-	}
-	if strings.Contains(cp.content, "APPLICATION_APP_A_CLIENT_SECRET") {
-		t.Fatal("the credential field must be stripped, not left as an unresolved placeholder")
-	}
-	if !strings.Contains(cp.content, "app-a") {
-		t.Fatal("stripping the credential must not take the resource with it")
-	}
-}
-
-// A pod that cannot reach the data plane answers from what it last reported, rather than failing.
 func TestListSecretsFallsBackToWhatTheDataPlaneLastReported(t *testing.T) {
 	fake := &fakeClient{secretNames: []string{"APPLICATION_APP_A_CLIENT_SECRET"}}
 	svc := newTestService(t, fake)

@@ -71,7 +71,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /environments/{id}/variables", s.checkVariables)
 	mux.HandleFunc("POST /environments/{id}/apply", s.apply)
 	mux.HandleFunc("POST /environments/{id}/revert", s.revert)
-	mux.HandleFunc("POST /environments/{id}/control-plane", s.applyToControlPlane)
 
 	mux.HandleFunc("GET /environments/{id}/secrets", s.listSecrets)
 	mux.HandleFunc("PUT /environments/{id}/secrets/{name}", s.setSecret)
@@ -92,9 +91,8 @@ type createEnvironmentRequest struct {
 	Rank *int   `json:"rank,omitempty"`
 	// PromotesTo are the environments this one can promote into. Omit to fall back to the next
 	// environment by rank.
-	PromotesTo []string      `json:"promotesTo,omitempty"`
-	Target     model.Target  `json:"target"`
-	Source     *model.Source `json:"source,omitempty"`
+	PromotesTo []string     `json:"promotesTo,omitempty"`
+	Target     model.Target `json:"target"`
 }
 
 // regenerateDataPlaneToken issues a new token for an environment's data plane and returns it once.
@@ -117,7 +115,7 @@ func (s *Server) createEnvironment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	env, err := s.svc.CreateEnvironment(r.Context(), service.CreateEnvironmentInput{
-		Name: req.Name, Rank: req.Rank, PromotesTo: req.PromotesTo, Target: req.Target, Source: req.Source,
+		Name: req.Name, Rank: req.Rank, PromotesTo: req.PromotesTo, Target: req.Target,
 	})
 	if err != nil {
 		writeError(w, err)
@@ -346,22 +344,6 @@ func (s *Server) regenerateSecret(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{"secret": entry, "value": value})
 }
 
-// applyToControlPlane restores the environment's control plane tenant from one of its versions.
-func (s *Server) applyToControlPlane(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Version string `json:"version,omitempty"`
-	}
-	if r.ContentLength > 0 && !decode(w, r, &req) {
-		return
-	}
-	result, err := s.svc.ApplyToControlPlane(r.Context(), r.PathValue("id"), req.Version)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"controlPlane": result})
-}
-
 func (s *Server) captureSecret(w http.ResponseWriter, r *http.Request) {
 	var body map[string]interface{}
 	if !decode(w, r, &body) {
@@ -506,7 +488,7 @@ func writeError(w http.ResponseWriter, err error) {
 	case errors.Is(err, service.ErrNotFound):
 		writeErrorStatus(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, service.ErrValidation),
-		errors.Is(err, service.ErrNoSource),
+		errors.Is(err, service.ErrNoWorkspace),
 		errors.Is(err, service.ErrNoVersions),
 		errors.Is(err, service.ErrNothingApplied),
 		errors.Is(err, service.ErrNoPreviousVersion),

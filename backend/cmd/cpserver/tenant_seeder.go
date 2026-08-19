@@ -20,18 +20,13 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/thunder-id/thunderid/internal/environmentvariable"
-	"github.com/thunder-id/thunderid/internal/envmgr"
-	"github.com/thunder-id/thunderid/internal/envmgr/bundle"
 	"github.com/thunder-id/thunderid/internal/envmgr/model"
 	envmgrservice "github.com/thunder-id/thunderid/internal/envmgr/service"
 	"github.com/thunder-id/thunderid/internal/system/deployment"
-	"github.com/thunder-id/thunderid/internal/system/export"
-	"github.com/thunder-id/thunderid/internal/system/importer"
 	"github.com/thunder-id/thunderid/internal/tenant"
 )
 
@@ -44,11 +39,7 @@ import (
 // captured, so the source is then read directly instead. Requiring a capture first would mean an
 // organization's environments could not be created one after another.
 type environmentSeeder struct {
-	registry  envmgrRegistry
-	exportSvc export.ExportServiceInterface
-	importSvc importer.ImportServiceInterface
-	// controlPlaneURL is where a registered environment reads its configuration from: this server.
-	controlPlaneURL string
+	registry envmgrRegistry
 	// envVarService holds the per-deployment values an apply resolves its placeholders from.
 	envVarService environmentvariable.EnvironmentVariableServiceInterface
 }
@@ -95,30 +86,6 @@ func (s *environmentSeeder) setConsoleURLsForDataPlane(ctx context.Context, depl
 	return nil
 }
 
-// SeedTenant copies the source tenant's configuration into the target and reports what landed.
-func (s *environmentSeeder) SeedTenant(ctx context.Context, sourceDeploymentID,
-	targetDeploymentID string) (*tenant.SeedSummary, error) {
-	resp, err := s.registry.SeedTenant(ctx, sourceDeploymentID, targetDeploymentID)
-	if err != nil {
-		if !errors.Is(err, envmgr.ErrNoSeedSource) && !errors.Is(err, envmgrservice.ErrNoVersions) {
-			return nil, err
-		}
-		return s.seedFromExport(ctx, sourceDeploymentID, targetDeploymentID)
-	}
-
-	summary := &tenant.SeedSummary{From: sourceDeploymentID}
-	if resp != nil {
-		summary.TotalDocuments = resp.Summary.TotalDocuments
-		summary.Imported = resp.Summary.Imported
-		summary.Failed = resp.Summary.Failed
-	}
-	return summary, nil
-}
-
-// RegisterEnvironment records the new tenant as an environment of its organization.
-//
-// The source is this control plane and the tenant just created; the target is the data plane the
-// caller named. Both are known here, which is why registration happens as part of creating the
 // tenant rather than being left as a second call an operator has to remember.
 func (s *environmentSeeder) RegisterEnvironment(ctx context.Context,
 	in tenant.RegisterEnvironmentInput) (*tenant.EnvironmentSummary, error) {
@@ -134,11 +101,6 @@ func (s *environmentSeeder) RegisterEnvironment(ctx context.Context,
 			DataPlaneID: in.DataPlane.ID,
 			BaseURL:     in.DataPlane.BaseURL,
 		},
-		Source: &model.Source{
-			BaseURL:            s.controlPlaneURL,
-			DeploymentID:       in.DeploymentID,
-			InsecureSkipVerify: in.ControlPlaneInsecureSkipVerify,
-		},
 	})
 	if err != nil {
 		return nil, err
@@ -149,70 +111,4 @@ func (s *environmentSeeder) RegisterEnvironment(ctx context.Context,
 	return &tenant.EnvironmentSummary{
 		ID: env.ID, Name: env.Name, Rank: env.Rank, DataPlaneToken: env.DataPlaneToken,
 	}, nil
-}
-
-// seedFromExport reads the source tenant directly and writes it into the target. Both steps run in
-// process against the tenant each is scoped to, the same way a promotion reaches another tenant.
-func (s *environmentSeeder) seedFromExport(ctx context.Context, sourceDeploymentID,
-	targetDeploymentID string) (*tenant.SeedSummary, error) {
-	if s.exportSvc == nil || s.importSvc == nil {
-		return nil, fmt.Errorf("this server cannot read tenant %s to copy it", sourceDeploymentID)
-	}
-
-	exported, svcErr := s.exportSvc.ExportResources(deployment.WithID(ctx, sourceDeploymentID),
-		everythingExportRequest())
-	if svcErr != nil {
-		return nil, fmt.Errorf("reading tenant %s failed: %s", sourceDeploymentID, svcErr.Error.DefaultValue)
-	}
-
-	resources := joinExportedFiles(exported)
-	if strings.TrimSpace(resources) == "" {
-		return nil, fmt.Errorf("tenant %s holds no configuration to copy", sourceDeploymentID)
-	}
-	values := map[string]string{}
-	if exported.EnvFile != nil {
-		values = bundle.ParseEnv(exported.EnvFile.Content)
-	}
-
-	// Credentials are handled exactly as a promotion handles them: none is written to a control plane.
-	req := envmgrservice.ControlPlaneRequest(resources, values, bundle.SecretVariables(resources))
-	result, svcErr := s.importSvc.ImportResources(deployment.WithID(ctx, targetDeploymentID),
-		&importer.ImportRequest{Content: req.Content, Variables: req.Variables})
-	if svcErr != nil {
-		return nil, fmt.Errorf("writing tenant %s failed: %s", targetDeploymentID, svcErr.ErrorDescription)
-	}
-
-	summary := &tenant.SeedSummary{From: sourceDeploymentID}
-	if result != nil && result.Summary != nil {
-		summary.TotalDocuments = result.Summary.TotalDocuments
-		summary.Imported = result.Summary.Imported
-		summary.Failed = result.Summary.Failed
-	}
-	return summary, nil
-}
-
-// everythingExportRequest asks for the whole tenant, which is what a copy of it means.
-func everythingExportRequest() *export.ExportRequest {
-	all := []string{"*"}
-	return &export.ExportRequest{
-		Applications: all, Connections: all, UserTypes: all, OrganizationUnits: all,
-		Users: all, Groups: all, ResourceServers: all, Roles: all, Flows: all,
-		Translations: all, Layouts: all, Themes: all, ServerConfigs: all,
-		Options: &export.ExportOptions{IncludeDependencies: true, Format: "yaml"},
-	}
-}
-
-// joinExportedFiles concatenates the exported documents into the multi-document bundle the import
-// reads, in the order the export produced them so a resource still precedes what refers to it.
-func joinExportedFiles(response *export.ExportResponse) string {
-	if response == nil {
-		return ""
-	}
-	docs := make([]string, 0, len(response.Files))
-	for _, file := range response.Files {
-		if content := strings.TrimSpace(file.Content); content != "" {
-			docs = append(docs, content)
-		}
-	}
-	return strings.Join(docs, "\n---\n")
 }
