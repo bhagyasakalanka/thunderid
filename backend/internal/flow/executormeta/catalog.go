@@ -143,9 +143,11 @@ var catalog = map[string]providers.ExecutorMeta{
 		},
 	},
 	ExecutorNamePasskeyAuth: {
-		SupportedModes: []string{passkeyExecutorModeChallenge, passkeyExecutorModeVerify, passkeyExecutorModeRegStart, passkeyExecutorModeRegFinish},
+		SupportedModes: []string{passkeyExecutorModeChallenge, passkeyExecutorModeVerify, passkeyExecutorModeRegStart,
+			passkeyExecutorModeRegFinish},
 		SupportedProperties: []providers.ExecutorSupportedProperties{
-			{Property: "relyingPartyId", IsRequired: true, ApplicableModes: []string{passkeyExecutorModeChallenge, passkeyExecutorModeRegStart}},
+			{Property: "relyingPartyId", IsRequired: true, ApplicableModes: []string{passkeyExecutorModeChallenge,
+				passkeyExecutorModeRegStart}},
 			{Property: "relyingPartyName"},
 			{Property: "authenticatorSelection"},
 			{Property: "attestation"},

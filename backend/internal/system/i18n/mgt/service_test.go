@@ -126,7 +126,8 @@ func (suite *I18nMgtServiceTestSuite) TestResolveTranslationsForKey_ValidationEr
 }
 
 func (suite *I18nMgtServiceTestSuite) TestResolveTranslationsForKey_NotFound() {
-	suite.mockStore.On("GetTranslationsByKey", mock.Anything, "unknown", "common").Return((map[string]Translation)(nil), nil)
+	suite.mockStore.On("GetTranslationsByKey", mock.Anything, "unknown", "common").Return((map[string]Translation)(nil),
+		nil)
 
 	result, err := suite.service.ResolveTranslationsForKey(context.Background(), "en-US", "common", "unknown")
 
@@ -149,7 +150,8 @@ func (suite *I18nMgtServiceTestSuite) TestResolveTranslationsForKey_UsesSystemDe
 	key := testErrKey
 	expectedValue := testErrVal
 
-	suite.mockStore.On("GetTranslationsByKey", mock.Anything, key, SystemNamespace).Return(make(map[string]Translation), nil)
+	suite.mockStore.On("GetTranslationsByKey", mock.Anything, key, SystemNamespace).Return(make(map[string]Translation),
+		nil)
 
 	// Request en-US, expecting fallback to system default (en)
 	result, err := suite.service.ResolveTranslationsForKey(context.Background(), "en-US", SystemNamespace, key)

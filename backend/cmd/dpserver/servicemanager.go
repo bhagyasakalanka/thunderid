@@ -286,8 +286,8 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 	dpopVerifier := dpop.Initialize(oauthCfg, jti.Initialize(runtimeStoreProvider), runtimeCryptoSvc)
 
 	openid4vpSvc, openid4vpDefSvc, openid4vciCredSvc, exporters :=
-		initializeVCServices(ctx, logger, mux, runtimeCryptoSvc, configCryptoSvc, jwtService, userService,
-			ouService, dpopVerifier, runtimeStoreProvider, exporters)
+		initializeVCServices(ctx, logger, mux, runtimeCryptoSvc, configCryptoSvc, jwtService,
+			ouService, runtimeStoreProvider, exporters)
 
 	// Initialize authn provider. The default provider authenticates against the entity store; a REST
 	// provider is registered alongside it when one is configured.
@@ -645,9 +645,8 @@ func initializeFlowCoreAndExecutor(
 func initializeVCServices(
 	ctx context.Context, logger *log.Logger, mux *http.ServeMux,
 	runtimeCrypto kmprovider.RuntimeCryptoProvider, configCrypto kmprovider.ConfigCryptoProvider,
-	jwtService jwt.JWTServiceInterface, userService user.UserServiceInterface,
+	jwtService jwt.JWTServiceInterface,
 	ouService ou.OrganizationUnitServiceInterface,
-	dpopVerifier dpop.VerifierInterface,
 	runtimeStoreProvider providers.RuntimeStoreProvider,
 	exporters []declarativeresource.ResourceExporter,
 ) (openid4vp.OpenID4VPServiceInterface, presentation.PresentationDefinitionServiceInterface,

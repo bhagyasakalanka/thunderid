@@ -92,7 +92,8 @@ func (f *definitionFileBasedStore) ListPresentationDefinitionSummaries(ctx conte
 }
 
 // List retrieves all presentation definitions from the file-based store.
-func (f *definitionFileBasedStore) ListPresentationDefinitions(ctx context.Context) ([]PresentationDefinitionDTO, error) {
+func (f *definitionFileBasedStore) ListPresentationDefinitions(ctx context.Context) ([]PresentationDefinitionDTO,
+	error) {
 	list, err := f.GenericFileBasedStore.List(ctx)
 	if err != nil {
 		return nil, err
@@ -108,7 +109,8 @@ func (f *definitionFileBasedStore) ListPresentationDefinitions(ctx context.Conte
 }
 
 // Update is not supported in the file-based store.
-func (f *definitionFileBasedStore) UpdatePresentationDefinition(ctx context.Context, _ PresentationDefinitionDTO) error {
+func (f *definitionFileBasedStore) UpdatePresentationDefinition(ctx context.Context,
+	_ PresentationDefinitionDTO) error {
 	return ErrDefinitionIsImmutable
 }
 

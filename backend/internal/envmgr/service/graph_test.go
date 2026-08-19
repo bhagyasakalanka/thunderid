@@ -128,8 +128,8 @@ func TestPromoteRejectsEnvironmentsWithNoEdge(t *testing.T) {
 	}
 	_, _ = svc.UploadVersion(context.Background(), a.ID, bundleOf("app-a"), nil, "v1")
 
-	if _, err := svc.Promote(context.Background(), PromoteInput{FromEnvID: a.ID, ToEnvID: c.ID}); err !=
-		ErrNoPromotionPath {
+	if _, err := svc.Promote(context.Background(),
+		PromoteInput{FromEnvID: a.ID, ToEnvID: c.ID}); !errors.Is(err, ErrNoPromotionPath) {
 		t.Fatalf("expected ErrNoPromotionPath, got %v", err)
 	}
 	if _, err := svc.Promote(context.Background(), PromoteInput{FromEnvID: a.ID, ToEnvID: b.ID}); err != nil {

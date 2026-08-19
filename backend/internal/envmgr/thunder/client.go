@@ -26,6 +26,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -287,7 +288,8 @@ func (e *HTTPError) Error() string {
 }
 
 func isStatus(err error, code int) bool {
-	he, ok := err.(*HTTPError)
+	var he *HTTPError
+	ok := errors.As(err, &he)
 	return ok && he.StatusCode == code
 }
 

@@ -20,6 +20,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -30,6 +31,8 @@ import (
 	"github.com/thunder-id/thunderid/internal/envmgr/store"
 	"github.com/thunder-id/thunderid/internal/envmgr/thunder"
 )
+
+const testAppB = "app-b"
 
 // fakeClient records import calls and serves canned export/reveal data.
 type fakeClient struct {
@@ -141,12 +144,13 @@ func TestApplyTracksDeletions(t *testing.T) {
 	fake := &fakeClient{}
 	svc := newTestService(t, fake)
 
-	env, err := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "dev", Target: model.Target{DataPlaneID: "dp"}})
+	env, err := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "dev",
+		Target: model.Target{DataPlaneID: "dp"}})
 	if err != nil {
 		t.Fatalf("create env: %v", err)
 	}
 
-	if _, err := svc.UploadVersion(context.Background(), env.ID, bundleOf("app-a", "app-b"), nil, "v1"); err != nil {
+	if _, err := svc.UploadVersion(context.Background(), env.ID, bundleOf("app-a", testAppB), nil, "v1"); err != nil {
 		t.Fatalf("upload v1: %v", err)
 	}
 	res, err := svc.Apply(context.Background(), env.ID, "latest", false)
@@ -168,7 +172,7 @@ func TestApplyTracksDeletions(t *testing.T) {
 		t.Fatalf("apply v2: %v", err)
 	}
 	dels := fake.lastImport().Deletions
-	if len(dels) != 1 || dels[0].ResourceType != "application" || dels[0].ID != "app-b" {
+	if len(dels) != 1 || dels[0].ResourceType != "application" || dels[0].ID != testAppB {
 		t.Fatalf("expected deletion of application app-b, got %+v", dels)
 	}
 
@@ -182,7 +186,8 @@ func TestApplyTracksDeletions(t *testing.T) {
 func TestApplyDryRunDoesNotRecord(t *testing.T) {
 	fake := &fakeClient{}
 	svc := newTestService(t, fake)
-	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "dev", Target: model.Target{DataPlaneID: "dp"}})
+	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "dev",
+		Target: model.Target{DataPlaneID: "dp"}})
 	_, _ = svc.UploadVersion(context.Background(), env.ID, bundleOf("app-a"), nil, "v1")
 
 	if _, err := svc.Apply(context.Background(), env.ID, "latest", true); err != nil {
@@ -251,7 +256,8 @@ func TestCaptureLetsControlPlaneVariablesOverrideTheExport(t *testing.T) {
 func TestApplyOmitsSecretsSoTheDataPlaneFillsThem(t *testing.T) {
 	fake := &fakeClient{}
 	svc := newTestService(t, fake)
-	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "dev", Target: model.Target{DataPlaneID: "dp"}})
+	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "dev",
+		Target: model.Target{DataPlaneID: "dp"}})
 
 	resources := "resource_type: application\nid: app-a\nname: app-a\nclientSecret: {{.APP_A_CLIENT_SECRET}}"
 	stored, err := svc.store.AddVersion(context.Background(), model.Version{
@@ -281,8 +287,9 @@ func TestApplyOmitsSecretsSoTheDataPlaneFillsThem(t *testing.T) {
 
 func TestCaptureRequiresSource(t *testing.T) {
 	svc := newTestService(t, &fakeClient{})
-	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "dev", Target: model.Target{DataPlaneID: "dp"}})
-	if _, err := svc.CaptureVersion(context.Background(), env.ID, ""); err != ErrNoSource {
+	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "dev",
+		Target: model.Target{DataPlaneID: "dp"}})
+	if _, err := svc.CaptureVersion(context.Background(), env.ID, ""); !errors.Is(err, ErrNoSource) {
 		t.Fatalf("expected ErrNoSource, got %v", err)
 	}
 }
@@ -333,10 +340,12 @@ func TestApplyPicksUpVariablesAddedAfterCapture(t *testing.T) {
 
 func TestPromoteSelective(t *testing.T) {
 	svc := newTestService(t, &fakeClient{})
-	dev, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "dev", Rank: intp(1), Target: model.Target{DataPlaneID: "dev"}})
-	prod, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "prod", Rank: intp(2), Target: model.Target{DataPlaneID: "prod"}})
+	dev, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "dev", Rank: intp(1),
+		Target: model.Target{DataPlaneID: "dev"}})
+	prod, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "prod", Rank: intp(2),
+		Target: model.Target{DataPlaneID: "prod"}})
 
-	_, _ = svc.UploadVersion(context.Background(), dev.ID, bundleOf("app-a", "app-b"), nil, "dev-v1")
+	_, _ = svc.UploadVersion(context.Background(), dev.ID, bundleOf("app-a", testAppB), nil, "dev-v1")
 
 	// Promote only app-a to prod.
 	result, err := svc.Promote(context.Background(), PromoteInput{
@@ -350,7 +359,7 @@ func TestPromoteSelective(t *testing.T) {
 		t.Fatalf("preview should show 2 additions, got %+v", result.Preview.Summary)
 	}
 	full, _ := svc.GetVersion(context.Background(), prod.ID, result.NewVersion.Seq)
-	if strings.Contains(full.Resources, "app-b") {
+	if strings.Contains(full.Resources, testAppB) {
 		t.Fatalf("app-b should not have been promoted:\n%s", full.Resources)
 	}
 	if !strings.Contains(full.Resources, "app-a") {
@@ -364,9 +373,11 @@ func TestPromoteSelective(t *testing.T) {
 func TestPromoteAllAndApply(t *testing.T) {
 	fake := &fakeClient{}
 	svc := newTestService(t, fake)
-	dev, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "dev", Rank: intp(1), Target: model.Target{DataPlaneID: "dev"}})
-	prod, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "prod", Rank: intp(2), Target: model.Target{DataPlaneID: "prod"}})
-	_, _ = svc.UploadVersion(context.Background(), dev.ID, bundleOf("app-a", "app-b"), nil, "dev-v1")
+	dev, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "dev", Rank: intp(1),
+		Target: model.Target{DataPlaneID: "dev"}})
+	prod, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "prod", Rank: intp(2),
+		Target: model.Target{DataPlaneID: "prod"}})
+	_, _ = svc.UploadVersion(context.Background(), dev.ID, bundleOf("app-a", testAppB), nil, "dev-v1")
 
 	result, err := svc.Promote(context.Background(), PromoteInput{FromEnvID: dev.ID, ToEnvID: prod.ID, Apply: true})
 	if err != nil {
@@ -383,9 +394,10 @@ func TestPromoteAllAndApply(t *testing.T) {
 
 func TestRevertRestoresAndAdvancesHead(t *testing.T) {
 	svc := newTestService(t, &fakeClient{})
-	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "dev", Target: model.Target{DataPlaneID: "dp"}})
+	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "dev",
+		Target: model.Target{DataPlaneID: "dp"}})
 	_, _ = svc.UploadVersion(context.Background(), env.ID, bundleOf("app-a"), nil, "v1")
-	_, _ = svc.UploadVersion(context.Background(), env.ID, bundleOf("app-a", "app-b"), nil, "v2")
+	_, _ = svc.UploadVersion(context.Background(), env.ID, bundleOf("app-a", testAppB), nil, "v2")
 
 	result, err := svc.Revert(context.Background(), RevertInput{EnvID: env.ID, ToRef: "1"})
 	if err != nil {
@@ -395,7 +407,7 @@ func TestRevertRestoresAndAdvancesHead(t *testing.T) {
 		t.Fatalf("revert should add a new head v3: %+v", result.NewVersion)
 	}
 	full, _ := svc.GetVersion(context.Background(), env.ID, 3)
-	if strings.Contains(full.Resources, "app-b") {
+	if strings.Contains(full.Resources, testAppB) {
 		t.Fatalf("reverted head should match v1 (no app-b):\n%s", full.Resources)
 	}
 	// Preview reflects removing app-b (current v2 -> target v1).
@@ -406,10 +418,11 @@ func TestRevertRestoresAndAdvancesHead(t *testing.T) {
 
 func TestRevertToPreviousResolvesSecondNewest(t *testing.T) {
 	svc := newTestService(t, &fakeClient{})
-	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "dev", Target: model.Target{DataPlaneID: "dp"}})
+	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "dev",
+		Target: model.Target{DataPlaneID: "dp"}})
 	_, _ = svc.UploadVersion(context.Background(), env.ID, bundleOf("app-a"), nil, "v1")
-	_, _ = svc.UploadVersion(context.Background(), env.ID, bundleOf("app-a", "app-b"), nil, "v2")
-	_, _ = svc.UploadVersion(context.Background(), env.ID, bundleOf("app-a", "app-b", "app-c"), nil, "v3")
+	_, _ = svc.UploadVersion(context.Background(), env.ID, bundleOf("app-a", testAppB), nil, "v2")
+	_, _ = svc.UploadVersion(context.Background(), env.ID, bundleOf("app-a", testAppB, "app-c"), nil, "v3")
 
 	result, err := svc.Revert(context.Background(), RevertInput{EnvID: env.ID, ToRef: "previous"})
 	if err != nil {
@@ -417,7 +430,7 @@ func TestRevertToPreviousResolvesSecondNewest(t *testing.T) {
 	}
 	// v3 is the head, so "previous" is v2: the new head must match v2's content.
 	full, _ := svc.GetVersion(context.Background(), env.ID, result.NewVersion.Seq)
-	if !strings.Contains(full.Resources, "app-b") || strings.Contains(full.Resources, "app-c") {
+	if !strings.Contains(full.Resources, testAppB) || strings.Contains(full.Resources, "app-c") {
 		t.Fatalf("expected v2 content restored, got:\n%s", full.Resources)
 	}
 	if full.SourceSeq != 2 {
@@ -427,11 +440,12 @@ func TestRevertToPreviousResolvesSecondNewest(t *testing.T) {
 
 func TestRevertToPreviousRequiresTwoVersions(t *testing.T) {
 	svc := newTestService(t, &fakeClient{})
-	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "dev", Target: model.Target{DataPlaneID: "dp"}})
+	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "dev",
+		Target: model.Target{DataPlaneID: "dp"}})
 	_, _ = svc.UploadVersion(context.Background(), env.ID, bundleOf("app-a"), nil, "v1")
 
-	if _, err := svc.Revert(context.Background(), RevertInput{EnvID: env.ID, ToRef: "previous"}); err !=
-		ErrNoPreviousVersion {
+	if _, err := svc.Revert(context.Background(),
+		RevertInput{EnvID: env.ID, ToRef: "previous"}); !errors.Is(err, ErrNoPreviousVersion) {
 		t.Fatalf("expected ErrNoPreviousVersion, got %v", err)
 	}
 }
@@ -694,9 +708,11 @@ func TestCaptureSecretForTenantRoutesToThatTenantsProvider(t *testing.T) {
 
 func TestVersionHistoryPruned(t *testing.T) {
 	svc := newTestService(t, &fakeClient{})
-	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "dev", Target: model.Target{DataPlaneID: "dp"}})
+	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "dev",
+		Target: model.Target{DataPlaneID: "dp"}})
 	for i := 0; i < 7; i++ {
-		if _, err := svc.UploadVersion(context.Background(), env.ID, bundleOf("app-"+strconv.Itoa(i)), nil, "v"); err != nil {
+		if _, err := svc.UploadVersion(context.Background(), env.ID, bundleOf("app-"+strconv.Itoa(i)), nil,
+			"v"); err != nil {
 			t.Fatalf("upload: %v", err)
 		}
 	}
@@ -756,7 +772,8 @@ func setupPromotionPair(t *testing.T, fake *fakeClient) (*Service, model.Environ
 		Name: "dev", Rank: intp(1), Target: model.Target{DataPlaneID: "dev"}})
 	prod, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
 		Name: "prod", Rank: intp(2), Target: model.Target{DataPlaneID: "prod"}})
-	if _, err := svc.UploadVersion(context.Background(), dev.ID, bundleOf("app-a", "app-b"), nil, "dev-v1"); err != nil {
+	if _, err := svc.UploadVersion(context.Background(), dev.ID, bundleOf("app-a", testAppB), nil,
+		"dev-v1"); err != nil {
 		t.Fatalf("upload: %v", err)
 	}
 	return svc, dev.Environment, prod.Environment
@@ -794,7 +811,7 @@ func TestPromoteKeepsHoldingBackOnALaterRun(t *testing.T) {
 
 	// dev changes again and the user promotes without expressing a preference. The earlier decision
 	// stands: asking again every time is how a held back resource eventually slips through.
-	_, err := svc.UploadVersion(context.Background(), dev.ID, bundleOf("app-a", "app-b", "app-c"), nil, "dev-v2")
+	_, err := svc.UploadVersion(context.Background(), dev.ID, bundleOf("app-a", testAppB, "app-c"), nil, "dev-v2")
 	if err != nil {
 		t.Fatalf("upload: %v", err)
 	}
@@ -804,7 +821,7 @@ func TestPromoteKeepsHoldingBackOnALaterRun(t *testing.T) {
 	}
 
 	full, _ := svc.GetVersion(context.Background(), prod.ID, result.NewVersion.Seq)
-	if strings.Contains(full.Resources, "app-b") {
+	if strings.Contains(full.Resources, testAppB) {
 		t.Fatalf("app-b was held back earlier and must stay held back:\n%s", full.Resources)
 	}
 	if !strings.Contains(full.Resources, "app-c") {
@@ -832,7 +849,7 @@ func TestPromoteReleasesAResourceWhenItIsSelectedAgain(t *testing.T) {
 	}
 
 	full, _ := svc.GetVersion(context.Background(), prod.ID, result.NewVersion.Seq)
-	if !strings.Contains(full.Resources, "app-b") {
+	if !strings.Contains(full.Resources, testAppB) {
 		t.Fatalf("app-b was selected and should have promoted:\n%s", full.Resources)
 	}
 	env, _ := svc.GetEnvironment(context.Background(), prod.ID)
@@ -858,11 +875,11 @@ func TestApplyLeavesAHeldBackResourceAlone(t *testing.T) {
 	}
 
 	// Held back means left alone on the data plane: neither pushed nor deleted.
-	if strings.Contains(fake.lastImport().Content, "app-b") {
+	if strings.Contains(fake.lastImport().Content, testAppB) {
 		t.Fatalf("a held back resource must not be applied:\n%s", fake.lastImport().Content)
 	}
 	for _, d := range fake.lastImport().Deletions {
-		if d.ID == "app-b" {
+		if d.ID == testAppB {
 			t.Fatal("holding a resource back means leaving it alone, not deleting it from the data plane")
 		}
 	}
@@ -1073,7 +1090,7 @@ func TestApplyToControlPlaneRemovesWhatALaterVersionAdded(t *testing.T) {
 	})
 	_, _ = svc.store.AddVersion(context.Background(), model.Version{
 		EnvID: env.ID, Origin: model.OriginUploaded, CreatedAt: svc.now().UTC(),
-		Resources: bundleOf("app-a", "app-b"),
+		Resources: bundleOf("app-a", testAppB),
 	})
 
 	if _, err := svc.ApplyToControlPlane(context.Background(), env.ID, "1"); err != nil {
@@ -1084,7 +1101,7 @@ func TestApplyToControlPlaneRemovesWhatALaterVersionAdded(t *testing.T) {
 		t.Fatalf("expected one import, got %d", len(cp.imports))
 	}
 	deletions := cp.imports[0].Deletions
-	if len(deletions) != 1 || deletions[0].ID != "app-b" {
+	if len(deletions) != 1 || deletions[0].ID != testAppB {
 		t.Fatalf("expected app-b to be removed, got %+v", deletions)
 	}
 }
@@ -1131,14 +1148,14 @@ func TestControlPlaneWritesCompareAgainstWhatTheTenantHolds(t *testing.T) {
 	})
 	_, _ = svc.store.AddVersion(context.Background(), model.Version{
 		EnvID: env.ID, Origin: model.OriginUploaded, CreatedAt: svc.now().UTC(),
-		Resources: bundleOf("app-a", "app-b"),
+		Resources: bundleOf("app-a", testAppB),
 	})
 
 	// Write v1: the tenant loses app-b and now holds v1.
 	if _, err := svc.ApplyToControlPlane(context.Background(), env.ID, "1"); err != nil {
 		t.Fatalf("first write: %v", err)
 	}
-	if got := cp.imports[0].Deletions; len(got) != 1 || got[0].ID != "app-b" {
+	if got := cp.imports[0].Deletions; len(got) != 1 || got[0].ID != testAppB {
 		t.Fatalf("first write should remove app-b, got %+v", got)
 	}
 
@@ -1167,7 +1184,7 @@ func TestControlPlaneSeqIsTrackedApartFromAppliedSeq(t *testing.T) {
 	})
 	_, _ = svc.store.AddVersion(context.Background(), model.Version{
 		EnvID: env.ID, Origin: model.OriginUploaded, CreatedAt: svc.now().UTC(),
-		Resources: bundleOf("app-a", "app-b"),
+		Resources: bundleOf("app-a", testAppB),
 	})
 
 	if _, err := svc.ApplyToControlPlane(context.Background(), env.ID, "1"); err != nil {
@@ -1210,13 +1227,13 @@ func TestPromoteComparesAgainstWhatTheDestinationIsRunning(t *testing.T) {
 	}
 	_, _ = svc.store.AddVersion(context.Background(), model.Version{
 		EnvID: stage.ID, Origin: model.OriginCaptured, CreatedAt: svc.now().UTC(),
-		Resources: bundleOf("app-a", "app-b"),
+		Resources: bundleOf("app-a", testAppB),
 	})
 
 	// Dev is running both applications.
 	_, _ = svc.store.AddVersion(context.Background(), model.Version{
 		EnvID: dev.ID, Origin: model.OriginUploaded, CreatedAt: svc.now().UTC(),
-		Resources: bundleOf("app-a", "app-b"),
+		Resources: bundleOf("app-a", testAppB),
 	})
 	if _, err := svc.Apply(context.Background(), dev.ID, "1", false); err != nil {
 		t.Fatalf("apply to dev: %v", err)
@@ -1257,7 +1274,7 @@ func TestPromoteSendsWhatTheSourceIsRunning(t *testing.T) {
 	}
 	_, _ = svc.store.AddVersion(context.Background(), model.Version{
 		EnvID: dev.ID, Origin: model.OriginCaptured, CreatedAt: svc.now().UTC(),
-		Resources: bundleOf("app-a", "app-b"),
+		Resources: bundleOf("app-a", testAppB),
 	})
 
 	result, err := svc.Promote(context.Background(), PromoteInput{FromEnvID: dev.ID, ToEnvID: stage.ID})
@@ -1269,7 +1286,7 @@ func TestPromoteSendsWhatTheSourceIsRunning(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get promoted version: %v", err)
 	}
-	if strings.Contains(promoted.Resources, "app-b") {
+	if strings.Contains(promoted.Resources, testAppB) {
 		t.Fatalf("app-b was captured but never applied, so it must not promote:\n%s", promoted.Resources)
 	}
 	if !strings.Contains(promoted.Resources, "app-a") {

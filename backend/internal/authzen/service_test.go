@@ -470,7 +470,8 @@ func (s *ServiceTestSuite) TestEvaluateAccessBatchInvalidActionReturnsFalse() {
 	s.resourceMock.On("ValidatePermissions", mock.Anything, testResourceServerID, []string{"booking:archive"}).
 		Return([]string{"booking:archive"}, nil)
 	s.mockValidAction("booking:delete")
-	s.entityProviderMock.On("GetTransitiveEntityGroups", mock.Anything, "user1").Return([]providers.EntityGroup{}, nil).Once()
+	s.entityProviderMock.On("GetTransitiveEntityGroups", mock.Anything, "user1").Return([]providers.EntityGroup{},
+		nil).Once()
 	s.authzMock.On("EvaluateAccessBatch", mock.Anything,
 		mock.MatchedBy(func(req providers.AccessEvaluationsRequest) bool {
 			return len(req.Evaluations) == 2 &&
@@ -520,7 +521,8 @@ func (s *ServiceTestSuite) TestEvaluateAccessBatchInvalidSubjectReturnsItemError
 	s.mockValidSubject()
 	s.mockResourceServerIdentifier("booking")
 	s.mockValidAction(testBookingReadAction)
-	s.entityProviderMock.On("GetTransitiveEntityGroups", mock.Anything, "user1").Return([]providers.EntityGroup{}, nil).Once()
+	s.entityProviderMock.On("GetTransitiveEntityGroups", mock.Anything, "user1").Return([]providers.EntityGroup{},
+		nil).Once()
 	s.authzMock.On("EvaluateAccessBatch", mock.Anything,
 		mock.MatchedBy(func(req providers.AccessEvaluationsRequest) bool {
 			return len(req.Evaluations) == 1 &&
@@ -620,7 +622,8 @@ func (s *ServiceTestSuite) TestEvaluateAccessBatchMissingActionReturnsItemError(
 	}, nil).Once()
 	s.mockResourceServerIdentifier("booking")
 	s.mockValidAction(testBookingReadAction)
-	s.entityProviderMock.On("GetTransitiveEntityGroups", mock.Anything, "user1").Return([]providers.EntityGroup{}, nil).Once()
+	s.entityProviderMock.On("GetTransitiveEntityGroups", mock.Anything, "user1").Return([]providers.EntityGroup{},
+		nil).Once()
 	s.authzMock.On("EvaluateAccessBatch", mock.Anything,
 		mock.MatchedBy(func(req providers.AccessEvaluationsRequest) bool {
 			return len(req.Evaluations) == 1 &&

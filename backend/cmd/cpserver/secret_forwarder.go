@@ -98,7 +98,8 @@ func (f *secretForwarder) CaptureSecret(ctx context.Context, resourceType, resou
 // it to a third party, such as a connection's client secret sent to the upstream provider. The field
 // name alone cannot decide this: a connection's ClientSecret is replayed, while an application's
 // ClientSecret of the same name is only ever verified.
-func (f *secretForwarder) CaptureReplayableSecret(ctx context.Context, resourceType, resourceName, field, value string) {
+func (f *secretForwarder) CaptureReplayableSecret(ctx context.Context, resourceType, resourceName, field,
+	value string) {
 	if value == "" {
 		return
 	}

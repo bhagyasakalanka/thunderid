@@ -171,7 +171,8 @@ func (st *store) CreateOAuthProfile(ctx context.Context, entityID string,
 		return err
 	}
 
-	_, err = dbClient.ExecuteContext(ctx, queryCreateOAuthProfile, entityID, profileJSON, deployment.Resolve(ctx, st.deploymentID))
+	_, err = dbClient.ExecuteContext(ctx, queryCreateOAuthProfile, entityID, profileJSON, deployment.Resolve(ctx,
+		st.deploymentID))
 	if err != nil {
 		return fmt.Errorf("failed to insert OAuth profile: %w", err)
 	}
@@ -185,7 +186,8 @@ func (st *store) GetInboundClientByEntityID(ctx context.Context, entityID string
 		return nil, fmt.Errorf("failed to get database client: %w", err)
 	}
 
-	results, err := dbClient.QueryContext(ctx, queryGetInboundClientByEntityID, entityID, deployment.Resolve(ctx, st.deploymentID))
+	results, err := dbClient.QueryContext(ctx, queryGetInboundClientByEntityID, entityID, deployment.Resolve(ctx,
+		st.deploymentID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute query: %w", err)
 	}
@@ -202,7 +204,8 @@ func (st *store) GetOAuthProfileByEntityID(ctx context.Context, entityID string)
 		return nil, fmt.Errorf("failed to get database client: %w", err)
 	}
 
-	results, err := dbClient.QueryContext(ctx, queryGetOAuthProfileByEntityID, entityID, deployment.Resolve(ctx, st.deploymentID))
+	results, err := dbClient.QueryContext(ctx, queryGetOAuthProfileByEntityID, entityID, deployment.Resolve(ctx,
+		st.deploymentID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute query: %w", err)
 	}
@@ -219,7 +222,8 @@ func (st *store) GetInboundClientList(ctx context.Context, limit int) ([]provide
 		return nil, fmt.Errorf("failed to get database client: %w", err)
 	}
 
-	results, err := dbClient.QueryContext(ctx, queryGetInboundClientList, deployment.Resolve(ctx, st.deploymentID), limit)
+	results, err := dbClient.QueryContext(ctx, queryGetInboundClientList, deployment.Resolve(ctx, st.deploymentID),
+		limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute query: %w", err)
 	}
@@ -405,7 +409,8 @@ func (st *store) DeleteInboundClient(ctx context.Context, entityID string) error
 		return fmt.Errorf("failed to get database client: %w", err)
 	}
 
-	_, err = dbClient.ExecuteContext(ctx, queryDeleteInboundClientByEntityID, entityID, deployment.Resolve(ctx, st.deploymentID))
+	_, err = dbClient.ExecuteContext(ctx, queryDeleteInboundClientByEntityID, entityID, deployment.Resolve(ctx,
+		st.deploymentID))
 	if err != nil {
 		return fmt.Errorf("failed to delete inbound client: %w", err)
 	}
@@ -419,7 +424,8 @@ func (st *store) DeleteOAuthProfile(ctx context.Context, entityID string) error 
 		return fmt.Errorf("failed to get database client: %w", err)
 	}
 
-	_, err = dbClient.ExecuteContext(ctx, queryDeleteOAuthProfileByEntityID, entityID, deployment.Resolve(ctx, st.deploymentID))
+	_, err = dbClient.ExecuteContext(ctx, queryDeleteOAuthProfileByEntityID, entityID, deployment.Resolve(ctx,
+		st.deploymentID))
 	if err != nil {
 		return fmt.Errorf("failed to delete OAuth profile: %w", err)
 	}
@@ -433,7 +439,9 @@ func (st *store) InboundClientExists(ctx context.Context, entityID string) (bool
 		return false, fmt.Errorf("failed to get database client: %w", err)
 	}
 
-	results, err := dbClient.QueryContext(ctx, queryCheckInboundClientExistsByEntityID, entityID, deployment.Resolve(ctx, st.deploymentID))
+	results, err := dbClient.QueryContext(ctx, queryCheckInboundClientExistsByEntityID, entityID,
+		deployment.Resolve(ctx,
+			st.deploymentID))
 	if err != nil {
 		return false, fmt.Errorf("failed to execute existence check query: %w", err)
 	}

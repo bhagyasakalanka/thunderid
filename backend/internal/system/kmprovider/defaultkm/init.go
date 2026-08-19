@@ -36,8 +36,9 @@ var (
 
 // GetConfigCryptoService returns the singleton ConfigCryptoProvider for the default key manager.
 //
-// Deprecated: prefer taking the provider as a dependency, as the server does elsewhere. It remains
-// for callers built during start-up, before the key manager is installed.
+// Most callers should take the provider as a dependency, as the server does elsewhere. This exists
+// for the few built during start-up, before the key manager has been installed, which therefore
+// cannot be handed one.
 func GetConfigCryptoService() (kmprovider.ConfigCryptoProvider, error) {
 	globalOnce.Do(func() {
 		globalCfgSvc, initErr = initConfigProvider()

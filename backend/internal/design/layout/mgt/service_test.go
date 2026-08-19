@@ -538,7 +538,8 @@ func (suite *LayoutServiceTestSuite) TestCreateLayout_HandleConflictError() {
 		Layout:      json.RawMessage(`{"structure": "grid"}`),
 	}
 
-	suite.mockStore.On("IsLayoutHandleConflict", mock.Anything, "my-layout", "").Return(false, errors.New("database error"))
+	suite.mockStore.On("IsLayoutHandleConflict", mock.Anything, "my-layout", "").Return(false,
+		errors.New("database error"))
 
 	result, err := suite.service.CreateLayout(context.Background(), layoutRequest)
 

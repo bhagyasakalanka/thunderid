@@ -60,14 +60,18 @@ func (suite *DefaultResourceServerConfigHandlerTestSuite) TestValidateKnownIDAcc
 	mockSvc := NewResourceServiceInterfaceMock(suite.T())
 	mockSvc.EXPECT().GetResourceServer(mock.Anything, "rs-1").Return(&providers.ResourceServer{ID: "rs-1"}, nil)
 	h := NewDefaultResourceServerConfigHandler(mockSvc)
-	assert.NoError(suite.T(), h.Validate(context.Background(), DefaultResourceServerConfig{ResourceServerID: "rs-1"}, nil, nil))
+	assert.NoError(suite.T(), h.Validate(context.Background(), DefaultResourceServerConfig{ResourceServerID: "rs-1"},
+		nil,
+		nil))
 }
 
 func (suite *DefaultResourceServerConfigHandlerTestSuite) TestValidateUnknownIDRejected() {
 	mockSvc := NewResourceServiceInterfaceMock(suite.T())
 	mockSvc.EXPECT().GetResourceServer(mock.Anything, "missing").Return(nil, &ErrorResourceServerNotFound)
 	h := NewDefaultResourceServerConfigHandler(mockSvc)
-	assert.Error(suite.T(), h.Validate(context.Background(), DefaultResourceServerConfig{ResourceServerID: "missing"}, nil, nil))
+	assert.Error(suite.T(), h.Validate(context.Background(), DefaultResourceServerConfig{ResourceServerID: "missing"},
+		nil,
+		nil))
 }
 
 func (suite *DefaultResourceServerConfigHandlerTestSuite) TestValidateInternalErrorRejected() {

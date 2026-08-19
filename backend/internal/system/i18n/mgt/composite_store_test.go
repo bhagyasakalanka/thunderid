@@ -6,8 +6,9 @@ package mgt
 import (
 	"context"
 	"errors"
-	"github.com/stretchr/testify/mock"
 	"testing"
+
+	"github.com/stretchr/testify/mock"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
@@ -157,7 +158,8 @@ func (s *CompositeStoreTestSuite) TestGetTranslationsByNamespace_FileStoreError(
 }
 
 func (s *CompositeStoreTestSuite) TestGetTranslationsByNamespace_DBStoreError() {
-	s.fileStore.EXPECT().GetTranslationsByNamespace(mock.Anything, "signin").Return(map[string]map[string]Translation{}, nil)
+	s.fileStore.EXPECT().GetTranslationsByNamespace(mock.Anything, "signin").Return(map[string]map[string]Translation{},
+		nil)
 	s.dbStore.EXPECT().GetTranslationsByNamespace(mock.Anything, "signin").Return(nil, errors.New("db error"))
 
 	result, err := s.store.GetTranslationsByNamespace(context.Background(), "signin")

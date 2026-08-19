@@ -122,7 +122,7 @@ func Index(resources []Resource) map[string]Resource {
 func splitDocuments(payload string) []string {
 	lines := strings.Split(payload, "\n")
 	var docs []string
-	var cur []string
+	cur := make([]string, 0, len(lines))
 	flush := func() {
 		if len(cur) > 0 {
 			docs = append(docs, strings.Join(cur, "\n"))

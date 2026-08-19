@@ -65,7 +65,7 @@ func globalBaselineIDs(content string) map[string]bool {
 	ids := make(map[string]bool)
 	for _, doc := range strings.Split(content, "\n---") {
 		m := resourceTypePattern.FindStringSubmatch(doc)
-		if m == nil || !globalResourceTypes[m[1]] {
+		if len(m) < 2 || !globalResourceTypes[m[1]] {
 			continue
 		}
 		for _, id := range baselineIDPattern.FindAllString(doc, -1) {

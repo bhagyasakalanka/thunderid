@@ -122,7 +122,8 @@ func (s *resourceStore) CreateResourceServer(ctx context.Context, id string, rs 
 func (s *resourceStore) GetResourceServer(ctx context.Context, id string) (providers.ResourceServer, error) {
 	var rs providers.ResourceServer
 	err := s.withDBClient(func(dbClient provider.DBClientInterface) error {
-		results, err := dbClient.QueryContext(ctx, queryGetResourceServerByID, id, deployment.Resolve(ctx, s.deploymentID))
+		results, err := dbClient.QueryContext(ctx, queryGetResourceServerByID, id, deployment.Resolve(ctx,
+			s.deploymentID))
 		if err != nil {
 			return fmt.Errorf("failed to get resource server: %w", err)
 		}
@@ -144,7 +145,8 @@ func (s *resourceStore) GetResourceServerList(
 ) ([]providers.ResourceServer, error) {
 	var resourceServers []providers.ResourceServer
 	err := s.withDBClient(func(dbClient provider.DBClientInterface) error {
-		results, err := dbClient.QueryContext(ctx, queryGetResourceServerList, limit, offset, deployment.Resolve(ctx, s.deploymentID))
+		results, err := dbClient.QueryContext(ctx, queryGetResourceServerList, limit, offset, deployment.Resolve(ctx,
+			s.deploymentID))
 		if err != nil {
 			return fmt.Errorf("failed to get resource server list: %w", err)
 		}
@@ -170,7 +172,8 @@ func (s *resourceStore) GetResourceServerList(
 func (s *resourceStore) GetResourceServerListCount(ctx context.Context) (int, error) {
 	var count int
 	err := s.withDBClient(func(dbClient provider.DBClientInterface) error {
-		results, err := dbClient.QueryContext(ctx, queryGetResourceServerListCount, deployment.Resolve(ctx, s.deploymentID))
+		results, err := dbClient.QueryContext(ctx, queryGetResourceServerListCount, deployment.Resolve(ctx,
+			s.deploymentID))
 		if err != nil {
 			return fmt.Errorf("failed to get resource server count: %w", err)
 		}
@@ -220,7 +223,8 @@ func (s *resourceStore) DeleteResourceServer(ctx context.Context, id string) err
 func (s *resourceStore) CheckResourceServerNameExists(ctx context.Context, name string) (bool, error) {
 	var exists bool
 	err := s.withDBClient(func(dbClient provider.DBClientInterface) error {
-		results, err := dbClient.QueryContext(ctx, queryCheckResourceServerNameExists, name, deployment.Resolve(ctx, s.deploymentID))
+		results, err := dbClient.QueryContext(ctx, queryCheckResourceServerNameExists, name, deployment.Resolve(ctx,
+			s.deploymentID))
 		if err != nil {
 			return fmt.Errorf("failed to check resource server name: %w", err)
 		}
@@ -235,7 +239,8 @@ func (s *resourceStore) CheckResourceServerNameExists(ctx context.Context, name 
 func (s *resourceStore) CheckResourceServerIdentifierExists(ctx context.Context, identifier string) (bool, error) {
 	var exists bool
 	err := s.withDBClient(func(dbClient provider.DBClientInterface) error {
-		results, err := dbClient.QueryContext(ctx, queryCheckResourceServerIdentifierExists, identifier, deployment.Resolve(ctx, s.deploymentID))
+		results, err := dbClient.QueryContext(ctx, queryCheckResourceServerIdentifierExists, identifier,
+			deployment.Resolve(ctx, s.deploymentID))
 		if err != nil {
 			return fmt.Errorf("failed to check resource server identifier: %w", err)
 		}
@@ -253,7 +258,9 @@ func (s *resourceStore) GetResourceServerByIdentifier(
 ) (providers.ResourceServer, error) {
 	var rs providers.ResourceServer
 	err := s.withDBClient(func(dbClient provider.DBClientInterface) error {
-		results, err := dbClient.QueryContext(ctx, queryGetResourceServerByIdentifier, identifier, deployment.Resolve(ctx, s.deploymentID))
+		results, err := dbClient.QueryContext(ctx, queryGetResourceServerByIdentifier, identifier,
+			deployment.Resolve(ctx,
+				s.deploymentID))
 		if err != nil {
 			return fmt.Errorf("failed to get resource server by identifier: %w", err)
 		}
@@ -327,7 +334,8 @@ func (s *resourceStore) CreateResource(
 func (s *resourceStore) GetResource(ctx context.Context, id string, resServerID string) (providers.Resource, error) {
 	var res providers.Resource
 	err := s.withDBClient(func(dbClient provider.DBClientInterface) error {
-		results, err := dbClient.QueryContext(ctx, queryGetResourceByID, id, resServerID, deployment.Resolve(ctx, s.deploymentID))
+		results, err := dbClient.QueryContext(ctx, queryGetResourceByID, id, resServerID, deployment.Resolve(ctx,
+			s.deploymentID))
 		if err != nil {
 			return fmt.Errorf("failed to get resource: %w", err)
 		}
@@ -390,7 +398,8 @@ func (s *resourceStore) GetResourceListByParent(
 		} else {
 			results, err = dbClient.QueryContext(
 				ctx,
-				queryGetResourceListByParent, resServerID, *parentID, limit, offset, deployment.Resolve(ctx, s.deploymentID),
+				queryGetResourceListByParent, resServerID, *parentID, limit, offset, deployment.Resolve(ctx,
+					s.deploymentID),
 			)
 		}
 
@@ -419,7 +428,8 @@ func (s *resourceStore) GetResourceListByParent(
 func (s *resourceStore) GetResourceListCount(ctx context.Context, resServerID string) (int, error) {
 	var count int
 	err := s.withDBClient(func(dbClient provider.DBClientInterface) error {
-		results, err := dbClient.QueryContext(ctx, queryGetResourceListCount, resServerID, deployment.Resolve(ctx, s.deploymentID))
+		results, err := dbClient.QueryContext(ctx, queryGetResourceListCount, resServerID, deployment.Resolve(ctx,
+			s.deploymentID))
 		if err != nil {
 			return fmt.Errorf("failed to get resource count: %w", err)
 		}
@@ -508,7 +518,8 @@ func (s *resourceStore) UpdateResourcePermission(
 // DeleteResource deletes a resource.
 func (s *resourceStore) DeleteResource(ctx context.Context, id string, resServerID string) error {
 	return s.withDBClient(func(dbClient provider.DBClientInterface) error {
-		_, err := dbClient.ExecuteContext(ctx, queryDeleteResource, id, resServerID, deployment.Resolve(ctx, s.deploymentID))
+		_, err := dbClient.ExecuteContext(ctx, queryDeleteResource, id, resServerID, deployment.Resolve(ctx,
+			s.deploymentID))
 		if err != nil {
 			return fmt.Errorf("failed to delete resource: %w", err)
 		}
@@ -529,7 +540,8 @@ func (s *resourceStore) CheckResourceHandleExists(
 		if parentID == nil {
 			results, err = dbClient.QueryContext(
 				ctx,
-				queryCheckResourceHandleExistsUnderNullParent, resServerID, handle, deployment.Resolve(ctx, s.deploymentID),
+				queryCheckResourceHandleExistsUnderNullParent, resServerID, handle, deployment.Resolve(ctx,
+					s.deploymentID),
 			)
 		} else {
 			results, err = dbClient.QueryContext(
@@ -553,7 +565,8 @@ func (s *resourceStore) CheckResourceHandleExists(
 func (s *resourceStore) CheckResourceHasDependencies(ctx context.Context, resID string) (bool, error) {
 	var hasDeps bool
 	err := s.withDBClient(func(dbClient provider.DBClientInterface) error {
-		results, err := dbClient.QueryContext(ctx, queryCheckResourceHasDependencies, resID, deployment.Resolve(ctx, s.deploymentID))
+		results, err := dbClient.QueryContext(ctx, queryCheckResourceHasDependencies, resID, deployment.Resolve(ctx,
+			s.deploymentID))
 		if err != nil {
 			return fmt.Errorf("failed to check dependencies: %w", err)
 		}
@@ -690,7 +703,8 @@ func (s *resourceStore) GetActionListCount(
 		var err error
 		if kind != "" {
 			results, err = dbClient.QueryContext(
-				ctx, queryGetActionListCountByKind, resServerID, resID, string(kind), deployment.Resolve(ctx, s.deploymentID),
+				ctx, queryGetActionListCountByKind, resServerID, resID, string(kind), deployment.Resolve(ctx,
+					s.deploymentID),
 			)
 		} else {
 			results, err = dbClient.QueryContext(

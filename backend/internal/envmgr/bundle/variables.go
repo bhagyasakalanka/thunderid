@@ -74,8 +74,9 @@ type SecretPlaceholder struct {
 // SecretPlaceholders lists the credential placeholders of the resources with the field each fills.
 func SecretPlaceholders(resources string) []SecretPlaceholder {
 	seen := map[string]bool{}
-	var out []SecretPlaceholder
-	for _, m := range credentialVarRe.FindAllStringSubmatch(resources, -1) {
+	matches := credentialVarRe.FindAllStringSubmatch(resources, -1)
+	out := make([]SecretPlaceholder, 0, len(matches))
+	for _, m := range matches {
 		if !credentialFields[strings.ToLower(m[1])] || seen[m[2]] {
 			continue
 		}
@@ -104,7 +105,7 @@ func StripCredentialLines(resources string, names []string) string {
 	lines := strings.Split(resources, "\n")
 	kept := make([]string, 0, len(lines))
 	for _, line := range lines {
-		if m := credentialVarRe.FindStringSubmatch(line); m != nil && wanted[m[2]] {
+		if m := credentialVarRe.FindStringSubmatch(line); len(m) > 2 && wanted[m[2]] {
 			continue
 		}
 		kept = append(kept, line)

@@ -27,7 +27,8 @@ type EntityProviderInterface interface {
 		systemCredentials json.RawMessage) (*providers.Entity, *EntityProviderError)
 
 	// UpdateEntity updates an existing entity's core fields.
-	UpdateEntity(ctx context.Context, entityID string, entity *providers.Entity) (*providers.Entity, *EntityProviderError)
+	UpdateEntity(ctx context.Context, entityID string, entity *providers.Entity) (*providers.Entity,
+		*EntityProviderError)
 
 	// DeleteEntity deletes an entity by ID. Cascades to identifiers.
 	DeleteEntity(ctx context.Context, entityID string) *EntityProviderError
@@ -58,7 +59,8 @@ type EntityProviderInterface interface {
 	GetEntitiesByIDs(ctx context.Context, entityIDs []string) ([]providers.Entity, *EntityProviderError)
 
 	// GetEntityListCount returns the total number of entities in the given category.
-	GetEntityListCount(ctx context.Context, category providers.EntityCategory, filters map[string]interface{}) (int, *EntityProviderError)
+	GetEntityListCount(ctx context.Context, category providers.EntityCategory, filters map[string]interface{}) (int,
+		*EntityProviderError)
 
 	// GetEntityList returns a page of entities in the given category.
 	GetEntityList(ctx context.Context, category providers.EntityCategory, limit, offset int,

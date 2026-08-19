@@ -222,6 +222,9 @@ func (suite *DefaultEntityProviderTestSuite) TestUpdateEntity() {
 	suite.Equal(ErrorCodeInvalidRequestFormat, err.Code)
 }
 
+// two paths are checked identically; folding them together would obscure which one failed.
+//
+//nolint:dupl // The credential and system-attribute cases follow the same shape deliberately, so the
 func (suite *DefaultEntityProviderTestSuite) TestUpdateCredentials() {
 	creds := json.RawMessage(`{"password":"newpassword"}`)
 
@@ -307,6 +310,7 @@ func (suite *DefaultEntityProviderTestSuite) TestUpdateSystemAttributes() {
 	suite.Equal(ErrorCodeInvalidRequestFormat, err.Code)
 }
 
+//nolint:dupl // See TestUpdateCredentials: the two paths are checked identically on purpose.
 func (suite *DefaultEntityProviderTestSuite) TestUpdateSystemCredentials() {
 	creds := json.RawMessage(`{"clientSecret":"secret"}`)
 

@@ -16,6 +16,9 @@
  * under the License.
  */
 
+// Package varname derives the template variable names that a declarative resource's placeholders
+// carry. It is a leaf so that both the exporter and whatever captures a credential can depend on it
+// and derive the same name.
 package varname
 
 import "strings"

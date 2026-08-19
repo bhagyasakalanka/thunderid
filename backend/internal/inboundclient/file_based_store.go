@@ -167,7 +167,8 @@ func (f *fileBasedStore) IsDeclarative(ctx context.Context, entityID string) boo
 	return err == nil
 }
 
-func (f *fileBasedStore) GetEntityIDsByReference(ctx context.Context, refType, refID string, limit, offset int) ([]string, int, error) {
+func (f *fileBasedStore) GetEntityIDsByReference(ctx context.Context, refType, refID string, limit,
+	offset int) ([]string, int, error) {
 	list, err := f.GenericFileBasedStore.List(ctx)
 	if err != nil {
 		return nil, 0, err

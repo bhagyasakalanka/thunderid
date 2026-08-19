@@ -26,7 +26,7 @@ import (
 )
 
 // The promotion graph is a DAG: environments are nodes and an edge means "this environment can
-// promote into that one". Modelling it as a graph rather than a line lets a single environment fan
+// promote into that one". Modeling it as a graph rather than a line lets a single environment fan
 // out (one dev feeding several regional prods) or fan in (a prod gated behind both qa and staging).
 // Cycles are rejected, because a cycle would let configuration be promoted in a loop with no
 // well-defined ordering.
@@ -93,7 +93,7 @@ func validateGraph(envs []model.Environment) error {
 }
 
 // findCycle reports a node involved in a cycle, or "" when the graph is acyclic. It is a depth-first
-// search colouring nodes white (unvisited), grey (on the current path) and black (fully explored); an
+// search coloring nodes white (unvisited), grey (on the current path) and black (fully explored); an
 // edge back to a grey node closes a cycle.
 func findCycle(adjacency map[string][]string) string {
 	const (

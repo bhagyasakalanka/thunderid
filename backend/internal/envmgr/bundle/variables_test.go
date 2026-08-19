@@ -63,7 +63,7 @@ func TestMissingVariablesIgnoresACredentialPlaceholder(t *testing.T) {
 	if missing := MissingVariables(resources, nil, SecretVariables(resources)); len(missing) != 0 {
 		t.Fatalf("a credential placeholder is not a missing variable, got %v", missing)
 	}
-	// It is still missing as a plain variable when nothing classifies it, which is the old behaviour.
+	// It is still missing as a plain variable when nothing classifies it, which is the old behavior.
 	if missing := MissingVariables(resources, nil, nil); len(missing) != 1 {
 		t.Fatalf("expected the placeholder to be reported without classification, got %v", missing)
 	}

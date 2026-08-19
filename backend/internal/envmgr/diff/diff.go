@@ -83,7 +83,7 @@ func Compute(old, new []bundle.Resource) Diff {
 	newIdx := bundle.Index(new)
 
 	seen := map[string]bool{}
-	var changes []ResourceChange
+	changes := make([]ResourceChange, 0, len(new))
 
 	for _, r := range new {
 		if seen[r.Key()] {

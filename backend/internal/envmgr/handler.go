@@ -16,7 +16,8 @@
  * under the License.
  */
 
-// Package server exposes the environment-management service over HTTP/JSON.
+// Package envmgr serves the environment manager: the environments configuration is promoted
+// through, the versions captured from them, and the work queued for each environment's data plane.
 package envmgr
 
 import (

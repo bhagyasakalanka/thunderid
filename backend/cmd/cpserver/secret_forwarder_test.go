@@ -33,6 +33,8 @@ import (
 	"github.com/thunder-id/thunderid/internal/system/deployment"
 )
 
+const testSecretValue = "value"
+
 // captured records what the fake secret service received.
 type captured struct {
 	mu    sync.Mutex
@@ -74,7 +76,7 @@ func TestForwarderSendsAReplayableCredentialAsAReadableValue(t *testing.T) {
 	if rec.token != "tok" {
 		t.Fatalf("the token was not sent: %q", rec.token)
 	}
-	if rec.body["kind"] != "value" || rec.body["value"] != "the-api-secret" {
+	if rec.body["kind"] != testSecretValue || rec.body[testSecretValue] != "the-api-secret" {
 		t.Fatalf("expected a readable value, got %#v", rec.body)
 	}
 }
@@ -90,7 +92,7 @@ func TestForwarderKeepsAConnectionClientSecretReadable(t *testing.T) {
 
 	rec.mu.Lock()
 	defer rec.mu.Unlock()
-	if rec.body["kind"] != "value" || rec.body["value"] != "the-client-secret" {
+	if rec.body["kind"] != testSecretValue || rec.body[testSecretValue] != "the-client-secret" {
 		t.Fatalf("expected a readable value, got %#v", rec.body)
 	}
 }

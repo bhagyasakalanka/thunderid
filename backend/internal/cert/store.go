@@ -47,7 +47,8 @@ func (s *certificateStore) GetCertificateByID(ctx context.Context, id string) (*
 // GetCertificateByReference retrieves a certificate by its reference type and ID.
 func (s *certificateStore) GetCertificateByReference(ctx context.Context, refType CertificateReferenceType,
 	refID string) (*Certificate, error) {
-	return s.getCertificate(ctx, queryGetCertificateByReference, refType, refID, deployment.Resolve(ctx, s.deploymentID))
+	return s.getCertificate(ctx, queryGetCertificateByReference, refType, refID, deployment.Resolve(ctx,
+		s.deploymentID))
 }
 
 // getCertificate retrieves a certificate based on a query and its arguments.
@@ -172,7 +173,8 @@ func (s *certificateStore) DeleteCertificateByID(ctx context.Context, id string)
 // DeleteCertificateByReference deletes a certificate by its reference type and ID.
 func (s *certificateStore) DeleteCertificateByReference(ctx context.Context, refType CertificateReferenceType,
 	refID string) error {
-	return s.deleteCertificate(ctx, queryDeleteCertificateByReference, refType, refID, deployment.Resolve(ctx, s.deploymentID))
+	return s.deleteCertificate(ctx, queryDeleteCertificateByReference, refType, refID, deployment.Resolve(ctx,
+		s.deploymentID))
 }
 
 // deleteCertificate deletes a certificate based on a query and its arguments.

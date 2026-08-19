@@ -234,7 +234,7 @@ func (s *Service) issueDataPlaneToken(ctx context.Context, env model.Environment
 // RegenerateDataPlaneToken issues a new token for an environment's data plane and returns it once.
 //
 // The previous token stops working immediately, so that data plane drops until the new one is in
-// place. That is the honest behaviour for a rotation: a credential that still worked afterwards would
+// place. That is the honest behavior for a rotation: a credential that still worked afterwards would
 // not have been rotated.
 func (s *Service) RegenerateDataPlaneToken(ctx context.Context, envID string) (string, error) {
 	env, err := s.store.GetEnvironment(ctx, envID)
@@ -749,7 +749,7 @@ type PromoteInput struct {
 	FromEnvID  string
 	ToEnvID    string
 	VersionRef string   // version in the source environment; default "latest"
-	Selection  []string // resource keys to promote, honoured only when SelectionProvided
+	Selection  []string // resource keys to promote, honored only when SelectionProvided
 	// SelectionProvided distinguishes "the user chose these" from "the user expressed no preference".
 	// Without it an empty selection could not mean "hold everything back", because it would be
 	// indistinguishable from a caller that simply did not send the field.
@@ -1161,7 +1161,7 @@ func defaultRef(ref, fallback string) string {
 // (translations and server configuration, which are keyed by language and section) are still sent so
 // the import API reports an explicit outcome rather than the prune silently skipping them.
 func deletionsFromDiff(d diff.Diff) []thunder.ResourceDeletion {
-	var out []thunder.ResourceDeletion
+	out := make([]thunder.ResourceDeletion, 0, len(d.Changes))
 	for _, c := range d.Changes {
 		if c.Change != diff.Deleted {
 			continue

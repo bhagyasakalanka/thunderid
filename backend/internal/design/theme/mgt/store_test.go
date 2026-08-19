@@ -149,7 +149,8 @@ func (suite *ThemeStoreTestSuite) TestGetTheme_Success() {
 		},
 	}
 	suite.mockDBProvider.On("GetConfigDBClient").Return(suite.mockDBClient, nil)
-	suite.mockDBClient.On("QueryContext", mock.Anything, mock.Anything, "theme-123", "test-deployment").Return(results, nil)
+	suite.mockDBClient.On("QueryContext", mock.Anything, mock.Anything, "theme-123", "test-deployment").Return(results,
+		nil)
 
 	theme, err := suite.store.GetTheme(context.Background(), "theme-123")
 
@@ -177,7 +178,8 @@ func (suite *ThemeStoreTestSuite) TestGetTheme_MultipleResults() {
 		{"id": "2", "display_name": "B", "description": "Y", "theme": `{}`},
 	}
 	suite.mockDBProvider.On("GetConfigDBClient").Return(suite.mockDBClient, nil)
-	suite.mockDBClient.On("QueryContext", mock.Anything, mock.Anything, "theme-123", "test-deployment").Return(results, nil)
+	suite.mockDBClient.On("QueryContext", mock.Anything, mock.Anything, "theme-123", "test-deployment").Return(results,
+		nil)
 
 	_, err := suite.store.GetTheme(context.Background(), "theme-123")
 
@@ -191,7 +193,8 @@ func (suite *ThemeStoreTestSuite) TestIsThemeExist_True() {
 		{"total": int64(1)},
 	}
 	suite.mockDBProvider.On("GetConfigDBClient").Return(suite.mockDBClient, nil)
-	suite.mockDBClient.On("QueryContext", mock.Anything, mock.Anything, "theme-123", "test-deployment").Return(results, nil)
+	suite.mockDBClient.On("QueryContext", mock.Anything, mock.Anything, "theme-123", "test-deployment").Return(results,
+		nil)
 
 	exists, err := suite.store.IsThemeExist(context.Background(), "theme-123")
 
@@ -464,7 +467,9 @@ func (suite *ThemeStoreTestSuite) TestIsThemeHandleConflict_Conflict() {
 		{"total": int64(1)},
 	}
 	suite.mockDBProvider.On("GetConfigDBClient").Return(suite.mockDBClient, nil)
-	suite.mockDBClient.On("QueryContext", mock.Anything, mock.Anything, "classic", "test-deployment", "").Return(results, nil)
+	suite.mockDBClient.On("QueryContext", mock.Anything, mock.Anything, "classic", "test-deployment", "").
+		Return(results,
+			nil)
 
 	conflict, err := suite.store.IsThemeHandleConflict(context.Background(), "classic", "")
 
@@ -478,7 +483,8 @@ func (suite *ThemeStoreTestSuite) TestIsThemeHandleConflict_NoConflict() {
 		{"total": int64(0)},
 	}
 	suite.mockDBProvider.On("GetConfigDBClient").Return(suite.mockDBClient, nil)
-	suite.mockDBClient.On("QueryContext", mock.Anything, mock.Anything, "unique-handle", "test-deployment", "theme-1").Return(results, nil)
+	suite.mockDBClient.On("QueryContext", mock.Anything, mock.Anything, "unique-handle", "test-deployment", "theme-1").
+		Return(results, nil)
 
 	conflict, err := suite.store.IsThemeHandleConflict(context.Background(), "unique-handle", "theme-1")
 

@@ -23,6 +23,8 @@ import (
 	"testing"
 )
 
+const testRedirectURIsVar = "APP_A_REDIRECT_URIS"
+
 const sample = `# File: AppA.yaml
 resource_type: application
 id: app-a
@@ -74,7 +76,8 @@ func TestMarshalRoundTrip(t *testing.T) {
 }
 
 func TestParseEnv(t *testing.T) {
-	env := "# comment\nAPP_A_CLIENT_ID=abc\nAPP_A_CLIENT_SECRET=\"s3cr3t\"\n\nAPP_A_REDIRECT_URIS_0=https://a\nAPP_A_REDIRECT_URIS_1=https://b\n"
+	env := "# comment\nAPP_A_CLIENT_ID=abc\nAPP_A_CLIENT_SECRET=\"s3cr3t\"\n\n" +
+		"APP_A_REDIRECT_URIS_0=https://a\nAPP_A_REDIRECT_URIS_1=https://b\n"
 	got := ParseEnv(env)
 	want := map[string]string{
 		"APP_A_CLIENT_ID":       "abc",
@@ -99,9 +102,9 @@ func TestBuildTemplateVariables(t *testing.T) {
 	if vars["APP_A_CLIENT_ID"] != "abc" || vars["APP_A_CLIENT_SECRET"] != "s3cr3t" {
 		t.Fatalf("scalar resolution wrong: %#v", vars)
 	}
-	arr, ok := vars["APP_A_REDIRECT_URIS"].([]interface{})
+	arr, ok := vars[testRedirectURIsVar].([]interface{})
 	if !ok {
-		t.Fatalf("array not rebuilt as slice: %#v", vars["APP_A_REDIRECT_URIS"])
+		t.Fatalf("array not rebuilt as slice: %#v", vars[testRedirectURIsVar])
 	}
 	if len(arr) != 2 || arr[0] != "https://a" || arr[1] != "https://b" {
 		t.Fatalf("array values wrong: %#v", arr)
@@ -115,20 +118,20 @@ func TestBuildTemplateVariables(t *testing.T) {
 func TestBuildTemplateVariablesAcceptsJSONArrayEncoding(t *testing.T) {
 	// The export API writes an array as a JSON literal in one variable.
 	vars := BuildTemplateVariables(sample, map[string]string{
-		"APP_A_REDIRECT_URIS": `["https://a","https://b"]`,
+		testRedirectURIsVar: `["https://a","https://b"]`,
 	}, nil)
-	arr, ok := vars["APP_A_REDIRECT_URIS"].([]interface{})
+	arr, ok := vars[testRedirectURIsVar].([]interface{})
 	if !ok || len(arr) != 2 || arr[0] != "https://a" || arr[1] != "https://b" {
-		t.Fatalf("JSON array not parsed: %#v", vars["APP_A_REDIRECT_URIS"])
+		t.Fatalf("JSON array not parsed: %#v", vars[testRedirectURIsVar])
 	}
 }
 
 func TestBuildTemplateVariablesPrefersIndexedOverJSON(t *testing.T) {
 	vars := BuildTemplateVariables(sample, map[string]string{
-		"APP_A_REDIRECT_URIS":   `["ignored"]`,
+		testRedirectURIsVar:     `["ignored"]`,
 		"APP_A_REDIRECT_URIS_0": "https://indexed",
 	}, nil)
-	arr := vars["APP_A_REDIRECT_URIS"].([]interface{})
+	arr := vars[testRedirectURIsVar].([]interface{})
 	if len(arr) != 1 || arr[0] != "https://indexed" {
 		t.Fatalf("indexed values should win: %#v", arr)
 	}
@@ -138,9 +141,9 @@ func TestBuildTemplateVariablesOmitsUnresolvablePlaceholders(t *testing.T) {
 	// An unresolvable placeholder is delegated to the data plane rather than sent as an empty value.
 	// Sending empty is what silently produced an application with no redirect URIs.
 	for _, raw := range []string{"", "   "} {
-		vars := BuildTemplateVariables(sample, map[string]string{"APP_A_REDIRECT_URIS": raw}, nil)
-		if _, present := vars["APP_A_REDIRECT_URIS"]; present {
-			t.Fatalf("expected the placeholder to be omitted for %q, got %#v", raw, vars["APP_A_REDIRECT_URIS"])
+		vars := BuildTemplateVariables(sample, map[string]string{testRedirectURIsVar: raw}, nil)
+		if _, present := vars[testRedirectURIsVar]; present {
+			t.Fatalf("expected the placeholder to be omitted for %q, got %#v", raw, vars[testRedirectURIsVar])
 		}
 	}
 
@@ -152,8 +155,8 @@ func TestBuildTemplateVariablesOmitsUnresolvablePlaceholders(t *testing.T) {
 }
 
 func TestBuildTemplateVariablesSingleScalarBecomesOneElement(t *testing.T) {
-	vars := BuildTemplateVariables(sample, map[string]string{"APP_A_REDIRECT_URIS": "https://only"}, nil)
-	arr := vars["APP_A_REDIRECT_URIS"].([]interface{})
+	vars := BuildTemplateVariables(sample, map[string]string{testRedirectURIsVar: "https://only"}, nil)
+	arr := vars[testRedirectURIsVar].([]interface{})
 	if len(arr) != 1 || arr[0] != "https://only" {
 		t.Fatalf("expected a one element list, got %#v", arr)
 	}
@@ -161,7 +164,7 @@ func TestBuildTemplateVariablesSingleScalarBecomesOneElement(t *testing.T) {
 
 func TestBuildTemplateVariablesOmitsSecretsEntirely(t *testing.T) {
 	values := map[string]string{"APP_A_CLIENT_SECRET": "should-not-be-sent", "APP_A_CLIENT_ID": "abc"}
-	vars := BuildTemplateVariables(sample, values, []string{"APP_A_CLIENT_SECRET", "APP_A_REDIRECT_URIS"})
+	vars := BuildTemplateVariables(sample, values, []string{"APP_A_CLIENT_SECRET", testRedirectURIsVar})
 
 	// A secret is left out so its placeholder survives into the import, where the data plane fills it
 	// from its own provider before the value is hashed. Sending anything here, value or reference, would
@@ -169,8 +172,8 @@ func TestBuildTemplateVariablesOmitsSecretsEntirely(t *testing.T) {
 	if _, present := vars["APP_A_CLIENT_SECRET"]; present {
 		t.Fatalf("a secret must not be sent, got %#v", vars["APP_A_CLIENT_SECRET"])
 	}
-	if _, present := vars["APP_A_REDIRECT_URIS"]; present {
-		t.Fatalf("a secret backed array must not be sent, got %#v", vars["APP_A_REDIRECT_URIS"])
+	if _, present := vars[testRedirectURIsVar]; present {
+		t.Fatalf("a secret backed array must not be sent, got %#v", vars[testRedirectURIsVar])
 	}
 	// Everything else is still supplied.
 	if vars["APP_A_CLIENT_ID"] != "abc" {
@@ -184,15 +187,15 @@ func TestMissingVariablesFindsUnresolvedPlaceholders(t *testing.T) {
 		[]string{"APP_A_CLIENT_SECRET"})
 
 	// The secret is supplied as a reference, so it is not missing; the redirect URIs are.
-	if len(missing) != 1 || missing[0] != "APP_A_REDIRECT_URIS" {
+	if len(missing) != 1 || missing[0] != testRedirectURIsVar {
 		t.Fatalf("expected only the redirect URIs to be missing, got %v", missing)
 	}
 }
 
 func TestMissingVariablesEmptyWhenEverythingResolves(t *testing.T) {
 	missing := MissingVariables(sample, map[string]string{
-		"APP_A_CLIENT_ID":     "abc",
-		"APP_A_REDIRECT_URIS": `["https://a"]`,
+		"APP_A_CLIENT_ID":   "abc",
+		testRedirectURIsVar: `["https://a"]`,
 	}, []string{"APP_A_CLIENT_SECRET"})
 
 	if len(missing) != 0 {
@@ -205,8 +208,8 @@ func TestMissingVariablesEmptyWhenEverythingResolves(t *testing.T) {
 // unresolved and failing the import.
 func TestMissingVariablesTreatsAnEmptyListAsConfigured(t *testing.T) {
 	missing := MissingVariables(sample, map[string]string{
-		"APP_A_CLIENT_ID":     "app-a",
-		"APP_A_REDIRECT_URIS": "[]",
+		"APP_A_CLIENT_ID":   "app-a",
+		testRedirectURIsVar: "[]",
 	}, []string{"APP_A_CLIENT_SECRET"})
 
 	if len(missing) != 0 {
@@ -214,10 +217,10 @@ func TestMissingVariablesTreatsAnEmptyListAsConfigured(t *testing.T) {
 	}
 
 	// It still resolves to an empty list rather than being dropped.
-	vars := BuildTemplateVariables(sample, map[string]string{"APP_A_REDIRECT_URIS": "[]"}, nil)
-	resolved, ok := vars["APP_A_REDIRECT_URIS"].([]interface{})
+	vars := BuildTemplateVariables(sample, map[string]string{testRedirectURIsVar: "[]"}, nil)
+	resolved, ok := vars[testRedirectURIsVar].([]interface{})
 	if !ok || len(resolved) != 0 {
-		t.Fatalf("expected an empty list to be sent, got %#v", vars["APP_A_REDIRECT_URIS"])
+		t.Fatalf("expected an empty list to be sent, got %#v", vars[testRedirectURIsVar])
 	}
 }
 
@@ -227,7 +230,7 @@ func TestMissingVariablesTreatsBlankAsMissing(t *testing.T) {
 	}, nil)
 
 	// A blank scalar, an unset array and the unset secret all count as unresolved.
-	want := map[string]bool{"APP_A_CLIENT_ID": true, "APP_A_CLIENT_SECRET": true, "APP_A_REDIRECT_URIS": true}
+	want := map[string]bool{"APP_A_CLIENT_ID": true, "APP_A_CLIENT_SECRET": true, testRedirectURIsVar: true}
 	if len(missing) != len(want) {
 		t.Fatalf("expected %d missing, got %v", len(want), missing)
 	}
@@ -240,11 +243,11 @@ func TestMissingVariablesTreatsBlankAsMissing(t *testing.T) {
 
 func TestRequiredVariablesSplitsScalarsAndArrays(t *testing.T) {
 	scalars, arrays := RequiredVariables(sample)
-	if len(arrays) != 1 || arrays[0] != "APP_A_REDIRECT_URIS" {
+	if len(arrays) != 1 || arrays[0] != testRedirectURIsVar {
 		t.Fatalf("unexpected arrays: %v", arrays)
 	}
 	for _, name := range scalars {
-		if name == "APP_A_REDIRECT_URIS" {
+		if name == testRedirectURIsVar {
 			t.Fatalf("an array placeholder must not be reported as a scalar")
 		}
 	}

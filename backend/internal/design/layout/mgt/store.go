@@ -66,7 +66,8 @@ func (s *layoutMgtStore) GetLayoutList(ctx context.Context, limit, offset int) (
 		return nil, err
 	}
 
-	results, err := dbClient.QueryContext(ctx, queryGetLayoutList, limit, offset, deployment.Resolve(ctx, s.deploymentID))
+	results, err := dbClient.QueryContext(ctx, queryGetLayoutList, limit, offset, deployment.Resolve(ctx,
+		s.deploymentID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute layout list query: %w", err)
 	}
@@ -163,7 +164,8 @@ func (s *layoutMgtStore) UpdateLayout(ctx context.Context, id string, layout Upd
 		return fmt.Errorf("failed to marshal layout: %w", err)
 	}
 
-	_, err = dbClient.ExecuteContext(ctx, queryUpdateLayout, layout.DisplayName, layout.Description, layoutJSON, id, deployment.Resolve(ctx, s.deploymentID))
+	_, err = dbClient.ExecuteContext(ctx, queryUpdateLayout, layout.DisplayName, layout.Description, layoutJSON, id,
+		deployment.Resolve(ctx, s.deploymentID))
 	if err != nil {
 		return fmt.Errorf("failed to execute query: %w", err)
 	}
@@ -345,7 +347,8 @@ func (s *layoutMgtStore) IsLayoutHandleConflict(ctx context.Context, handle stri
 		return false, err
 	}
 
-	results, err := dbClient.QueryContext(ctx, queryCheckLayoutHandleConflict, handle, deployment.Resolve(ctx, s.deploymentID), excludeID)
+	results, err := dbClient.QueryContext(ctx, queryCheckLayoutHandleConflict, handle, deployment.Resolve(ctx,
+		s.deploymentID), excludeID)
 	if err != nil {
 		return false, fmt.Errorf("failed to check layout handle conflict: %w", err)
 	}

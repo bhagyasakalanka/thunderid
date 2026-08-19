@@ -128,7 +128,8 @@ func (f *layoutFileBasedStore) IsLayoutDeclarative(id string) bool {
 }
 
 // IsLayoutHandleConflict checks if a layout handle already exists (excluding a specific ID).
-func (f *layoutFileBasedStore) IsLayoutHandleConflict(ctx context.Context, handle string, excludeID string) (bool, error) {
+func (f *layoutFileBasedStore) IsLayoutHandleConflict(ctx context.Context, handle string, excludeID string) (bool,
+	error) {
 	list, err := f.GenericFileBasedStore.List(ctx)
 	if err != nil {
 		return false, err

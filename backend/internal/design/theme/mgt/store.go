@@ -66,7 +66,8 @@ func (s *themeMgtStore) GetThemeList(ctx context.Context, limit, offset int) ([]
 		return nil, err
 	}
 
-	results, err := dbClient.QueryContext(ctx, queryGetThemeList, limit, offset, deployment.Resolve(ctx, s.deploymentID))
+	results, err := dbClient.QueryContext(ctx, queryGetThemeList, limit, offset, deployment.Resolve(ctx,
+		s.deploymentID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute theme list query: %w", err)
 	}
@@ -163,7 +164,8 @@ func (s *themeMgtStore) UpdateTheme(ctx context.Context, id string, theme Update
 		return fmt.Errorf("failed to marshal theme: %w", err)
 	}
 
-	_, err = dbClient.ExecuteContext(ctx, queryUpdateTheme, theme.DisplayName, theme.Description, themeJSON, id, deployment.Resolve(ctx, s.deploymentID))
+	_, err = dbClient.ExecuteContext(ctx, queryUpdateTheme, theme.DisplayName, theme.Description, themeJSON, id,
+		deployment.Resolve(ctx, s.deploymentID))
 	if err != nil {
 		return fmt.Errorf("failed to execute query: %w", err)
 	}
@@ -362,7 +364,8 @@ func (s *themeMgtStore) IsThemeHandleConflict(ctx context.Context, handle string
 		return false, err
 	}
 
-	results, err := dbClient.QueryContext(ctx, queryCheckThemeHandleConflict, handle, deployment.Resolve(ctx, s.deploymentID), excludeID)
+	results, err := dbClient.QueryContext(ctx, queryCheckThemeHandleConflict, handle, deployment.Resolve(ctx,
+		s.deploymentID), excludeID)
 	if err != nil {
 		return false, fmt.Errorf("failed to check theme handle conflict: %w", err)
 	}

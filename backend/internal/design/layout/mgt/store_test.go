@@ -144,7 +144,8 @@ func (suite *LayoutStoreTestSuite) TestGetLayout_Success() {
 		},
 	}
 	suite.mockDBProvider.On("GetConfigDBClient").Return(suite.mockDBClient, nil)
-	suite.mockDBClient.On("QueryContext", mock.Anything, mock.Anything, "layout-123", "test-deployment").Return(results, nil)
+	suite.mockDBClient.On("QueryContext", mock.Anything, mock.Anything, "layout-123", "test-deployment").Return(results,
+		nil)
 
 	layout, err := suite.store.GetLayout(context.Background(), "layout-123")
 
@@ -172,7 +173,8 @@ func (suite *LayoutStoreTestSuite) TestGetLayout_MultipleResults() {
 		{"id": "2", "display_name": "B", "description": "Y", "layout": `{}`},
 	}
 	suite.mockDBProvider.On("GetConfigDBClient").Return(suite.mockDBClient, nil)
-	suite.mockDBClient.On("QueryContext", mock.Anything, mock.Anything, "layout-123", "test-deployment").Return(results, nil)
+	suite.mockDBClient.On("QueryContext", mock.Anything, mock.Anything, "layout-123", "test-deployment").Return(results,
+		nil)
 
 	_, err := suite.store.GetLayout(context.Background(), "layout-123")
 
@@ -186,7 +188,8 @@ func (suite *LayoutStoreTestSuite) TestIsLayoutExist_True() {
 		{"total": int64(1)},
 	}
 	suite.mockDBProvider.On("GetConfigDBClient").Return(suite.mockDBClient, nil)
-	suite.mockDBClient.On("QueryContext", mock.Anything, mock.Anything, "layout-123", "test-deployment").Return(results, nil)
+	suite.mockDBClient.On("QueryContext", mock.Anything, mock.Anything, "layout-123", "test-deployment").Return(results,
+		nil)
 
 	exists, err := suite.store.IsLayoutExist(context.Background(), "layout-123")
 
@@ -368,7 +371,9 @@ func (suite *LayoutStoreTestSuite) TestIsLayoutHandleConflict_Conflict() {
 		{"total": int64(1)},
 	}
 	suite.mockDBProvider.On("GetConfigDBClient").Return(suite.mockDBClient, nil)
-	suite.mockDBClient.On("QueryContext", mock.Anything, mock.Anything, "classic", "test-deployment", "").Return(results, nil)
+	suite.mockDBClient.On("QueryContext", mock.Anything, mock.Anything, "classic", "test-deployment", "").
+		Return(results,
+			nil)
 
 	conflict, err := suite.store.IsLayoutHandleConflict(context.Background(), "classic", "")
 
@@ -382,7 +387,8 @@ func (suite *LayoutStoreTestSuite) TestIsLayoutHandleConflict_NoConflict() {
 		{"total": int64(0)},
 	}
 	suite.mockDBProvider.On("GetConfigDBClient").Return(suite.mockDBClient, nil)
-	suite.mockDBClient.On("QueryContext", mock.Anything, mock.Anything, "unique-handle", "test-deployment", "layout-1").Return(results, nil)
+	suite.mockDBClient.On("QueryContext", mock.Anything, mock.Anything, "unique-handle", "test-deployment", "layout-1").
+		Return(results, nil)
 
 	conflict, err := suite.store.IsLayoutHandleConflict(context.Background(), "unique-handle", "layout-1")
 

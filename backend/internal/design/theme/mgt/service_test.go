@@ -245,7 +245,8 @@ func (suite *ThemeServiceTestSuite) TestCreateTheme_StoreError() {
 	}
 
 	suite.mockStore.On("IsThemeHandleConflict", mock.Anything, "my-theme", "").Return(false, nil)
-	suite.mockStore.On("CreateTheme", mock.Anything, mock.AnythingOfType("string"), storeReq).Return(errors.New("database error"))
+	suite.mockStore.On("CreateTheme", mock.Anything, mock.AnythingOfType("string"),
+		storeReq).Return(errors.New("database error"))
 
 	result, err := suite.service.CreateTheme(context.Background(), themeRequest)
 
@@ -526,7 +527,8 @@ func (suite *ThemeServiceTestSuite) TestCreateTheme_HandleConflictError() {
 		Theme:       json.RawMessage(`{"colors": {}}`),
 	}
 
-	suite.mockStore.On("IsThemeHandleConflict", mock.Anything, "my-theme", "").Return(false, errors.New("database error"))
+	suite.mockStore.On("IsThemeHandleConflict", mock.Anything, "my-theme", "").
+		Return(false, errors.New("database error"))
 
 	result, err := suite.service.CreateTheme(context.Background(), themeRequest)
 

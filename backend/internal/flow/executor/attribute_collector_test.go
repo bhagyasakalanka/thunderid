@@ -199,9 +199,10 @@ func (suite *AttributeCollectorTestSuite) TestExecute_Success() {
 	}
 
 	suite.mockEntityProvider.On("GetEntity", mock.Anything, testUserID).Return(existingUser, nil)
-	suite.mockEntityProvider.On("UpdateAttributes", mock.Anything, testUserID, mock.MatchedBy(func(attrs json.RawMessage) bool {
-		return attrs != nil
-	})).Return(nil)
+	suite.mockEntityProvider.On("UpdateAttributes", mock.Anything, testUserID,
+		mock.MatchedBy(func(attrs json.RawMessage) bool {
+			return attrs != nil
+		})).Return(nil)
 
 	resp, err := suite.executor.Execute(ctx)
 

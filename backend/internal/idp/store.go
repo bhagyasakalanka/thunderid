@@ -119,7 +119,8 @@ func (s *idpStore) GetIdentityProviderListCount(ctx context.Context) (int, error
 		return 0, fmt.Errorf("failed to get database client: %w", err)
 	}
 
-	results, err := dbClient.QueryContext(ctx, queryGetIdentityProviderListCount, deployment.Resolve(ctx, s.deploymentID))
+	results, err := dbClient.QueryContext(ctx, queryGetIdentityProviderListCount, deployment.Resolve(ctx,
+		s.deploymentID))
 	if err != nil {
 		return 0, fmt.Errorf("failed to execute query: %w", err)
 	}
@@ -311,7 +312,8 @@ func (s *idpStore) DeleteIdentityProvider(ctx context.Context, id string) error 
 		return fmt.Errorf("failed to get database client: %w", err)
 	}
 
-	rowsAffected, err := dbClient.ExecuteContext(ctx, queryDeleteIdentityProviderByID, id, deployment.Resolve(ctx, s.deploymentID))
+	rowsAffected, err := dbClient.ExecuteContext(ctx, queryDeleteIdentityProviderByID, id, deployment.Resolve(ctx,
+		s.deploymentID))
 	if err != nil {
 		return fmt.Errorf("failed to execute query: %w", err)
 	}
