@@ -39,8 +39,6 @@ interface ConnectionFormProps {
   nameError?: string | null;
   /** Render the connection-name field (custom connections only; branded names are fixed). */
   showNameField?: boolean;
-  /** Render the redirect URI field (moved to a quick-copy section on the edit page). */
-  showRedirectUri?: boolean;
   /** Show the stored configuration without offering to change it. */
   isReadOnly?: boolean;
   onFieldChange: (name: string, value: string) => void;
@@ -56,7 +54,6 @@ export default function ConnectionForm({
   vendorDisplayName,
   nameError = null,
   showNameField = true,
-  showRedirectUri = true,
   isReadOnly = false,
   onFieldChange,
   onSecretReplacingChange,

@@ -1,20 +1,5 @@
-/**
- * Copyright (c) 2026, WSO2 LLC. (https://www.wso2.com).
- *
- * WSO2 LLC. licenses this file to you under the Apache License,
- * Version 2.0 (the "License"); you may not use this file except
- * in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied. See the License for the
- * specific language governing permissions and limitations
- * under the License.
- */
+// Copyright 2026 The ThunderID Authors
+// SPDX-License-Identifier: Apache-2.0
 
 import {
   Alert,
@@ -29,7 +14,7 @@ import {
   Stack,
   Typography,
 } from '@wso2/oxygen-ui';
-import {useEffect, useState, type JSX} from 'react';
+import {useState, type JSX} from 'react';
 import {useTranslation} from 'react-i18next';
 import useRegenerateEnvironmentSecret from '../api/useRegenerateEnvironmentSecret';
 import type {SecretEntry} from '../models/promotion';
@@ -68,13 +53,17 @@ export default function GenerateMissingSecretsDialog({
   const [running, setRunning] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
 
-  useEffect(() => {
+  // Reset as the dialog opens, during render rather than in an effect: an effect would render the
+  // stale contents once before clearing them.
+  const [wasOpen, setWasOpen] = useState<boolean>(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
     if (open) {
       setIssued([]);
       setRunning(false);
       setCopied(false);
     }
-  }, [open]);
+  }
 
   const generatable: SecretEntry[] = missing.filter((secret: SecretEntry) => secret.kind === 'hash');
   const manual: SecretEntry[] = missing.filter((secret: SecretEntry) => secret.kind !== 'hash');

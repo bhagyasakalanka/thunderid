@@ -1,20 +1,5 @@
-/**
- * Copyright (c) 2026, WSO2 LLC. (https://www.wso2.com).
- *
- * WSO2 LLC. licenses this file to you under the Apache License,
- * Version 2.0 (the "License"); you may not use this file except
- * in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied. See the License for the
- * specific language governing permissions and limitations
- * under the License.
- */
+// Copyright 2026 The ThunderID Authors
+// SPDX-License-Identifier: Apache-2.0
 
 // The Control Plane console reuses the Data Plane console's source in full. Its own source is only
 // a thin bootstrap (src/main.tsx); everything else (App, routes, layouts, features) is compiled from
@@ -29,8 +14,8 @@ import babel from '@rolldown/plugin-babel';
 import {prismjsInjectCore} from '@thunderid/build-plugins/vite';
 import basicSsl from '@vitejs/plugin-basic-ssl';
 import react, {reactCompilerPreset} from '@vitejs/plugin-react';
-import svgr from 'vite-plugin-svgr';
 import {defineConfig} from 'vite';
+import svgr from 'vite-plugin-svgr';
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const consoleSrc = resolve(currentDir, '..', 'console', 'src');

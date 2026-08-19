@@ -4,6 +4,7 @@
 import {PageLoadingAnimation, QueryErrorNotice, ResourceAvatar, UnsavedChangesBar} from '@thunderid/components';
 import {useGetAgentType, useGetAgentTypes} from '@thunderid/configure-agent-types';
 import {dropNonConformingOptionalAttributes} from '@thunderid/configure-users';
+import {useIsManagedResource, ManagedResourceNotice} from '@thunderid/contexts';
 import {useLogger} from '@thunderid/logger/react';
 import {getErrorMessage, isEqualIgnoringEmpty} from '@thunderid/utils';
 import {
@@ -26,7 +27,6 @@ import {useState, useCallback, useMemo, type SyntheticEvent, type JSX, type Reac
 import {useTranslation} from 'react-i18next';
 import {Link, useLocation, useNavigate, useParams} from 'react-router';
 import RouteConfig from '../../../configs/RouteConfig';
-import {useIsManagedResource, ManagedResourceNotice} from '../../managed-resources';
 import useGetAgent from '../api/useGetAgent';
 import useUpdateAgent from '../api/useUpdateAgent';
 import ShowClientSecret from '../components/create-agent/ShowClientSecret';
