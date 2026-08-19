@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {useIsMutating} from '@tanstack/react-query';
-import {PageLoadingAnimation, QueryErrorNotice, UnsavedChangesBar} from '@thunderid/components';
+import {ManagedResourceNotice, PageLoadingAnimation, QueryErrorNotice, UnsavedChangesBar} from '@thunderid/components';
 import {arePermissionsEqual, type ResourcePermissions} from '@thunderid/configure-resource-servers';
 import {useLogger} from '@thunderid/logger/react';
 import {getErrorMessage, isEqualIgnoringEmpty} from '@thunderid/utils';
@@ -24,7 +24,7 @@ import {useState, useCallback, useMemo} from 'react';
 import type {ReactNode, SyntheticEvent, JSX} from 'react';
 import {useTranslation} from 'react-i18next';
 import {Link, useNavigate, useParams} from 'react-router';
-import {useIsManagedResource, ManagedResourceNotice} from '@thunderid/contexts';
+import {useIsManagedResource} from '@thunderid/contexts';
 import useGetRole from '../api/useGetRole';
 import useUpdateRole, {ROLE_MUTATION_KEY} from '../api/useUpdateRole';
 import EditAdvancedSettings from '../components/edit-role/advanced-settings/EditAdvancedSettings';

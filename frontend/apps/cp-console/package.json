@@ -2,7 +2,7 @@
   "private": true,
   "name": "@thunderid/cp-console",
   "version": "0.0.0",
-  "description": "\u26a1\ufe0f ThunderID Control Plane Console - authoring surface for declarative configuration.",
+  "description": "⚡️ ThunderID Control Plane Console - authoring surface for declarative configuration.",
   "keywords": [
     "thunderid",
     "console",

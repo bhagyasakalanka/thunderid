@@ -3,5 +3,4 @@
 
 export {default as useManagedResources} from './api/useManagedResources';
 export {default as useIsManagedResource} from './api/useIsManagedResource';
-export {default as ManagedResourceNotice} from './components/ManagedResourceNotice';
 export type {ManagedResourceType, ManagedResourcesResponse} from './api/useManagedResources';

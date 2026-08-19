@@ -320,25 +320,6 @@ export default function ConnectionDetailPage(): JSX.Element | null {
                 />
               </SettingsCard>
 
-              {!isManaged && (
-              <SettingsCard title={t('detail.dangerZone.title')} description={t('detail.dangerZone.description')}>
-                <Typography variant="h6" gutterBottom color="error">
-                  {t('detail.dangerZone.delete.title')}
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{mb: 3}}>
-                  {t('detail.dangerZone.delete.description')}
-                </Typography>
-                <Button
-                  variant="contained"
-                  color="error"
-                  startIcon={<Trash2 size={16} />}
-                  onClick={() => setDeleteOpen(true)}
-                  data-testid="connection-delete-button"
-                >
-                  {t('form.actions.delete')}
-                </Button>
-              </SettingsCard>
-              )}
             </Stack>
           </TabPanel>
 
@@ -354,6 +335,33 @@ export default function ConnectionDetailPage(): JSX.Element | null {
               />
             </TabPanel>
           )}
+
+          <TabPanel value={activeTab} index={supportsAttributes ? 2 : 1}>
+            <Stack direction="column" spacing={4}>
+              {!isManaged && (
+                <SettingsCard title={t('detail.dangerZone.title')} description={t('detail.dangerZone.description')}>
+                  <Typography variant="h6" gutterBottom color="error">
+                    {t('detail.dangerZone.delete.title')}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{mb: 3}}>
+                    {t('detail.dangerZone.delete.description')}
+                  </Typography>
+                  <Button
+                    variant="contained"
+                    color="error"
+                    startIcon={<Trash2 size={16} />}
+                    onClick={() => {
+                      setDeleteError(null);
+                      setDeleteOpen(true);
+                    }}
+                    data-testid="connection-delete-button"
+                  >
+                    {t('form.actions.delete')}
+                  </Button>
+                </SettingsCard>
+              )}
+            </Stack>
+          </TabPanel>
 
           {dirty && !isManaged && (
             <UnsavedChangesBar
