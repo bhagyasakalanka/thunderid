@@ -49,6 +49,7 @@ import (
 	"github.com/thunder-id/thunderid/internal/system/config"
 	"github.com/thunder-id/thunderid/internal/system/constants"
 	"github.com/thunder-id/thunderid/internal/system/database/provider"
+	"github.com/thunder-id/thunderid/internal/system/export"
 	"github.com/thunder-id/thunderid/internal/system/jose/jwt"
 	"github.com/thunder-id/thunderid/internal/system/kmprovider/common"
 	"github.com/thunder-id/thunderid/internal/system/log"
@@ -123,8 +124,10 @@ func main() {
 	// When invoked as the export one-shot (`cpserver export --deployment-id <tenant> --out <dir>`),
 	// export that tenant's configuration as a declarative bundle and exit. This reads through the
 	// same tenant-scoped stores, so it produces exactly the caller tenant's resources.
-	if isExportInvocation() {
-		if err := runExport(ctx, logger, exportService, cacheManager); err != nil {
+	if export.IsInvocation(flag.Arg(0)) {
+		err := export.RunCLI(ctx, logger, exportService, flag.Args()[1:])
+		shutdownBootstrap(ctx, logger, cacheManager)
+		if err != nil {
 			logger.Error(ctx, "In-process export failed; exiting", log.Error(err))
 			os.Exit(1)
 		}
