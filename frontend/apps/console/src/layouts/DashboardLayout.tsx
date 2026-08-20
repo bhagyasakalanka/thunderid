@@ -35,7 +35,6 @@ import {
   SquareArrowRightEnter,
   UserRoundCog,
   UsersRound,
-  Variable,
   Wallet,
   Workflow,
 } from '@wso2/oxygen-ui-icons-react';
@@ -268,12 +267,6 @@ export default function DashboardLayout({collapseSidebar = false}: DashboardLayo
             text: t('navigation:pages.connections'),
             icon: <Layers />,
             path: RouteConfig.connections.list(),
-          },
-          {
-            id: 'environment-variables',
-            text: t('navigation:pages.environmentVariables', 'Environment Variables'),
-            icon: <Variable />,
-            path: '/environment-variables',
           },
           {
             id: 'promotions',

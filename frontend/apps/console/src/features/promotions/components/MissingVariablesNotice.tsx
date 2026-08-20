@@ -73,7 +73,7 @@ export default function MissingVariablesNotice({
         <MissingConfiguredVariables
           missing={missing}
           onManage={() => {
-            void navigate('/environment-variables');
+            void navigate(`/promotions/${envId}/variables`);
           }}
         />
       )}

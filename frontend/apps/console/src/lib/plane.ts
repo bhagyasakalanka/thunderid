@@ -48,10 +48,7 @@ const DP_ONLY_FEATURES: readonly PlaneFeature[] = [
  * Control Plane authoring-only features, hidden on the Data Plane and hybrid consoles. Promotion and
  * the values it substitutes are Control Plane concerns: they describe what is applied to a Data Plane.
  */
-const CP_ONLY_FEATURES: readonly PlaneFeature[] = [
-  {navIds: ['promotions'], routeSegments: ['promotions']},
-  {navIds: ['environment-variables'], routeSegments: ['environment-variables']},
-];
+const CP_ONLY_FEATURES: readonly PlaneFeature[] = [{navIds: ['promotions'], routeSegments: ['promotions']}];
 
 const DP_ONLY_NAV_IDS = new Set<string>(DP_ONLY_FEATURES.flatMap((feature) => feature.navIds ?? []));
 const CP_ONLY_NAV_IDS = new Set<string>(CP_ONLY_FEATURES.flatMap((feature) => feature.navIds ?? []));

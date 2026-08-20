@@ -13,7 +13,7 @@ import {
   Stack,
   Typography,
 } from '@wso2/oxygen-ui';
-import {CloudDownload, KeyRound, Undo2} from '@wso2/oxygen-ui-icons-react';
+import {CloudDownload, KeyRound, Undo2, Variable} from '@wso2/oxygen-ui-icons-react';
 import {useMemo, useState, type JSX} from 'react';
 import {useTranslation} from 'react-i18next';
 import {useNavigate, useParams} from 'react-router';
@@ -109,6 +109,16 @@ export default function EnvironmentDetailPage(): JSX.Element {
               }}
             >
               {t('promotions:detail.manageSecrets', 'Secrets')}
+            </Button>
+            {/* Variables belong to the environment, the same as its secrets, so they are reached the
+                same way rather than from a page of their own. */}
+            <Button
+              startIcon={<Variable size={16} />}
+              onClick={() => {
+                void navigate(`/promotions/${envId}/variables`);
+              }}
+            >
+              {t('promotions:detail.manageVariables', 'Variables')}
             </Button>
             <Button
               variant="contained"

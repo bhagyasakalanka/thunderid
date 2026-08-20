@@ -121,11 +121,12 @@ describe('plane', () => {
       expect(hiddenNavIds('hybrid').has('agents')).toBe(false);
     });
 
-    it('marks environment variables as a Control Plane-only nav entry', () => {
-      expect(CP_ONLY_HIDDEN_NAV_IDS.has('environment-variables')).toBe(true);
-      expect(isRouteHiddenOnPlane('environment-variables', 'cp')).toBe(false);
-      expect(isRouteHiddenOnPlane('environment-variables', 'dp')).toBe(true);
-      expect(isRouteHiddenOnPlane('environment-variables', 'hybrid')).toBe(true);
+    // Variables are reached through the environment that holds them, so they are gated by the
+    // promotions segment they now sit under rather than by one of their own.
+    it('gates environment variables through the promotions segment they sit under', () => {
+      expect(isRouteHiddenOnPlane('promotions', 'cp')).toBe(false);
+      expect(isRouteHiddenOnPlane('promotions', 'dp')).toBe(true);
+      expect(isRouteHiddenOnPlane('promotions', 'hybrid')).toBe(true);
     });
 
     it('marks promotions as a Control Plane-only nav entry', () => {
