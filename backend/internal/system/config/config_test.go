@@ -1903,3 +1903,25 @@ func TestChannelServerNeedsNoSharedTokenWhenItIssuesItsOwn(t *testing.T) {
 
 	assert.NoError(t, cfg.Validate())
 }
+
+// The scope is configurable because the authorization server issuing these tokens is not always this
+// one, and its scope naming is its own. Unset, it falls back to the documented default.
+func TestPromotionScopeFallsBackToTheDefault(t *testing.T) {
+	tests := []struct {
+		name      string
+		configure PromotionConfig
+		want      string
+	}{
+		{name: "unset", configure: PromotionConfig{}, want: DefaultPromotionScope},
+		{name: "blank", configure: PromotionConfig{Scope: "   "}, want: DefaultPromotionScope},
+		{name: "configured", configure: PromotionConfig{Scope: "release:promote"}, want: "release:promote"},
+		{name: "trimmed", configure: PromotionConfig{Scope: "  release:promote  "}, want: "release:promote"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := test.configure.PromotionScope(); got != test.want {
+				t.Fatalf("expected %q, got %q", test.want, got)
+			}
+		})
+	}
+}

@@ -146,7 +146,12 @@ func (s *Server) listEnvironments(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"environments": summaries})
+	// Whether this caller may promote travels with the list, so the console can leave the action out
+	// rather than offer it and have the request refused.
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"environments": summaries,
+		"canPromote":   callerMayPromote(r),
+	})
 }
 
 // getDataPlaneJob returns work queued for a data plane and, once delivered, what it answered.

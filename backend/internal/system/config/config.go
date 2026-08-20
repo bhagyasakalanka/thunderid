@@ -132,6 +132,29 @@ func (c *OTPConfig) Validate() error {
 	return nil
 }
 
+// PromotionConfig configures who may promote configuration between an organization's environments.
+//
+// Promotion is the one environment action that is not open to every member of the organization:
+// moving a version into production is a release decision. Every other action, including applying and
+// reverting an environment the caller already administers, is left to the organization.
+type PromotionConfig struct {
+	// Scope is the scope a caller's token must carry to promote. It is configurable because the
+	// authorization server that issues these tokens is not always this one, and its scope naming is
+	// its own. Empty falls back to DefaultPromotionScope.
+	Scope string `yaml:"scope" json:"scope"`
+}
+
+// DefaultPromotionScope is the scope required to promote when none is configured.
+const DefaultPromotionScope = "system:promote"
+
+// PromotionScope returns the scope a caller must hold to promote.
+func (c PromotionConfig) PromotionScope() string {
+	if scope := strings.TrimSpace(c.Scope); scope != "" {
+		return scope
+	}
+	return DefaultPromotionScope
+}
+
 // ChannelConfig configures the CP-DP phone-home WebSocket channel. The Server block is used by the
 // Control Plane (cpserver); the Client block by the Data Plane (dpserver).
 type ChannelConfig struct {
@@ -699,6 +722,7 @@ type Config struct {
 	Notification         NotificationConfig                `yaml:"notification"          json:"notification"`
 	AttributeCache       engineconfig.AttributeCacheConfig `yaml:"attribute_cache" json:"attribute_cache"`
 	Channel              ChannelConfig                     `yaml:"channel"               json:"channel"`
+	Promotion            PromotionConfig                   `yaml:"promotion"             json:"promotion"`
 }
 
 // LoadConfig loads the configurations from the specified YAML file and applies defaults.

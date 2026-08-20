@@ -79,8 +79,17 @@ func registerRoutes(mux *http.ServeMux, reg *registry) {
 		"POST /promotions":                           func(s *Server) http.HandlerFunc { return s.promote },
 		"PUT /tenants/{deploymentId}/secrets/{name}": func(s *Server) http.HandlerFunc { return s.captureSecret },
 	}
+	// Promotion is the one action gated on a scope; see requirePromotionScope.
+	promotionRoutes := map[string]bool{
+		"GET /promotions/preview": true,
+		"POST /promotions":        true,
+	}
 	for pattern, pick := range routes {
-		mux.HandleFunc(middleware.WithCORS(pattern, auth.RecordCallerToken(reg.handler(pick)), opts))
+		handler := reg.handler(pick)
+		if promotionRoutes[pattern] {
+			handler = requirePromotionScope(handler)
+		}
+		mux.HandleFunc(middleware.WithCORS(pattern, auth.RecordCallerToken(handler), opts))
 	}
 
 	for _, pattern := range []string{"OPTIONS /environments", "OPTIONS /environments/",

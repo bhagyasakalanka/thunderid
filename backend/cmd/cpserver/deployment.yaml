@@ -54,6 +54,13 @@ channel:
     read_limit_bytes: 8388608
     rpc_timeout_seconds: 120
 
+# Promoting a version towards production is a release decision, so it is the one environment action
+# gated on a scope. Every other action, including applying and reverting, is open to any member of the
+# organization. Set this when the authorization server issuing your tokens names the scope
+# differently; it defaults to system:promote.
+promotion:
+  scope: "system:promote"
+
 database:
   config:
     type: "sqlite"
