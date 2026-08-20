@@ -198,6 +198,11 @@ func (s *tenantService) RegisterEnvironment(ctx context.Context, deploymentID st
 	if strings.TrimSpace(request.DataPlane.ID) == "" {
 		return nil, &ErrorInvalidDataPlane
 	}
+	// The environment is named by the request, because the deployment is the organization and its id
+	// names no environment. Without a name there is nothing to register.
+	if !orgEnvPattern.MatchString(request.Env) {
+		return nil, &ErrorInvalidDeploymentID
+	}
 	if deploymentID == s.systemDeploymentID {
 		return nil, &ErrorReservedSystemTenant
 	}

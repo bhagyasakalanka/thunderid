@@ -112,6 +112,7 @@ func (h *tenantHandler) HandleEnvironmentPostRequest(w http.ResponseWriter, r *h
 		return
 	}
 
+	request.Env = sysutils.SanitizeString(request.Env)
 	request.DataPlane.ID = sysutils.SanitizeString(request.DataPlane.ID)
 	request.DataPlane.BaseURL = sysutils.SanitizeString(request.DataPlane.BaseURL)
 

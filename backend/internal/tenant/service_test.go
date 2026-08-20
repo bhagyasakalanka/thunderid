@@ -366,3 +366,21 @@ func TestRegisterEnvironment_Refusals(t *testing.T) {
 		t.Fatal("expected a missing data plane to be refused")
 	}
 }
+
+// The environment is named by the request, because the deployment is the organization and its id
+// names no environment. An unnamed one is refused rather than registered without a name.
+func TestRegisterEnvironment_RequiresAnEnvironmentName(t *testing.T) {
+	store := newFakeStore()
+	svc := newTestService(store, noopRun)
+	svc.SetBaselineSeeder(&stubSeeder{})
+	if _, svcErr := svc.CreateTenant(systemCtx(), CreateTenantRequest{Org: "acme", Env: "dev"}); svcErr != nil {
+		t.Fatalf("create tenant: %v", svcErr.Error.DefaultValue)
+	}
+
+	_, svcErr := svc.RegisterEnvironment(systemCtx(), "acme", RegisterEnvironmentRequest{
+		DataPlane: DataPlane{ID: "acme:stage"},
+	})
+
+	require.NotNil(t, svcErr)
+	assert.Equal(t, ErrorInvalidDeploymentID.Code, svcErr.Code)
+}
