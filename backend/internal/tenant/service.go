@@ -44,46 +44,6 @@ var deploymentIDPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]+$`)
 // deployment id always splits back into the pair it was built from.
 var orgEnvPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
-// orgEnvSeparator joins an organization and an environment into a deployment id.
-const orgEnvSeparator = ":"
-
-// deploymentIDFor builds the deployment id of an organization's environment.
-func deploymentIDFor(org, env string) string {
-	return org + orgEnvSeparator + env
-}
-
-// orgOf returns the organization a deployment id belongs to, or "" for an id that names none. Ids
-// created before organizations, and the system tenant's own, have no organization.
-func orgOf(deploymentID string) string {
-	org, _, found := strings.Cut(deploymentID, orgEnvSeparator)
-	if !found {
-		return ""
-	}
-	return org
-}
-
-// isFirstOfOrganization reports whether an organization has no deployment yet, which makes the one
-// being created its first.
-//
-// The first environment is the bottom of the promotion chain, so it is rank 1 whatever was asked for:
-// there is nothing to promote into it.
-func (s *tenantService) isFirstOfOrganization(ctx context.Context, org,
-	excluding string) (bool, *tidcommon.ServiceError) {
-	if strings.TrimSpace(org) == "" {
-		return true, nil
-	}
-	tenants, err := s.store.ListTenants(ctx)
-	if err != nil {
-		return false, s.internalError(ctx, "failed to list tenants", err)
-	}
-	for _, tenant := range tenants {
-		if tenant.DeploymentID != excluding && orgOf(tenant.DeploymentID) == org {
-			return false, nil
-		}
-	}
-	return true, nil
-}
-
 // BaselineSeeder copies an organization's existing configuration into a newly created tenant.
 //
 // It is supplied by the server rather than built here, because the configuration comes from the
@@ -180,7 +140,9 @@ func (s *tenantService) CreateTenant(ctx context.Context,
 	if !orgEnvPattern.MatchString(request.Org) || !orgEnvPattern.MatchString(request.Env) {
 		return nil, &ErrorInvalidDeploymentID
 	}
-	deploymentID := deploymentIDFor(request.Org, request.Env)
+	// The deployment is the organization. Its environments are resources inside that one workspace
+	// rather than deployments of their own, so a second environment adds no deployment.
+	deploymentID := request.Org
 	if deploymentID == s.systemDeploymentID {
 		return nil, &ErrorReservedSystemTenant
 	}
@@ -208,16 +170,8 @@ func (s *tenantService) CreateTenant(ctx context.Context,
 		return nil, svcErr
 	}
 
-	first, svcErr := s.isFirstOfOrganization(ctx, request.Org, deploymentID)
-	if svcErr != nil {
-		return nil, svcErr
-	}
-	rank := 0
-	if first {
-		rank = 1
-	} else if request.Rank != nil {
-		rank = *request.Rank
-	}
+	// This is the organization's first environment: the deployment did not exist a moment ago.
+	rank := 1
 	environment, svcErr := s.registerEnvironment(ctx, request, deploymentID, rank)
 	if svcErr != nil {
 		return nil, svcErr
@@ -259,19 +213,13 @@ func (s *tenantService) RegisterEnvironment(ctx context.Context, deploymentID st
 		return nil, &ErrorEnvironmentRegistrationUnavailable
 	}
 
-	first, svcErr := s.isFirstOfOrganization(ctx, orgOf(deploymentID), deploymentID)
-	if svcErr != nil {
-		return nil, svcErr
-	}
 	rank := 0
-	if first {
-		rank = 1
-	} else if request.Rank != nil {
+	if request.Rank != nil {
 		rank = *request.Rank
 	}
 
 	summary, err := s.seeder.RegisterEnvironment(ctx, RegisterEnvironmentInput{
-		Name:         environmentNameOf(deploymentID),
+		Name:         request.Env,
 		DeploymentID: deploymentID,
 		Rank:         rank,
 		DataPlane:    request.DataPlane,
@@ -288,15 +236,6 @@ func (s *tenantService) RegisterEnvironment(ctx context.Context, deploymentID st
 		return nil, &svcErr
 	}
 	return summary, nil
-}
-
-// environmentNameOf is the environment part of a deployment id, which is what names the environment.
-func environmentNameOf(deploymentID string) string {
-	_, env, found := strings.Cut(deploymentID, orgEnvSeparator)
-	if !found {
-		return deploymentID
-	}
-	return env
 }
 
 // registerEnvironment records the new tenant as an environment of its organization. Without a data

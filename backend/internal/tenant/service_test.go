@@ -107,18 +107,18 @@ func TestCreateTenant_Success(t *testing.T) {
 
 	require.Nil(t, svcErr)
 	require.NotNil(t, created)
-	assert.Equal(t, "acme:dev", created.DeploymentID)
-	assert.Equal(t, []string{"acme:dev"}, provisioned)
-	_, ok := store.registry["acme:dev"]
+	assert.Equal(t, "acme", created.DeploymentID)
+	assert.Equal(t, []string{"acme"}, provisioned)
+	_, ok := store.registry["acme"]
 	assert.True(t, ok)
 }
 
-// A deployment whose org and env spell the system tenant's own id is refused, whatever that id is
+// An organization whose name is the system tenant's own id is refused, whatever that id is
 // configured to be.
 func TestCreateTenant_ReservedSystemTenant(t *testing.T) {
 	svc := newTestService(newFakeStore(), noopRun)
-	svc.systemDeploymentID = "acme:dev"
-	ctx := deployment.WithID(context.Background(), "acme:dev")
+	svc.systemDeploymentID = "acme"
+	ctx := deployment.WithID(context.Background(), "acme")
 
 	_, svcErr := svc.CreateTenant(ctx, CreateTenantRequest{Org: "acme", Env: "dev"})
 
@@ -138,7 +138,7 @@ func TestCreateTenant_NotSystemCaller(t *testing.T) {
 
 func TestCreateTenant_Conflict(t *testing.T) {
 	store := newFakeStore()
-	store.provisioned["acme:dev"] = true
+	store.provisioned["acme"] = true
 	svc := newTestService(store, noopRun)
 
 	_, svcErr := svc.CreateTenant(systemCtx(), CreateTenantRequest{Org: "acme", Env: "dev"})
@@ -243,38 +243,36 @@ func TestCreateTenant_IsProvisionedFromTheBaseline(t *testing.T) {
 	created, svcErr := svc.CreateTenant(systemCtx(), CreateTenantRequest{Org: "acme", Env: "dev"})
 
 	require.Nil(t, svcErr)
-	assert.Equal(t, []string{"acme:dev"}, provisioned)
+	assert.Equal(t, []string{"acme"}, provisioned)
 	_ = created
 }
 
 // A tenant that names a data plane is registered for promotion as it is created, so an environment
 // does not have to be set up in a second step that is easy to forget.
 func TestCreateTenant_RegistersTheEnvironmentWithItsRank(t *testing.T) {
-	store := newFakeStore()
-	store.registry["acme:dev"] = Tenant{ID: "1", DeploymentID: "acme:dev", CreatedAt: "2026-01-01T00:00:00Z"}
-	svc := newTestService(store, noopRun)
+	svc := newTestService(newFakeStore(), noopRun)
 	seeder := &stubSeeder{}
 	svc.SetBaselineSeeder(seeder)
-	rank := 2
 
 	created, svcErr := svc.CreateTenant(systemCtx(), CreateTenantRequest{
-		Org: "acme", Env: "stage", Rank: &rank,
-		DataPlane:    &DataPlane{ID: "stage-dp", BaseURL: "https://dp-stage"},
+		Org: "acme", Env: "dev",
+		DataPlane:    &DataPlane{ID: "dev-dp", BaseURL: "https://dp-dev"},
 		ControlPlane: &ControlPlane{InsecureSkipVerify: true},
 	})
 
 	require.Nil(t, svcErr)
 	require.NotNil(t, seeder.registered)
-	assert.Equal(t, "stage", seeder.registered.Name)
-	assert.Equal(t, "acme:stage", seeder.registered.DeploymentID)
-	assert.Equal(t, 2, seeder.registered.Rank)
-	assert.Equal(t, "stage-dp", seeder.registered.DataPlane.ID)
+	assert.Equal(t, "dev", seeder.registered.Name)
+	// The deployment is the organization: its environments are resources inside that one workspace.
+	assert.Equal(t, "acme", seeder.registered.DeploymentID)
+	assert.Equal(t, 1, seeder.registered.Rank)
+	assert.Equal(t, "dev-dp", seeder.registered.DataPlane.ID)
 	require.NotNil(t, created.Environment)
-	assert.Equal(t, 2, created.Environment.Rank)
+	assert.Equal(t, 1, created.Environment.Rank)
 }
 
-// The organization's first environment is the bottom of the promotion chain, so its rank is 1 whatever
-// the caller asks for.
+// Creating an organization registers its first environment, which is the bottom of the promotion
+// chain, so its rank is 1 whatever the caller asks for.
 func TestCreateTenant_FirstEnvironmentIsAlwaysRankOne(t *testing.T) {
 	svc := newTestService(newFakeStore(), noopRun)
 	seeder := &stubSeeder{}
@@ -324,7 +322,8 @@ func TestRegisterEnvironment_RegistersAnExistingTenant(t *testing.T) {
 		t.Fatal("expected no environment without a data plane")
 	}
 
-	env, svcErr := svc.RegisterEnvironment(systemCtx(), "acme:dev", RegisterEnvironmentRequest{
+	env, svcErr := svc.RegisterEnvironment(systemCtx(), "acme", RegisterEnvironmentRequest{
+		Env:       "dev",
 		DataPlane: DataPlane{ID: "acme:dev", BaseURL: "https://dev.example"},
 	})
 	if svcErr != nil {
@@ -333,15 +332,11 @@ func TestRegisterEnvironment_RegistersAnExistingTenant(t *testing.T) {
 	if env == nil || seeder.registered == nil {
 		t.Fatal("expected the environment to be registered")
 	}
-	if seeder.registered.DeploymentID != "acme:dev" {
-		t.Fatalf("expected it registered against the tenant, got %q", seeder.registered.DeploymentID)
-	}
-	// The first environment of an organization is the bottom of its chain whatever is asked for.
-	if seeder.registered.Rank != 1 {
-		t.Fatalf("expected rank 1 for the organization's first environment, got %d", seeder.registered.Rank)
+	if seeder.registered.DeploymentID != "acme" {
+		t.Fatalf("expected it registered against the organization, got %q", seeder.registered.DeploymentID)
 	}
 	if seeder.registered.Name != "dev" {
-		t.Fatalf("expected the environment named after the deployment id, got %q", seeder.registered.Name)
+		t.Fatalf("expected the environment named by the request, got %q", seeder.registered.Name)
 	}
 }
 
@@ -354,19 +349,19 @@ func TestRegisterEnvironment_Refusals(t *testing.T) {
 	})
 	svc.SetBaselineSeeder(&stubSeeder{})
 
-	req := RegisterEnvironmentRequest{DataPlane: DataPlane{ID: "acme:dev"}}
+	req := RegisterEnvironmentRequest{Env: "dev", DataPlane: DataPlane{ID: "acme:dev"}}
 
-	if _, svcErr := svc.RegisterEnvironment(deployment.WithID(context.Background(), "acme:dev"),
-		"acme:dev", req); svcErr == nil {
+	if _, svcErr := svc.RegisterEnvironment(deployment.WithID(context.Background(), "acme"),
+		"acme", req); svcErr == nil {
 		t.Fatal("expected a tenant's own token to be refused")
 	}
-	if _, svcErr := svc.RegisterEnvironment(systemCtx(), "acme:missing", req); svcErr == nil {
-		t.Fatal("expected an unknown tenant to be refused")
+	if _, svcErr := svc.RegisterEnvironment(systemCtx(), "missing", req); svcErr == nil {
+		t.Fatal("expected an unknown organization to be refused")
 	}
 	if _, svcErr := svc.RegisterEnvironment(systemCtx(), systemID, req); svcErr == nil {
 		t.Fatal("expected the system tenant to be refused")
 	}
-	if _, svcErr := svc.RegisterEnvironment(systemCtx(), "acme:dev",
+	if _, svcErr := svc.RegisterEnvironment(systemCtx(), "acme",
 		RegisterEnvironmentRequest{}); svcErr == nil {
 		t.Fatal("expected a missing data plane to be refused")
 	}

@@ -39,9 +39,9 @@ type TenantListResponse struct {
 
 // CreateTenantRequest is the request body for provisioning a new tenant.
 type CreateTenantRequest struct {
-	// Org and Env name the organization and which of its environments this tenant is. Together they
-	// form the deployment id, "<org>:<env>", so a tenant's place is readable from its id alone and no
-	// second record is needed to relate an organization's environments.
+	// Org is the organization, and is the deployment id: the organization has one workspace. Env names
+	// the first environment to register against it, which is a resource of that workspace rather than
+	// a deployment of its own.
 	Org string `json:"org" native:"required,min=1,max=120"`
 	Env string `json:"env" native:"required,min=1,max=120"`
 
@@ -85,6 +85,10 @@ type DataPlane struct {
 // A tenant created without a data plane has no environment: there was nowhere to apply to. This is
 // how one is registered once that data plane exists, without needing a token for the tenant itself.
 type RegisterEnvironmentRequest struct {
+	// Env names the environment within its organization, e.g. "stage". It is given here rather than
+	// read from the deployment id because the deployment is the organization: one workspace holding
+	// every environment, none of which the id names.
+	Env string `json:"env" native:"required,min=1,max=120"`
 	// DataPlane is the deployment this environment's configuration is applied to.
 	DataPlane DataPlane `json:"dataPlane" native:"required"`
 	// Rank orders the environment in its organization's promotion chain. The first environment of an
