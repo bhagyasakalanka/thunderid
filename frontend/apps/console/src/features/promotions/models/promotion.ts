@@ -20,6 +20,12 @@ export interface Environment {
   excluded?: string[];
   latestSeq: number;
   hasPendingChanges: boolean;
+  /**
+   * Whether the Control Plane administers this environment directly rather than only promoting into
+   * it. Editing configuration in the organization's workspace is editing this environment, and a
+   * credential created there is issued against it. Exactly one environment holds this.
+   */
+  managedByControlPlane?: boolean;
   /** Outgoing promotion edges, with the rank fallback already applied by the service. */
   promotesToResolved: string[];
   /** Incoming edges: the environments that can promote into this one. */

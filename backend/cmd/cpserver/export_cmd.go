@@ -22,8 +22,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/thunder-id/thunderid/internal/system/cache"
 	"github.com/thunder-id/thunderid/internal/system/deployment"
@@ -90,7 +88,7 @@ func runExport(ctx context.Context, logger *log.Logger, exportSvc export.ExportS
 		return fmt.Errorf("export failed [%s]: %s", svcErr.Code, svcErr.Error.DefaultValue)
 	}
 
-	if err := writeExportBundle(*outDir, response); err != nil {
+	if err := export.WriteBundle(*outDir, response); err != nil {
 		shutdownBootstrap(ctx, logger, cacheManager)
 		return err
 	}
@@ -100,30 +98,5 @@ func runExport(ctx context.Context, logger *log.Logger, exportSvc export.ExportS
 		log.String("out", *outDir),
 		log.Int("files", len(response.Files)))
 	shutdownBootstrap(ctx, logger, cacheManager)
-	return nil
-}
-
-// writeExportBundle writes every exported file (and the env sidecar, if present) under outDir,
-// preserving each file's relative folder path.
-func writeExportBundle(outDir string, response *export.ExportResponse) error {
-	if err := os.MkdirAll(outDir, 0o750); err != nil {
-		return fmt.Errorf("failed to create output directory %q: %w", outDir, err)
-	}
-	for _, f := range response.Files {
-		dir := filepath.Join(outDir, filepath.Clean(f.FolderPath))
-		if err := os.MkdirAll(dir, 0o750); err != nil {
-			return fmt.Errorf("failed to create %q: %w", dir, err)
-		}
-		path := filepath.Join(dir, f.FileName)
-		if err := os.WriteFile(path, []byte(f.Content), 0o600); err != nil {
-			return fmt.Errorf("failed to write %q: %w", path, err)
-		}
-	}
-	if response.EnvFile != nil {
-		path := filepath.Join(outDir, response.EnvFile.FileName)
-		if err := os.WriteFile(path, []byte(response.EnvFile.Content), 0o600); err != nil {
-			return fmt.Errorf("failed to write env file %q: %w", path, err)
-		}
-	}
 	return nil
 }

@@ -16,7 +16,9 @@
  * under the License.
  */
 
-package main
+// Package dataplane reaches a data plane over the channel it dials the control plane on, presenting
+// it as the environment manager's DataPlanes.
+package dataplane
 
 import (
 	"context"
@@ -31,18 +33,23 @@ import (
 	"github.com/thunder-id/thunderid/internal/system/importer"
 )
 
-// channelDataPlanes reaches data planes over the connections they hold open to this server.
+// ChannelDataPlanes reaches data planes over the connections they hold open to this server.
 //
 // A data plane is deployed where nothing can reach it, so it dials out and keeps that connection
 // alive. Everything the control plane sends it travels back down that connection: there is no
 // management URL to call and no client credential to hold. A data plane that is not connected cannot
 // be reached at all, which is why For refuses rather than queueing.
-type channelDataPlanes struct {
+type ChannelDataPlanes struct {
 	server *channel.Server
 }
 
+// New builds a ChannelDataPlanes over the given channel server.
+func New(server *channel.Server) *ChannelDataPlanes {
+	return &ChannelDataPlanes{server: server}
+}
+
 // For returns the named data plane, or an error when it holds no live connection.
-func (p *channelDataPlanes) For(dataPlaneID string) (envmgrservice.DataPlane, error) {
+func (p *ChannelDataPlanes) For(dataPlaneID string) (envmgrservice.DataPlane, error) {
 	if p.server == nil {
 		return nil, fmt.Errorf("this server serves no data plane connections")
 	}
@@ -53,7 +60,7 @@ func (p *channelDataPlanes) For(dataPlaneID string) (envmgrservice.DataPlane, er
 }
 
 // Status reports whether the named data plane is connected, and when it was last heard from.
-func (p *channelDataPlanes) Status(dataPlaneID string) model.DataPlaneStatus {
+func (p *ChannelDataPlanes) Status(dataPlaneID string) model.DataPlaneStatus {
 	if p.server == nil {
 		return model.DataPlaneStatus{}
 	}
@@ -65,7 +72,7 @@ func (p *channelDataPlanes) Status(dataPlaneID string) model.DataPlaneStatus {
 	return model.DataPlaneStatus{}
 }
 
-func (p *channelDataPlanes) connected(dataPlaneID string) bool {
+func (p *ChannelDataPlanes) connected(dataPlaneID string) bool {
 	return p.Status(dataPlaneID).Connected
 }
 

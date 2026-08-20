@@ -10,6 +10,7 @@ import DataPlaneStatusChip from './DataPlaneStatusChip';
 import PromoteDialog from './PromoteDialog';
 import useEnvManagerUrl from '../api/useEnvManagerUrl';
 import useGetEnvironments from '../api/useGetEnvironments';
+import useSetManagedEnvironment from '../api/useSetManagedEnvironment';
 import type {Environment} from '../models/promotion';
 
 /**
@@ -25,6 +26,7 @@ export default function EnvironmentChain(): JSX.Element {
   // Promotion is gated on a scope; the rest of the environment actions are not. A server that does
   // not report the flag is one that does not gate, so the action stays available.
   const canPromote: boolean = data?.canPromote ?? true;
+  const setManaged = useSetManagedEnvironment();
 
   if (!baseUrl) {
     return (
@@ -87,6 +89,18 @@ export default function EnvironmentChain(): JSX.Element {
                     <Typography variant="subtitle1" sx={{fontWeight: 600}}>
                       {env.name}
                     </Typography>
+                    {env.managedByControlPlane && (
+                      <Chip
+                        size="small"
+                        color="primary"
+                        variant="outlined"
+                        label={t('promotions:listing.managed', 'Managed here')}
+                        title={t(
+                          'promotions:listing.managedHint',
+                          'Editing configuration here edits this environment, and a credential created here is issued against it.',
+                        )}
+                      />
+                    )}
                     {env.hasPendingChanges && (
                       <Chip size="small" color="warning" label={t('promotions:listing.pending', 'Pending changes')} />
                     )}
@@ -114,6 +128,17 @@ export default function EnvironmentChain(): JSX.Element {
                 >
                   {t('promotions:listing.viewHistory', 'History')}
                 </Button>
+
+                {!env.managedByControlPlane && (
+                  <Button
+                    disabled={setManaged.isPending}
+                    onClick={() => {
+                      setManaged.mutate(env.id);
+                    }}
+                  >
+                    {t('promotions:listing.manageHere', 'Manage here')}
+                  </Button>
+                )}
 
                 {canPromote &&
                   successors.map((next: Environment) => (

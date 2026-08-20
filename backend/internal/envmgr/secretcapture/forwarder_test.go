@@ -16,7 +16,7 @@
  * under the License.
  */
 
-package main
+package secretcapture
 
 import (
 	"context"
@@ -151,10 +151,10 @@ func TestForwarderSurvivesAnUnavailableService(t *testing.T) {
 }
 
 func TestNewSecretForwarderIsDisabledWithoutAURL(t *testing.T) {
-	if f := newSecretForwarder(configWithSecretProviderURL("")); f != nil {
+	if f := newSecretForwarder(configWithSecretProviderURL(""), testHashConfig); f != nil {
 		t.Fatal("an empty URL must leave forwarding disabled so the local store is used")
 	}
-	if f := newSecretForwarder(configWithSecretProviderURL("http://localhost:9098")); f == nil {
+	if f := newSecretForwarder(configWithSecretProviderURL("http://localhost:9098"), testHashConfig); f == nil {
 		t.Fatal("a configured URL should enable forwarding")
 	}
 }

@@ -45,6 +45,9 @@ import (
 	"github.com/thunder-id/thunderid/internal/entitytype"
 	"github.com/thunder-id/thunderid/internal/environmentvariable"
 	"github.com/thunder-id/thunderid/internal/envmgr"
+	"github.com/thunder-id/thunderid/internal/envmgr/dataplane"
+	"github.com/thunder-id/thunderid/internal/envmgr/jobrunner"
+	"github.com/thunder-id/thunderid/internal/envmgr/secretcapture"
 	envmgrservice "github.com/thunder-id/thunderid/internal/envmgr/service"
 	flowconfig "github.com/thunder-id/thunderid/internal/flow/config"
 	flowcore "github.com/thunder-id/thunderid/internal/flow/core"
@@ -132,7 +135,8 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 
 	// A captured credential is handed to the Data Plane's secret service, so the Control Plane holds no
 	// secret at rest and the credential is usable immediately rather than at the next promotion.
-	secretCapturer := selectSecretCapturer(ctx, logger, config.GetServerRuntime().Config, envManager)
+	secretCapturer := secretcapture.Select(ctx, logger, config.GetServerRuntime().Config, envManager,
+		buildHashConfig)
 
 	runtime := config.GetServerRuntime()
 	joseCfg := joseconfig.Config{
@@ -343,7 +347,7 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 	// A capture reads the organization's workspace, which is this very server, so the environment
 	// manager is told where that answers.
 	if envManager != nil {
-		envManager.SetWorkspaceURL(localControlPlaneURL(config.GetServerRuntime().Config))
+		envManager.SetWorkspaceURL(envmgr.WorkspaceURL(config.GetServerRuntime().Config))
 	}
 
 	// Register the health service.
@@ -357,7 +361,7 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 	dataPlaneTokens = dataplanetoken.New()
 	// A credential queued for a data plane is encrypted at rest with the server's configuration key.
 	if envManager != nil && configCryptoSvc != nil {
-		envManager.SetSecretSealer(configSealer{crypto: configCryptoSvc})
+		envManager.SetSecretSealer(jobrunner.NewConfigSealer(configCryptoSvc))
 	}
 
 	channelServer = channel.InitializeServer(mux, channel.ServerConfig{
@@ -372,11 +376,11 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 	// manager is given those rather than a client for each one's management API. Without a channel
 	// there is no way to reach a data plane at all, and an apply says so rather than failing obscurely.
 	if envManager != nil {
-		envManager.SetDataPlanes(&channelDataPlanes{server: channelServer})
+		envManager.SetDataPlanes(dataplane.New(channelServer))
 		envManager.SetDataPlaneTokenIssuer(dataPlaneTokens)
 		// Work queued by a pod that held no connection to its data plane waits in the database. This
 		// is what picks up the share of it this pod can deliver.
-		startJobWorker(ctx, envManager, channelServer)
+		jobrunner.Start(ctx, envManager, channelServer)
 	}
 
 	return jwtService, runtimeCryptoSvc, importService, exportService, envManager, envVarService
@@ -493,7 +497,7 @@ func initEnvironmentManager(ctx context.Context, logger *log.Logger, mux *http.S
 		logger.Info(ctx, "No environment datasource is configured, so promotion is not hosted here")
 		return nil
 	}
-	reg, err := envmgr.Initialize(mux, hashSecretForEnvManager)
+	reg, err := envmgr.Initialize(mux, secretcapture.HasherFor(buildHashConfig))
 	if err != nil {
 		logger.Error(ctx, "Failed to start the in-process environment manager", log.Error(err))
 		return nil
@@ -505,7 +509,7 @@ func initEnvironmentManager(ctx context.Context, logger *log.Logger, mux *http.S
 // envmgrRegistry is what the in-process environment manager exposes to this server: where a captured
 // credential goes, and which control plane a promotion writes into.
 type envmgrRegistry interface {
-	localCaptureRouter
+	secretcapture.LocalCaptureRouter
 	SetWorkspaceURL(baseURL string)
 	SetDataPlanes(planes envmgrservice.DataPlanes)
 	SetDataPlaneTokenIssuer(issuer envmgrservice.DataPlaneTokenIssuer)

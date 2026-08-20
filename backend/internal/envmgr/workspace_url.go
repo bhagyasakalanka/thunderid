@@ -16,7 +16,7 @@
  * under the License.
  */
 
-package main
+package envmgr
 
 import (
 	"fmt"
@@ -25,9 +25,9 @@ import (
 	"github.com/thunder-id/thunderid/internal/system/config"
 )
 
-// localControlPlaneURL is where this server answers, preferring the public URL it advertises and
-// falling back to its own host and port.
-func localControlPlaneURL(cfg config.Config) string {
+// WorkspaceURL is where this server answers, preferring the public URL it advertises and falling back
+// to its own host and port. It is the organization workspace a capture reads.
+func WorkspaceURL(cfg config.Config) string {
 	if url := strings.TrimSpace(cfg.Server.PublicURL); url != "" {
 		return url
 	}

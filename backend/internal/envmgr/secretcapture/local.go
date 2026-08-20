@@ -16,7 +16,7 @@
  * under the License.
  */
 
-package main
+package secretcapture
 
 import (
 	"context"
@@ -30,8 +30,10 @@ import (
 	"github.com/thunder-id/thunderid/internal/system/varname"
 )
 
-// localCaptureRouter is the in-process environment manager's capture entry point.
-type localCaptureRouter interface {
+// LocalCaptureRouter is the in-process environment manager's capture entry point.
+// LocalCaptureRouter is the environment manager in this process, which knows which data plane holds
+// a credential.
+type LocalCaptureRouter interface {
 	CaptureSecret(ctx context.Context, deploymentID, name string, body map[string]interface{}) (int, error)
 }
 
@@ -42,7 +44,7 @@ type localCaptureRouter interface {
 // forwarding it over HTTP would mean this server authenticating to itself, and a deployment would need a
 // second environment manager running just to receive its own secrets.
 type localSecretCapture struct {
-	router localCaptureRouter
+	router LocalCaptureRouter
 	// hashConfig reads the server's configured hashing. It is a field so a test can supply one without
 	// a server runtime.
 	hashConfig func() (cryptolib.HashConfig, error)

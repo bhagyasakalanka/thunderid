@@ -73,6 +73,20 @@ type Environment struct {
 	// linear chain working without declaring edges.
 	PromotesTo []string `json:"promotesTo,omitempty"`
 	Target     Target   `json:"target"`
+	// ManagedByControlPlane marks the one environment the control plane administers directly, rather
+	// than only promotes into. Editing configuration in the organization's workspace is editing this
+	// environment; every other environment receives that configuration when it is promoted and
+	// applied.
+	//
+	// It decides where a credential created in the workspace is issued. A credential is created once,
+	// but each environment holds its own, and sending it everywhere would set the credential running
+	// in production from a change made while developing. It goes here alone; the others receive theirs
+	// when one is set against them deliberately.
+	//
+	// Exactly one environment of an organization holds this. Typically it is the development
+	// environment, but nothing requires that: with none marked, the lowest rank stands in, being the
+	// bottom of the promotion chain and where work starts.
+	ManagedByControlPlane bool `json:"managedByControlPlane,omitempty"`
 	// Excluded lists resource keys a user chose not to promote into this environment. The choice is
 	// remembered rather than asked again on every run: a resource held back once stays held back until
 	// it is deliberately selected again, at which point it is dropped from this list and promotes from

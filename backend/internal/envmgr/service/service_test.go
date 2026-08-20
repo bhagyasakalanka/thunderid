@@ -636,16 +636,23 @@ func TestPromoteNeverReadsTheDestinationsSecretStore(t *testing.T) {
 	}
 }
 
-// A credential is created once, in the organization's single workspace, but every environment needs
-// its own copy: they live in each data plane's store, and the resource has to work wherever the
-// configuration referring to it is applied.
-func TestCaptureSecretReachesEveryEnvironmentOfTheOrganization(t *testing.T) {
+// A credential is created once, in the organization's workspace, and belongs to the one environment
+// the control plane administers directly. Sending it everywhere would set the credential running in
+// production from a change made while developing.
+func TestCaptureSecretReachesOnlyTheControlPlaneManagedEnvironment(t *testing.T) {
 	fake := &fakeClient{}
 	svc := newTestService(t, fake)
-	for _, name := range []string{"dev", "stage"} {
-		_, _ = svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
-			Name: name, Target: model.Target{DataPlaneID: name},
-		})
+	dev, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "dev", Rank: intp(1), Target: model.Target{DataPlaneID: "dev-dp"},
+	})
+	_, _ = svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "prod", Rank: intp(2), Target: model.Target{DataPlaneID: "prod-dp"},
+	})
+
+	// The first environment takes the mark, so a credential has somewhere to go from the outset.
+	stored, _ := svc.GetEnvironment(context.Background(), dev.ID)
+	if !stored.ManagedByControlPlane {
+		t.Fatal("the organization's first environment must be the one the control plane manages")
 	}
 
 	delivered, err := svc.CaptureSecretForTenant(context.Background(), "acme", "MY_SECRET",
@@ -653,8 +660,56 @@ func TestCaptureSecretReachesEveryEnvironmentOfTheOrganization(t *testing.T) {
 	if err != nil {
 		t.Fatalf("capture: %v", err)
 	}
-	if delivered != 2 || fake.kvWrites["MY_SECRET"]["kind"] != "hash" {
-		t.Fatalf("expected the secret sent to both environments, got %d %#v", delivered, fake.kvWrites)
+	if delivered != 1 {
+		t.Fatalf("expected the secret sent to one environment, got %d", delivered)
+	}
+	if fake.kvWrites["MY_SECRET"]["kind"] != "hash" {
+		t.Fatalf("expected the credential stored, got %#v", fake.kvWrites)
+	}
+}
+
+// The mark moves, and it moves rather than toggling: an organization is never left without one.
+func TestSetManagedEnvironmentMovesTheMark(t *testing.T) {
+	svc := newTestService(t, &fakeClient{})
+	dev, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "dev", Rank: intp(1), Target: model.Target{DataPlaneID: "dev-dp"},
+	})
+	prod, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "prod", Rank: intp(2), Target: model.Target{DataPlaneID: "prod-dp"},
+	})
+
+	if _, err := svc.SetManagedEnvironment(context.Background(), prod.ID); err != nil {
+		t.Fatalf("set managed: %v", err)
+	}
+
+	movedTo, _ := svc.GetEnvironment(context.Background(), prod.ID)
+	movedFrom, _ := svc.GetEnvironment(context.Background(), dev.ID)
+	if !movedTo.ManagedByControlPlane {
+		t.Fatal("the named environment should hold the mark")
+	}
+	if movedFrom.ManagedByControlPlane {
+		t.Fatal("the environment that held it should have given it up")
+	}
+}
+
+// Removing the marked environment hands the mark to what is left, so a credential created afterwards
+// still has somewhere to go.
+func TestDeletingTheManagedEnvironmentPassesTheMarkOn(t *testing.T) {
+	svc := newTestService(t, &fakeClient{})
+	dev, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "dev", Rank: intp(1), Target: model.Target{DataPlaneID: "dev-dp"},
+	})
+	stage, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "stage", Rank: intp(2), Target: model.Target{DataPlaneID: "stage-dp"},
+	})
+
+	if err := svc.DeleteEnvironment(context.Background(), dev.ID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+
+	successor, _ := svc.GetEnvironment(context.Background(), stage.ID)
+	if !successor.ManagedByControlPlane {
+		t.Fatal("the mark should have passed to the environment left lowest in the chain")
 	}
 }
 

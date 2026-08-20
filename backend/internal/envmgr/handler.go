@@ -93,6 +93,9 @@ type createEnvironmentRequest struct {
 	// environment by rank.
 	PromotesTo []string     `json:"promotesTo,omitempty"`
 	Target     model.Target `json:"target"`
+	// ManagedByControlPlane marks this the one environment the control plane administers directly, so
+	// it is where a credential created in the workspace is issued.
+	ManagedByControlPlane bool `json:"managedByControlPlane,omitempty"`
 }
 
 // regenerateDataPlaneToken issues a new token for an environment's data plane and returns it once.
@@ -116,6 +119,7 @@ func (s *Server) createEnvironment(w http.ResponseWriter, r *http.Request) {
 	}
 	env, err := s.svc.CreateEnvironment(r.Context(), service.CreateEnvironmentInput{
 		Name: req.Name, Rank: req.Rank, PromotesTo: req.PromotesTo, Target: req.Target,
+		ManagedByControlPlane: req.ManagedByControlPlane,
 	})
 	if err != nil {
 		writeError(w, err)
@@ -152,6 +156,16 @@ func (s *Server) listEnvironments(w http.ResponseWriter, r *http.Request) {
 		"environments": summaries,
 		"canPromote":   callerMayPromote(r),
 	})
+}
+
+// setManagedEnvironment moves the mark for the environment the control plane administers directly.
+func (s *Server) setManagedEnvironment(w http.ResponseWriter, r *http.Request) {
+	env, err := s.svc.SetManagedEnvironment(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, env)
 }
 
 // getDataPlaneJob returns work queued for a data plane and, once delivered, what it answered.

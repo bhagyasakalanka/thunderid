@@ -16,7 +16,8 @@
  * under the License.
  */
 
-package main
+// Package jobrunner delivers work queued for the data planes a control plane pod can reach.
+package jobrunner
 
 import (
 	"context"
@@ -35,33 +36,40 @@ import (
 // did not, so it is deliberately unhurried.
 const jobSweepInterval = 15 * time.Second
 
-// configSealer adapts the server's configuration crypto to what the environment manager needs for a
+// ConfigSealer adapts the server's configuration crypto to what the environment manager needs for a
 // credential queued for a data plane. A credential waiting to be delivered is encrypted at rest with
 // the same key the rest of the server's configuration secrets use.
-type configSealer struct {
+type ConfigSealer struct {
 	crypto common.ConfigCryptoProvider
 }
 
-func (s configSealer) Seal(ctx context.Context, plaintext []byte) ([]byte, error) {
+// NewConfigSealer builds a ConfigSealer over the server's configuration crypto.
+func NewConfigSealer(crypto common.ConfigCryptoProvider) ConfigSealer {
+	return ConfigSealer{crypto: crypto}
+}
+
+// Seal encrypts a credential queued for a data plane.
+func (s ConfigSealer) Seal(ctx context.Context, plaintext []byte) ([]byte, error) {
 	return s.crypto.Encrypt(ctx, plaintext)
 }
 
-func (s configSealer) Open(ctx context.Context, sealed []byte) ([]byte, error) {
+// Open decrypts a credential read back from the queue.
+func (s ConfigSealer) Open(ctx context.Context, sealed []byte) ([]byte, error) {
 	return s.crypto.Decrypt(ctx, sealed)
 }
 
-// jobDeliverer carries out work queued for a data plane this pod can reach.
-type jobDeliverer interface {
+// Deliverer carries out work queued for a data plane this pod can reach.
+type Deliverer interface {
 	DeliverPending(ctx context.Context, dataPlaneID string) error
 }
 
-// startJobWorker sweeps for work queued for the data planes connected to this pod.
+// Start sweeps for work queued for the data planes connected to this pod.
 //
 // A control plane pod can only speak to the data planes that dialed it, so a request accepted by a
 // pod holding no connection is written down instead of sent. This is what picks it up: each pod
 // looks only at the data planes it can actually reach, and the claim in the database is what keeps
 // two pods from delivering the same thing.
-func startJobWorker(ctx context.Context, deliverer jobDeliverer, channelServer *channel.Server) {
+func Start(ctx context.Context, deliverer Deliverer, channelServer *channel.Server) {
 	if deliverer == nil || channelServer == nil {
 		return
 	}
@@ -83,7 +91,7 @@ func startJobWorker(ctx context.Context, deliverer jobDeliverer, channelServer *
 
 // sweep delivers one queued job for each connected data plane. One per sweep is deliberate: work for
 // a data plane is delivered in order, so the next piece waits for this one to finish.
-func sweep(ctx context.Context, deliverer jobDeliverer, channelServer *channel.Server,
+func sweep(ctx context.Context, deliverer Deliverer, channelServer *channel.Server,
 	logger *log.Logger) {
 	seen := make(map[string]bool)
 	for _, conn := range channelServer.Connections() {

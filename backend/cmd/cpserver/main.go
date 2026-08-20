@@ -44,6 +44,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/thunder-id/thunderid/internal/envmgr"
 	"github.com/thunder-id/thunderid/internal/system/cache"
 	"github.com/thunder-id/thunderid/internal/system/config"
 	"github.com/thunder-id/thunderid/internal/system/constants"
@@ -144,10 +145,7 @@ func main() {
 	// Registering a deployment as an environment of its organization is done through the environment
 	// manager, so the tenant service is given the way in when one is hosted here.
 	if envManager != nil {
-		tenantService.SetBaselineSeeder(&environmentSeeder{
-			registry:      envManager,
-			envVarService: envVarService,
-		})
+		tenantService.SetBaselineSeeder(envmgr.NewEnvironmentSeeder(envManager, envVarService))
 	}
 
 	// Initialize the Resource Server token-revocation cache. The initial deny-list snapshot is loaded

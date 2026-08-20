@@ -16,7 +16,7 @@
  * under the License.
  */
 
-package main
+package envmgr
 
 import (
 	"context"
@@ -30,17 +30,14 @@ import (
 	"github.com/thunder-id/thunderid/internal/tenant"
 )
 
-// environmentSeeder gives a newly created environment of an organization the configuration its first
-// environment holds.
+// EnvironmentSeeder registers a deployment as an environment of its organization, so a tenant takes
+// part in promotion as it is created rather than in a second call that is easy to forget.
 //
-// The environment manager's latest version is preferred: it is the state that was captured and
-// promoted, so a new environment starts from something deliberate rather than from whatever happens
-// to be half-finished. A tenant created moments ago has no environment registered and nothing
-// captured, so the source is then read directly instead. Requiring a capture first would mean an
-// organization's environments could not be created one after another.
-type environmentSeeder struct {
-	registry envmgrRegistry
-	// envVarService holds the per-deployment values an apply resolves its placeholders from.
+// It implements tenant.BaselineSeeder, which the tenant service calls but does not own: the setup it
+// performs belongs to the environment manager, and this is where that lives.
+type EnvironmentSeeder struct {
+	registry EnvironmentRegistrar
+	// envVarService holds the per-environment values an apply resolves its placeholders from.
 	envVarService environmentvariable.EnvironmentVariableServiceInterface
 }
 
@@ -60,7 +57,7 @@ const (
 //
 // Only the Console is treated this way. Every other resource is configuration an operator wrote, and
 // where its URLs should point is their decision, not this server's.
-func (s *environmentSeeder) setConsoleURLsForDataPlane(ctx context.Context, deploymentID, envID,
+func (s *EnvironmentSeeder) setConsoleURLsForDataPlane(ctx context.Context, deploymentID, envID,
 	dataPlaneURL string) error {
 	if s.envVarService == nil {
 		return nil
@@ -87,8 +84,9 @@ func (s *environmentSeeder) setConsoleURLsForDataPlane(ctx context.Context, depl
 	return nil
 }
 
-// tenant rather than being left as a second call an operator has to remember.
-func (s *environmentSeeder) RegisterEnvironment(ctx context.Context,
+// RegisterEnvironment records a deployment as an environment of its organization as the tenant is
+// created, rather than leaving it as a second call an operator has to remember.
+func (s *EnvironmentSeeder) RegisterEnvironment(ctx context.Context,
 	in tenant.RegisterEnvironmentInput) (*tenant.EnvironmentSummary, error) {
 	var rank *int
 	if in.Rank > 0 {
@@ -122,4 +120,16 @@ func organizationOf(deploymentID string) string {
 		return deploymentID
 	}
 	return org
+}
+
+// EnvironmentRegistrar registers an environment in the store its deployment belongs to.
+type EnvironmentRegistrar interface {
+	CreateEnvironment(ctx context.Context, deploymentID string,
+		in envmgrservice.CreateEnvironmentInput) (envmgrservice.CreateEnvironmentResult, error)
+}
+
+// NewEnvironmentSeeder builds the seeder the tenant service registers environments through.
+func NewEnvironmentSeeder(reg EnvironmentRegistrar,
+	envVars environmentvariable.EnvironmentVariableServiceInterface) *EnvironmentSeeder {
+	return &EnvironmentSeeder{registry: reg, envVarService: envVars}
 }

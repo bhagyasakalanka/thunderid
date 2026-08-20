@@ -174,6 +174,10 @@ type CreateEnvironmentInput struct {
 	Rank       *int
 	PromotesTo []string
 	Target     model.Target
+	// ManagedByControlPlane marks this the one environment the control plane administers directly,
+	// which is where a credential created in the workspace is issued. The organization's first
+	// environment takes it whether or not it is asked for, so a credential always has somewhere to go.
+	ManagedByControlPlane bool
 }
 
 // CreateEnvironment registers a new environment.
@@ -192,6 +196,11 @@ func (s *Service) CreateEnvironment(ctx context.Context,
 	if in.Rank != nil {
 		rank = *in.Rank
 	}
+	existing, err := s.store.ListEnvironments(ctx)
+	if err != nil {
+		return CreateEnvironmentResult{}, err
+	}
+
 	now := s.now().UTC()
 	env := model.Environment{
 		ID:         newID("env"),
@@ -199,18 +208,22 @@ func (s *Service) CreateEnvironment(ctx context.Context,
 		Rank:       rank,
 		PromotesTo: in.PromotesTo,
 		Target:     in.Target,
-		CreatedAt:  now,
-		UpdatedAt:  now,
-	}
-	existing, err := s.store.ListEnvironments(ctx)
-	if err != nil {
-		return CreateEnvironmentResult{}, err
+		// The organization's first environment takes the mark whatever was asked for: a credential
+		// created before a second one exists has nowhere else to go.
+		ManagedByControlPlane: in.ManagedByControlPlane || len(existing) == 0,
+		CreatedAt:             now,
+		UpdatedAt:             now,
 	}
 	if err := validateGraph(append(existing, env)); err != nil {
 		return CreateEnvironmentResult{}, err
 	}
 	if err := s.store.SaveEnvironment(ctx, env); err != nil {
 		return CreateEnvironmentResult{}, err
+	}
+	if env.ManagedByControlPlane {
+		if err := s.clearManagedExcept(ctx, existing, env.ID); err != nil {
+			return CreateEnvironmentResult{}, err
+		}
 	}
 
 	// The data plane needs a credential to connect with, and this is the only moment it is readable.
@@ -361,9 +374,89 @@ func (s *Service) ListEnvironmentSummaries(ctx context.Context) ([]EnvironmentSu
 	return out, nil
 }
 
+// SetManagedEnvironment makes an environment the one the control plane administers directly, and
+// takes the mark off whichever held it.
+//
+// Exactly one environment of an organization holds it, so this is a move rather than a toggle: there
+// is no way to leave an organization with none, which would strand every credential created
+// afterwards.
+func (s *Service) SetManagedEnvironment(ctx context.Context, id string) (model.Environment, error) {
+	env, err := s.store.GetEnvironment(ctx, id)
+	if err != nil {
+		return model.Environment{}, err
+	}
+	envs, err := s.store.ListEnvironments(ctx)
+	if err != nil {
+		return model.Environment{}, err
+	}
+	if !env.ManagedByControlPlane {
+		env.ManagedByControlPlane = true
+		env.UpdatedAt = s.now().UTC()
+		if err := s.store.SaveEnvironment(ctx, env); err != nil {
+			return model.Environment{}, err
+		}
+	}
+	if err := s.clearManagedExcept(ctx, envs, env.ID); err != nil {
+		return model.Environment{}, err
+	}
+	return env, nil
+}
+
+// clearManagedExcept takes the mark off every environment but one.
+func (s *Service) clearManagedExcept(ctx context.Context, envs []model.Environment, keepID string) error {
+	for _, other := range envs {
+		if other.ID == keepID || !other.ManagedByControlPlane {
+			continue
+		}
+		other.ManagedByControlPlane = false
+		other.UpdatedAt = s.now().UTC()
+		if err := s.store.SaveEnvironment(ctx, other); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // DeleteEnvironment removes an environment and its versions.
 func (s *Service) DeleteEnvironment(ctx context.Context, id string) error {
-	return s.store.DeleteEnvironment(ctx, id)
+	envs, err := s.store.ListEnvironments(ctx)
+	if err != nil {
+		return err
+	}
+	if err := s.store.DeleteEnvironment(ctx, id); err != nil {
+		return err
+	}
+
+	// Deleting it would leave the organization with none, and every credential created afterwards
+	// with nowhere to go. The mark passes to whichever environment is left lowest in the chain, which
+	// is where work starts.
+	remaining := make([]model.Environment, 0, len(envs))
+	for _, env := range envs {
+		if env.ID != id && !env.ManagedByControlPlane {
+			remaining = append(remaining, env)
+		}
+	}
+	if !wasManaged(envs, id) || len(remaining) == 0 {
+		return nil
+	}
+	successor, ok := managedEnvironment(remaining)
+	if !ok {
+		return nil
+	}
+	successor.ManagedByControlPlane = true
+	successor.UpdatedAt = s.now().UTC()
+	return s.store.SaveEnvironment(ctx, successor)
+}
+
+// wasManaged reports whether the environment being removed was the one the control plane
+// administered directly.
+func wasManaged(envs []model.Environment, id string) bool {
+	for _, env := range envs {
+		if env.ID == id {
+			return env.ManagedByControlPlane
+		}
+	}
+	return false
 }
 
 // ---- versions ----

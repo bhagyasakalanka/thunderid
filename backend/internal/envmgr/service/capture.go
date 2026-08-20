@@ -22,16 +22,17 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/thunder-id/thunderid/internal/envmgr/model"
 )
 
-// CaptureSecretForTenant relays a secret the control plane captured to the secret provider of every
-// environment of the organization it was created in.
+// CaptureSecretForTenant relays a secret the control plane captured to the secret provider of the one
+// environment the control plane administers directly.
 //
 // A credential is created once, in the organization's single workspace, but no control plane holds
-// one: they live in each data plane's own store. Every environment therefore needs its own copy, so
-// that the resource works there as soon as the configuration referring to it is applied. Sending it
-// only where that configuration has already reached would leave the credential missing on whichever
-// environment it is promoted to next, which surfaces as a login that rejects every attempt.
+// one: they live in each data plane's own store. It goes to that environment alone, because creating
+// an application while developing must not reach into production and set the credential running
+// there. The others receive theirs when one is set against them deliberately.
 //
 // It returns how many providers received the secret. Zero with no error means the organization has no
 // environment registered yet, which the caller treats as "nothing to do" rather than a failure:
@@ -46,13 +47,32 @@ func (s *Service) CaptureSecretForTenant(ctx context.Context, deploymentID, name
 	if err != nil {
 		return 0, err
 	}
-
-	delivered := 0
-	for _, env := range envs {
-		if _, err := s.queueSecret(ctx, env, name, body); err != nil {
-			return delivered, fmt.Errorf("failed to store the secret for %s: %w", env.Name, err)
-		}
-		delivered++
+	target, ok := managedEnvironment(envs)
+	if !ok {
+		return 0, nil
 	}
-	return delivered, nil
+
+	if _, err := s.queueSecret(ctx, target, name, body); err != nil {
+		return 0, fmt.Errorf("failed to store the secret for %s: %w", target.Name, err)
+	}
+	return 1, nil
+}
+
+// managedEnvironment is the environment the control plane administers directly, which is where a
+// credential created in the workspace is issued.
+//
+// It is the one marked. With none marked, the lowest rank stands in: that is the bottom of the
+// promotion chain, so it is where work starts and where a newly created resource belongs.
+func managedEnvironment(envs []model.Environment) (model.Environment, bool) {
+	var chosen model.Environment
+	found := false
+	for _, env := range envs {
+		if env.ManagedByControlPlane {
+			return env, true
+		}
+		if !found || env.Rank < chosen.Rank {
+			chosen, found = env, true
+		}
+	}
+	return chosen, found
 }

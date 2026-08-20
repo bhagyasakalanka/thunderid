@@ -73,7 +73,10 @@ func registerRoutes(mux *http.ServeMux, reg *registry) {
 		"POST /environments/{id}/secrets/{name}/regenerate": func(s *Server) http.HandlerFunc {
 			return s.regenerateSecret
 		},
-		"POST /environments/{id}/revert":             func(s *Server) http.HandlerFunc { return s.revert },
+		"POST /environments/{id}/revert": func(s *Server) http.HandlerFunc { return s.revert },
+		"POST /environments/{id}/managed": func(s *Server) http.HandlerFunc {
+			return s.setManagedEnvironment
+		},
 		"POST /apply":                                func(s *Server) http.HandlerFunc { return s.applyAll },
 		"GET /promotions/preview":                    func(s *Server) http.HandlerFunc { return s.promotePreview },
 		"POST /promotions":                           func(s *Server) http.HandlerFunc { return s.promote },
