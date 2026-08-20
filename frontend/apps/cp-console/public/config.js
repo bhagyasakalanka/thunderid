@@ -37,9 +37,11 @@ window.__THUNDERID_RUNTIME_CONFIG__ = {
       'tenant_instance:system:usertype:view',
     ],
   },
-  server: {
-    public_url: 'https://localhost:8095',
-  },
+  // The management API is this same server: the Control Plane serves this console. Leaving the URL
+  // unset makes every call same-origin, whichever host it is reached on, so no cross-origin request
+  // is ever made and none has to be allowed. Setting it to one fixed host would instead break the
+  // console on every other name the server answers to.
+  server: {},
   trusted_issuer: {
     type: 'generic',
     public_url: 'https://api.asgardeo.io/t/b1zt/oauth2/token',
