@@ -7,7 +7,7 @@ import {useThunderID} from '@thunderid/react';
 import {useTranslation} from 'react-i18next';
 import EnvironmentVariableQueryKeys from '../constants/environment-variable-query-keys';
 
-export default function useDeleteEnvironmentVariable(): UseMutationResult<void, Error, string> {
+export default function useDeleteEnvironmentVariable(envId: string): UseMutationResult<void, Error, string> {
   const {http} = useThunderID();
   const {getServerUrl} = useConfig();
   const queryClient: ReturnType<typeof useQueryClient> = useQueryClient();
@@ -18,15 +18,17 @@ export default function useDeleteEnvironmentVariable(): UseMutationResult<void, 
     mutationFn: async (id: string): Promise<void> => {
       const serverUrl: string = getServerUrl();
       await http.request({
-        url: `${serverUrl}/environment-variables/${id}`,
+        url: `${serverUrl}/environments/${envId}/variables/${id}`,
         method: 'DELETE',
       } as unknown as Parameters<typeof http.request>[0]);
     },
     onSuccess: (_result: void, id: string) => {
-      queryClient.removeQueries({queryKey: [EnvironmentVariableQueryKeys.ENVIRONMENT_VARIABLE, id]});
-      queryClient.invalidateQueries({queryKey: [EnvironmentVariableQueryKeys.ENVIRONMENT_VARIABLES]}).catch(() => {
-        // Ignore invalidation errors.
-      });
+      queryClient.removeQueries({queryKey: [EnvironmentVariableQueryKeys.ENVIRONMENT_VARIABLE, envId, id]});
+      queryClient
+        .invalidateQueries({queryKey: [EnvironmentVariableQueryKeys.ENVIRONMENT_VARIABLES, envId]})
+        .catch(() => {
+          // Ignore invalidation errors.
+        });
       showToast(t('delete.success', 'Environment variable deleted successfully'), 'success');
     },
     onError: () => {

@@ -6,7 +6,7 @@ import {Box, DataGrid, IconButton, ListingTable, Tooltip, Typography} from '@wso
 import {Pencil, Trash2} from '@wso2/oxygen-ui-icons-react';
 import {useMemo, useState, type JSX, type MouseEvent} from 'react';
 import {useTranslation} from 'react-i18next';
-import {useNavigate} from 'react-router';
+import {useNavigate, useParams} from 'react-router';
 import EnvironmentVariableDeleteDialog from './EnvironmentVariableDeleteDialog';
 import useGetEnvironmentVariables from '../api/useGetEnvironmentVariables';
 import type {EnvironmentVariable} from '../models/environment-variable';
@@ -15,6 +15,7 @@ import type {EnvironmentVariable} from '../models/environment-variable';
  * Table of the environment variables applied to Data Planes.
  */
 export default function EnvironmentVariablesList(): JSX.Element {
+  const {envId = ''} = useParams<{envId: string}>();
   const {t} = useTranslation();
   const navigate = useNavigate();
   const dataGridLocaleText = useDataGridLocaleText();
@@ -27,10 +28,10 @@ export default function EnvironmentVariablesList(): JSX.Element {
     () => ({limit: paginationModel.pageSize, offset: paginationModel.page * paginationModel.pageSize}),
     [paginationModel],
   );
-  const {data, isLoading, error} = useGetEnvironmentVariables(params);
+  const {data, isLoading, error} = useGetEnvironmentVariables(envId, params);
 
   const handleEdit = (id: string): void => {
-    void navigate(`/environment-variables/${id}`);
+    void navigate(`/promotions/${envId}/variables/${id}`);
   };
 
   const columns: DataGrid.GridColDef[] = useMemo(

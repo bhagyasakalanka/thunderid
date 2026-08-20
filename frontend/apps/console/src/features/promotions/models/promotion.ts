@@ -14,11 +14,6 @@ export interface Environment {
   rank: number;
   appliedSeq: number;
   /**
-   * The version this environment's Control Plane tenant was last written with. Tracked apart from
-   * appliedSeq because writing one plane leaves the other alone.
-   */
-  controlPlaneSeq: number;
-  /**
    * Resource keys a user chose not to promote into this environment. The choice is remembered, so a
    * later promotion holds them back by default until they are deliberately selected again.
    */
@@ -47,6 +42,12 @@ export interface DataPlaneStatus {
 
 export interface EnvironmentListResponse {
   environments: Environment[];
+  /**
+   * Whether this caller holds the promotion scope. Promotion is a release decision, so it is gated
+   * where every other environment action is not; the console leaves the action out rather than
+   * offering it and having the request refused.
+   */
+  canPromote?: boolean;
 }
 
 /** A stored configuration snapshot for an environment. */
@@ -146,8 +147,6 @@ export interface DataPlaneJob {
 export interface PromoteResult {
   preview: Diff;
   newVersion: Version;
-  /** The outcome of writing the configuration into the target's Control Plane tenant. */
-  controlPlane?: ImportResponse;
   applied?: ApplyResult;
 }
 
@@ -155,8 +154,6 @@ export interface RevertResult {
   preview: Diff;
   newVersion: Version;
   applied?: ApplyResult;
-  /** The outcome of restoring the environment's own Control Plane tenant. */
-  controlPlane?: ImportResponse;
 }
 
 /** How an environment's next apply would resolve its placeholders. */

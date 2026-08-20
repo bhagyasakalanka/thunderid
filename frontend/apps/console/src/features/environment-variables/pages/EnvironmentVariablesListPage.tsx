@@ -5,7 +5,7 @@ import {Alert, Button, PageContent, PageTitle} from '@wso2/oxygen-ui';
 import {Plus, Upload} from '@wso2/oxygen-ui-icons-react';
 import {type JSX} from 'react';
 import {useTranslation} from 'react-i18next';
-import {useNavigate} from 'react-router';
+import {useNavigate, useParams} from 'react-router';
 import useApplyAll from '../../promotions/api/useApplyAll';
 import EnvironmentVariablesList from '../components/EnvironmentVariablesList';
 
@@ -13,6 +13,7 @@ import EnvironmentVariablesList from '../components/EnvironmentVariablesList';
  * Page listing the environment variables with a create action.
  */
 export default function EnvironmentVariablesListPage(): JSX.Element {
+  const {envId = ''} = useParams<{envId: string}>();
   const {t} = useTranslation();
   const navigate = useNavigate();
   const applyAll = useApplyAll();
@@ -43,7 +44,7 @@ export default function EnvironmentVariablesListPage(): JSX.Element {
             variant="contained"
             startIcon={<Plus size={18} />}
             onClick={() => {
-              void navigate('/environment-variables/create');
+              void navigate(`/promotions/${envId}/variables/create`);
             }}
           >
             {t('environmentVariables:listing.add', 'Add Variable')}

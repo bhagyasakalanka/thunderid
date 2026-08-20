@@ -22,6 +22,9 @@ export default function EnvironmentChain(): JSX.Element {
   const baseUrl: string | undefined = useEnvManagerUrl();
   const {data, isLoading, error} = useGetEnvironments();
   const [promotion, setPromotion] = useState<{from: Environment; to: Environment} | undefined>(undefined);
+  // Promotion is gated on a scope; the rest of the environment actions are not. A server that does
+  // not report the flag is one that does not gate, so the action stays available.
+  const canPromote: boolean = data?.canPromote ?? true;
 
   if (!baseUrl) {
     return (
@@ -112,19 +115,20 @@ export default function EnvironmentChain(): JSX.Element {
                   {t('promotions:listing.viewHistory', 'History')}
                 </Button>
 
-                {successors.map((next: Environment) => (
-                  <Button
-                    key={next.id}
-                    variant="contained"
-                    endIcon={<ArrowRight size={16} />}
-                    disabled={env.latestSeq === 0}
-                    onClick={() => {
-                      setPromotion({from: env, to: next});
-                    }}
-                  >
-                    {t('promotions:listing.promoteTo', 'Promote to {{target}}', {target: next.name})}
-                  </Button>
-                ))}
+                {canPromote &&
+                  successors.map((next: Environment) => (
+                    <Button
+                      key={next.id}
+                      variant="contained"
+                      endIcon={<ArrowRight size={16} />}
+                      disabled={env.latestSeq === 0}
+                      onClick={() => {
+                        setPromotion({from: env, to: next});
+                      }}
+                    >
+                      {t('promotions:listing.promoteTo', 'Promote to {{target}}', {target: next.name})}
+                    </Button>
+                  ))}
               </Stack>
             </Card>
           );

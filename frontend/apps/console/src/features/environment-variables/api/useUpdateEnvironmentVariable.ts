@@ -8,11 +8,9 @@ import {useTranslation} from 'react-i18next';
 import EnvironmentVariableQueryKeys from '../constants/environment-variable-query-keys';
 import type {EnvironmentVariable, UpdateEnvironmentVariableVariables} from '../models/environment-variable';
 
-export default function useUpdateEnvironmentVariable(): UseMutationResult<
-  EnvironmentVariable,
-  Error,
-  UpdateEnvironmentVariableVariables
-> {
+export default function useUpdateEnvironmentVariable(
+  envId: string,
+): UseMutationResult<EnvironmentVariable, Error, UpdateEnvironmentVariableVariables> {
   const {http} = useThunderID();
   const {getServerUrl} = useConfig();
   const queryClient: ReturnType<typeof useQueryClient> = useQueryClient();
@@ -23,7 +21,7 @@ export default function useUpdateEnvironmentVariable(): UseMutationResult<
     mutationFn: async (variables: UpdateEnvironmentVariableVariables): Promise<EnvironmentVariable> => {
       const serverUrl: string = getServerUrl();
       const response: {data: EnvironmentVariable} = await http.request({
-        url: `${serverUrl}/environment-variables/${variables.id}`,
+        url: `${serverUrl}/environments/${envId}/variables/${variables.id}`,
         method: 'PUT',
         headers: {'Content-Type': 'application/json'},
         data: variables.data,
@@ -33,13 +31,15 @@ export default function useUpdateEnvironmentVariable(): UseMutationResult<
     },
     onSuccess: (_result: EnvironmentVariable, variables: UpdateEnvironmentVariableVariables) => {
       queryClient
-        .invalidateQueries({queryKey: [EnvironmentVariableQueryKeys.ENVIRONMENT_VARIABLE, variables.id]})
+        .invalidateQueries({queryKey: [EnvironmentVariableQueryKeys.ENVIRONMENT_VARIABLE, envId, variables.id]})
         .catch(() => {
           // Ignore invalidation errors.
         });
-      queryClient.invalidateQueries({queryKey: [EnvironmentVariableQueryKeys.ENVIRONMENT_VARIABLES]}).catch(() => {
-        // Ignore invalidation errors.
-      });
+      queryClient
+        .invalidateQueries({queryKey: [EnvironmentVariableQueryKeys.ENVIRONMENT_VARIABLES, envId]})
+        .catch(() => {
+          // Ignore invalidation errors.
+        });
       showToast(t('update.success', 'Environment variable updated successfully'), 'success');
     },
     onError: () => {

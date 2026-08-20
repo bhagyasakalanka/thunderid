@@ -40,30 +40,15 @@ export default function useRevert(): UseMutationResult<RevertResult, Error, Reve
 
       return response.data;
     },
-    onSuccess: (result: RevertResult, variables: RevertVariables) => {
+    onSuccess: (_result: RevertResult, variables: RevertVariables) => {
       queryClient.invalidateQueries({queryKey: [PromotionQueryKeys.ENVIRONMENTS]}).catch(() => {
         // Ignore invalidation errors.
       });
       queryClient.invalidateQueries({queryKey: [PromotionQueryKeys.VERSIONS, variables.envId]}).catch(() => {
         // Ignore invalidation errors.
       });
-      // A revert restores the Control Plane as well, and that write can fail per resource while the
-      // revert itself succeeds. Reporting only the revert would leave the tenant looking untouched
-      // with no indication why.
-      const failed: number = result.controlPlane?.summary?.failed ?? 0;
-      if (failed > 0) {
-        showToast(
-          t(
-            'revert.controlPlanePartial',
-            'Reverted, but {{failed}} resources could not be written to the Control Plane',
-            {
-              failed,
-            },
-          ),
-          'warning',
-        );
-        return;
-      }
+      // A revert records a new version restoring an earlier one. It reaches the running deployment
+      // only when the environment is applied.
       showToast(t('revert.success', 'Environment reverted successfully'), 'success');
     },
     onError: () => {

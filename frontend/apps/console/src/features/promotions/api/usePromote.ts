@@ -47,7 +47,7 @@ export default function usePromote(): UseMutationResult<PromoteResult, Error, Pr
 
       return response.data;
     },
-    onSuccess: (result: PromoteResult, variables: PromoteVariables) => {
+    onSuccess: (_result: PromoteResult, variables: PromoteVariables) => {
       queryClient.invalidateQueries({queryKey: [PromotionQueryKeys.ENVIRONMENTS]}).catch(() => {
         // Ignore invalidation errors.
       });
@@ -57,20 +57,8 @@ export default function usePromote(): UseMutationResult<PromoteResult, Error, Pr
       queryClient.invalidateQueries({queryKey: [PromotionQueryKeys.PROMOTION_PREVIEW]}).catch(() => {
         // Ignore invalidation errors.
       });
-      // The promotion writes into the destination's Control Plane tenant, and that write reports a
-      // per-resource outcome. A partial failure has to be said out loud: the version is recorded either
-      // way, so reporting plain success leaves the tenant looking promoted when most of it is missing.
-      const failed: number = result.controlPlane?.summary?.failed ?? 0;
-      if (failed > 0) {
-        showToast(
-          t('promote.partial', '{{failed}} of {{total}} resources could not be written to the Control Plane', {
-            failed,
-            total: result.controlPlane?.summary?.totalDocuments ?? failed,
-          }),
-          'warning',
-        );
-        return;
-      }
+      // A promotion moves the version onto the destination and writes nothing else. It reaches a
+      // running deployment only when that environment is applied.
       showToast(t('promote.success', 'Configuration promoted successfully'), 'success');
     },
     onError: () => {

@@ -8,6 +8,7 @@ import EnvironmentVariableQueryKeys from '../constants/environment-variable-quer
 import type {EnvironmentVariableListParams, EnvironmentVariableListResponse} from '../models/environment-variable';
 
 export default function useGetEnvironmentVariables(
+  envId: string,
   params?: EnvironmentVariableListParams,
 ): UseQueryResult<EnvironmentVariableListResponse> {
   const {http} = useThunderID();
@@ -15,14 +16,15 @@ export default function useGetEnvironmentVariables(
   const {limit = 30, offset = 0} = params ?? {};
 
   return useQuery<EnvironmentVariableListResponse>({
-    queryKey: [EnvironmentVariableQueryKeys.ENVIRONMENT_VARIABLES, {limit, offset}],
+    queryKey: [EnvironmentVariableQueryKeys.ENVIRONMENT_VARIABLES, envId, {limit, offset}],
+    enabled: Boolean(envId),
     queryFn: async (): Promise<EnvironmentVariableListResponse> => {
       const serverUrl: string = getServerUrl();
       const queryParams = new URLSearchParams({limit: limit.toString(), offset: offset.toString()});
       const response: {
         data: EnvironmentVariableListResponse;
       } = await http.request({
-        url: `${serverUrl}/environment-variables?${queryParams.toString()}`,
+        url: `${serverUrl}/environments/${envId}/variables?${queryParams.toString()}`,
         method: 'GET',
       } as unknown as Parameters<typeof http.request>[0]);
 

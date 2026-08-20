@@ -6,7 +6,7 @@ import {Box, Button, FormControl, FormLabel, Stack, TextField, Typography} from 
 import {type JSX} from 'react';
 import {Controller, useForm} from 'react-hook-form';
 import {useTranslation} from 'react-i18next';
-import {useNavigate} from 'react-router';
+import {useNavigate, useParams} from 'react-router';
 import {z} from 'zod';
 import useCreateEnvironmentVariable from '../api/useCreateEnvironmentVariable';
 
@@ -27,7 +27,8 @@ type FormData = z.infer<typeof formSchema>;
 export default function CreateEnvironmentVariablePage(): JSX.Element {
   const {t} = useTranslation();
   const navigate = useNavigate();
-  const createEnvironmentVariable = useCreateEnvironmentVariable();
+  const {envId = ''} = useParams<{envId: string}>();
+  const createEnvironmentVariable = useCreateEnvironmentVariable(envId);
 
   const {
     control,
@@ -44,7 +45,7 @@ export default function CreateEnvironmentVariablePage(): JSX.Element {
       {key: formData.key, value: formData.value, description: formData.description},
       {
         onSuccess: () => {
-          void navigate('/environment-variables');
+          void navigate(`/promotions/${envId}/variables`);
         },
       },
     );
@@ -123,7 +124,7 @@ export default function CreateEnvironmentVariablePage(): JSX.Element {
         <Stack direction="row" spacing={2} justifyContent="flex-end">
           <Button
             onClick={() => {
-              void navigate('/environment-variables');
+              void navigate(`/promotions/${envId}/variables`);
             }}
           >
             {t('common:actions.cancel', 'Cancel')}

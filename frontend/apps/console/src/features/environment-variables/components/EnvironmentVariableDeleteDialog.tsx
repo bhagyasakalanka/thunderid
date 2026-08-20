@@ -4,6 +4,7 @@
 import {Alert, Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle} from '@wso2/oxygen-ui';
 import {type JSX} from 'react';
 import {useTranslation} from 'react-i18next';
+import {useParams} from 'react-router';
 import useDeleteEnvironmentVariable from '../api/useDeleteEnvironmentVariable';
 
 interface EnvironmentVariableDeleteDialogProps {
@@ -21,7 +22,8 @@ export default function EnvironmentVariableDeleteDialog({
   onClose,
 }: EnvironmentVariableDeleteDialogProps): JSX.Element {
   const {t} = useTranslation();
-  const deleteEnvironmentVariable = useDeleteEnvironmentVariable();
+  const {envId = ''} = useParams<{envId: string}>();
+  const deleteEnvironmentVariable = useDeleteEnvironmentVariable(envId);
 
   const handleDelete = (): void => {
     deleteEnvironmentVariable.mutate(environmentVariableId, {onSuccess: onClose});

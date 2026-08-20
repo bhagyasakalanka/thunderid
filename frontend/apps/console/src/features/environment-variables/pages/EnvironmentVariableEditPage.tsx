@@ -27,9 +27,9 @@ import EnvironmentVariableDeleteDialog from '../components/EnvironmentVariableDe
 export default function EnvironmentVariableEditPage(): JSX.Element {
   const {t} = useTranslation();
   const navigate = useNavigate();
-  const {environmentVariableId = ''} = useParams<{environmentVariableId: string}>();
+  const {envId = '', environmentVariableId = ''} = useParams<{envId: string; environmentVariableId: string}>();
 
-  const {data, isLoading, error} = useGetEnvironmentVariable(environmentVariableId);
+  const {data, isLoading, error} = useGetEnvironmentVariable(envId, environmentVariableId);
   const [deleteOpen, setDeleteOpen] = useState<boolean>(false);
 
   if (isLoading) {
@@ -71,14 +71,14 @@ export default function EnvironmentVariableEditPage(): JSX.Element {
         </PageTitle.Actions>
       </PageTitle>
 
-      {data && <EnvironmentVariableForm environmentVariableId={environmentVariableId} initial={data} />}
+      {data && <EnvironmentVariableForm envId={envId} environmentVariableId={environmentVariableId} initial={data} />}
 
       <EnvironmentVariableDeleteDialog
         open={deleteOpen}
         environmentVariableId={environmentVariableId}
         onClose={() => {
           setDeleteOpen(false);
-          void navigate('/environment-variables');
+          void navigate(`/promotions/${envId}/variables`);
         }}
       />
     </PageContent>
@@ -93,15 +93,17 @@ export default function EnvironmentVariableEditPage(): JSX.Element {
  * discarding the user's edits on a background refetch.
  */
 function EnvironmentVariableForm({
+  envId,
   environmentVariableId,
   initial,
 }: {
+  envId: string;
   environmentVariableId: string;
   initial: {value: string; description?: string};
 }): JSX.Element {
   const {t} = useTranslation();
   const navigate = useNavigate();
-  const updateEnvironmentVariable = useUpdateEnvironmentVariable();
+  const updateEnvironmentVariable = useUpdateEnvironmentVariable(envId);
 
   const [value, setValue] = useState<string>(initial.value);
   const [description, setDescription] = useState<string>(initial.description ?? '');
@@ -137,7 +139,7 @@ function EnvironmentVariableForm({
       <Stack direction="row" spacing={2} justifyContent="flex-end">
         <Button
           onClick={() => {
-            void navigate('/environment-variables');
+            void navigate(`/promotions/${envId}/variables`);
           }}
         >
           {t('common:actions.cancel', 'Cancel')}

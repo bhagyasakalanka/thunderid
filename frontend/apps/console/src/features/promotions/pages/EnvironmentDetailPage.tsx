@@ -13,7 +13,7 @@ import {
   Stack,
   Typography,
 } from '@wso2/oxygen-ui';
-import {CloudDownload, CloudUpload, KeyRound, Undo2} from '@wso2/oxygen-ui-icons-react';
+import {CloudDownload, KeyRound, Undo2} from '@wso2/oxygen-ui-icons-react';
 import {useMemo, useState, type JSX} from 'react';
 import {useTranslation} from 'react-i18next';
 import {useNavigate, useParams} from 'react-router';
@@ -23,7 +23,6 @@ import useCheckVariables from '../api/useCheckVariables';
 import useGetEnvironments from '../api/useGetEnvironments';
 import useGetVersions from '../api/useGetVersions';
 import ApplyDialog from '../components/ApplyDialog';
-import ControlPlaneDialog from '../components/ControlPlaneDialog';
 import DataPlaneStatusChip from '../components/DataPlaneStatusChip';
 import MissingVariablesNotice from '../components/MissingVariablesNotice';
 import PromoteDialog from '../components/PromoteDialog';
@@ -45,7 +44,6 @@ export default function EnvironmentDetailPage(): JSX.Element {
   // Work the data plane has not taken yet. An apply is delivered by the Control Plane pod holding
   // that data plane's connection, which is not always the one that accepted the request.
   const [queuedJobId, setQueuedJobId] = useState<string | undefined>(undefined);
-  const [controlPlaneVersionSeq, setControlPlaneVersionSeq] = useState<string | null>(null);
   const applyVersion = useApplyVersion();
   const captureVersion = useCaptureVersion();
   const {data: variableStatus} = useCheckVariables(envId);
@@ -189,17 +187,6 @@ export default function EnvironmentDetailPage(): JSX.Element {
                 >
                   {t('promotions:detail.apply', 'Apply')}
                 </Button>
-                {/* Promotion and revert already write the tenant; this is the same write on its own,
-                    for putting it back in step when one of those failed part way through. It names a
-                    version rather than assuming the newest, which is rarely the one being looked at. */}
-                <Button
-                  startIcon={<CloudUpload size={16} />}
-                  onClick={() => {
-                    setControlPlaneVersionSeq(String(version.seq));
-                  }}
-                >
-                  {t('promotions:controlPlane.action', 'To Control Plane')}
-                </Button>
                 <Button
                   disabled={version.seq === versions[0]?.seq}
                   onClick={() => {
@@ -221,14 +208,6 @@ export default function EnvironmentDetailPage(): JSX.Element {
         version={applyVersionSeq ?? ''}
         onQueued={setQueuedJobId}
         onClose={() => setApplyVersionSeq(null)}
-      />
-
-      <ControlPlaneDialog
-        open={controlPlaneVersionSeq !== null}
-        envId={envId}
-        envName={environment?.name ?? envId}
-        version={controlPlaneVersionSeq ?? ''}
-        onClose={() => setControlPlaneVersionSeq(null)}
       />
 
       {revertTo && environment && (

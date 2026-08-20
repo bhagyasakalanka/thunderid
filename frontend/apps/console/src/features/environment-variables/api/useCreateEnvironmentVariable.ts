@@ -8,11 +8,9 @@ import {useTranslation} from 'react-i18next';
 import EnvironmentVariableQueryKeys from '../constants/environment-variable-query-keys';
 import type {CreateEnvironmentVariableRequest, EnvironmentVariable} from '../models/environment-variable';
 
-export default function useCreateEnvironmentVariable(): UseMutationResult<
-  EnvironmentVariable,
-  Error,
-  CreateEnvironmentVariableRequest
-> {
+export default function useCreateEnvironmentVariable(
+  envId: string,
+): UseMutationResult<EnvironmentVariable, Error, CreateEnvironmentVariableRequest> {
   const {http} = useThunderID();
   const {getServerUrl} = useConfig();
   const queryClient: ReturnType<typeof useQueryClient> = useQueryClient();
@@ -23,7 +21,7 @@ export default function useCreateEnvironmentVariable(): UseMutationResult<
     mutationFn: async (data: CreateEnvironmentVariableRequest): Promise<EnvironmentVariable> => {
       const serverUrl: string = getServerUrl();
       const response: {data: EnvironmentVariable} = await http.request({
-        url: `${serverUrl}/environment-variables`,
+        url: `${serverUrl}/environments/${envId}/variables`,
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         data,
@@ -32,9 +30,11 @@ export default function useCreateEnvironmentVariable(): UseMutationResult<
       return response.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({queryKey: [EnvironmentVariableQueryKeys.ENVIRONMENT_VARIABLES]}).catch(() => {
-        // Ignore invalidation errors.
-      });
+      queryClient
+        .invalidateQueries({queryKey: [EnvironmentVariableQueryKeys.ENVIRONMENT_VARIABLES, envId]})
+        .catch(() => {
+          // Ignore invalidation errors.
+        });
       showToast(t('create.success', 'Environment variable created successfully'), 'success');
     },
     onError: () => {
