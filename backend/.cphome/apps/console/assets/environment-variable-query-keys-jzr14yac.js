@@ -1,0 +1,1 @@
+var e={ENVIRONMENT_VARIABLES:`environment-variables`,ENVIRONMENT_VARIABLE:`environment-variable`};export{e as t};

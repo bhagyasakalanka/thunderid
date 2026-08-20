@@ -1,0 +1,1 @@
+import{o as e}from"./chunk-CMxvf4Kt.js";import{t}from"./react-CoHAqsLe.js";var n=(0,e(t(),1).createContext)(void 0);export{n as t};

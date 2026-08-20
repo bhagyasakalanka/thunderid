@@ -68,7 +68,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /environments/{id}/versions", s.listVersions)
 	mux.HandleFunc("GET /environments/{id}/versions/{seq}", s.getVersion)
 	mux.HandleFunc("GET /environments/{id}/diff", s.diff)
-	mux.HandleFunc("GET /environments/{id}/variables", s.checkVariables)
+	mux.HandleFunc("GET /environments/{id}/variable-status", s.checkVariables)
 	mux.HandleFunc("POST /environments/{id}/apply", s.apply)
 	mux.HandleFunc("POST /environments/{id}/revert", s.revert)
 

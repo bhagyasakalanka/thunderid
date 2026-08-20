@@ -1,0 +1,1 @@
+var e={APPLICATIONS:`applications`,APPLICATION:`application`};export{e as t};

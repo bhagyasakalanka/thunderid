@@ -26,7 +26,7 @@ export default function useCheckVariables(envId: string, version?: string): UseQ
       }
       const query: string = params.toString() ? `?${params.toString()}` : '';
       const response: {data: VariableStatus} = await http.request({
-        url: `${baseUrl}/environments/${envId}/variables${query}`,
+        url: `${baseUrl}/environments/${envId}/variable-status${query}`,
         method: 'GET',
         credentials: 'same-origin',
       } as unknown as Parameters<typeof http.request>[0]);

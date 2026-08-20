@@ -1,0 +1,1 @@
+import{Ni as e,c as t}from"./dist-ByIdA76I.js";var n=e(),r=({user:e,children:t,fallback:r=null})=>e?(0,n.jsx)(n.Fragment,{children:t(e)}):(0,n.jsx)(n.Fragment,{children:r});r.displayName=`BaseUser`;var i=r,a=({children:e,fallback:r=null})=>{let{user:a}=t();return(0,n.jsx)(i,{user:a,fallback:r,children:e})};a.displayName=`User`;var o=a;export{o as t};

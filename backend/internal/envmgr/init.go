@@ -53,19 +53,19 @@ func registerRoutes(mux *http.ServeMux, reg *registry) {
 	}
 
 	routes := map[string]func(*Server) http.HandlerFunc{
-		"POST /environments":                    func(s *Server) http.HandlerFunc { return s.createEnvironment },
-		"GET /environments":                     func(s *Server) http.HandlerFunc { return s.listEnvironments },
-		"GET /environments/{id}":                func(s *Server) http.HandlerFunc { return s.getEnvironment },
-		"GET /data-plane-jobs/{id}":             func(s *Server) http.HandlerFunc { return s.getDataPlaneJob },
-		"PUT /environments/{id}/edges":          func(s *Server) http.HandlerFunc { return s.updateEnvironmentEdges },
-		"DELETE /environments/{id}":             func(s *Server) http.HandlerFunc { return s.deleteEnvironment },
-		"POST /environments/{id}/versions":      func(s *Server) http.HandlerFunc { return s.createVersion },
-		"GET /environments/{id}/versions":       func(s *Server) http.HandlerFunc { return s.listVersions },
-		"GET /environments/{id}/versions/{seq}": func(s *Server) http.HandlerFunc { return s.getVersion },
-		"GET /environments/{id}/diff":           func(s *Server) http.HandlerFunc { return s.diff },
-		"GET /environments/{id}/variables":      func(s *Server) http.HandlerFunc { return s.checkVariables },
-		"POST /environments/{id}/apply":         func(s *Server) http.HandlerFunc { return s.apply },
-		"GET /environments/{id}/secrets":        func(s *Server) http.HandlerFunc { return s.listSecrets },
+		"POST /environments":                     func(s *Server) http.HandlerFunc { return s.createEnvironment },
+		"GET /environments":                      func(s *Server) http.HandlerFunc { return s.listEnvironments },
+		"GET /environments/{id}":                 func(s *Server) http.HandlerFunc { return s.getEnvironment },
+		"GET /data-plane-jobs/{id}":              func(s *Server) http.HandlerFunc { return s.getDataPlaneJob },
+		"PUT /environments/{id}/edges":           func(s *Server) http.HandlerFunc { return s.updateEnvironmentEdges },
+		"DELETE /environments/{id}":              func(s *Server) http.HandlerFunc { return s.deleteEnvironment },
+		"POST /environments/{id}/versions":       func(s *Server) http.HandlerFunc { return s.createVersion },
+		"GET /environments/{id}/versions":        func(s *Server) http.HandlerFunc { return s.listVersions },
+		"GET /environments/{id}/versions/{seq}":  func(s *Server) http.HandlerFunc { return s.getVersion },
+		"GET /environments/{id}/diff":            func(s *Server) http.HandlerFunc { return s.diff },
+		"GET /environments/{id}/variable-status": func(s *Server) http.HandlerFunc { return s.checkVariables },
+		"POST /environments/{id}/apply":          func(s *Server) http.HandlerFunc { return s.apply },
+		"GET /environments/{id}/secrets":         func(s *Server) http.HandlerFunc { return s.listSecrets },
 		"POST /environments/{id}/data-plane-token": func(s *Server) http.HandlerFunc {
 			return s.regenerateDataPlaneToken
 		},
