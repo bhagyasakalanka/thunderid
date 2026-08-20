@@ -46,26 +46,13 @@ type CreateTenantRequest struct {
 	Env string `json:"env" native:"required,min=1,max=120"`
 
 	Name string `json:"name,omitempty" native:"max=255"`
-	// Rank orders the environment in its organization's promotion chain: configuration moves from a
-	// lower rank to the next one up. The first environment of an organization is always rank 1,
-	// whatever is asked for, because there is nothing below it. Omitted on a later environment, it
-	// goes to the end of the chain.
+	// Rank is accepted for symmetry with registering a later environment, but the one created here is
+	// the organization's first and is always rank 1: there is nothing below it to promote from.
 	Rank *int `json:"rank,omitempty"`
-	// ControlPlane describes reaching this server, which the environment reads its configuration from
-	// when a version is captured. Only the parts this server cannot know for itself are settable.
-	ControlPlane *ControlPlane `json:"controlPlane,omitempty"`
 	// DataPlane is the deployment this environment's configuration is applied to. With one given, the
 	// environment is registered for promotion as the tenant is created; without one there is nowhere
 	// to apply to, so only the tenant is created and the environment is registered later.
 	DataPlane *DataPlane `json:"dataPlane,omitempty"`
-}
-
-// ControlPlane is how an environment reaches the control plane it reads from.
-type ControlPlane struct {
-	// InsecureSkipVerify skips TLS verification when capturing a version. A control plane serving a
-	// certificate its own clients do not trust, which is every local deployment, is unreachable
-	// without it.
-	InsecureSkipVerify bool `json:"insecureSkipVerify,omitempty"`
 }
 
 // DataPlane is the deployment an environment's configuration is applied to.
@@ -94,8 +81,6 @@ type RegisterEnvironmentRequest struct {
 	// Rank orders the environment in its organization's promotion chain. The first environment of an
 	// organization is always rank 1, whatever is asked for. Omitted on a later one, it goes to the end.
 	Rank *int `json:"rank,omitempty"`
-	// ControlPlane describes reaching this server, which the environment reads its configuration from.
-	ControlPlane *ControlPlane `json:"controlPlane,omitempty"`
 }
 
 // CreateTenantResponse is the created tenant, and for an environment seeded from an existing one, what

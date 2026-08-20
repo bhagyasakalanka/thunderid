@@ -256,8 +256,7 @@ func TestCreateTenant_RegistersTheEnvironmentWithItsRank(t *testing.T) {
 
 	created, svcErr := svc.CreateTenant(systemCtx(), CreateTenantRequest{
 		Org: "acme", Env: "dev",
-		DataPlane:    &DataPlane{ID: "dev-dp", BaseURL: "https://dp-dev"},
-		ControlPlane: &ControlPlane{InsecureSkipVerify: true},
+		DataPlane: &DataPlane{ID: "dev-dp", BaseURL: "https://dp-dev"},
 	})
 
 	require.Nil(t, svcErr)
