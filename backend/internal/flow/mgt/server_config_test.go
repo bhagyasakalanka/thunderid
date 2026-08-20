@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	flowconfig "github.com/thunder-id/thunderid/internal/flow/config"
+	"github.com/thunder-id/thunderid/internal/system/deployment"
 	"github.com/thunder-id/thunderid/pkg/thunderidengine/providers"
 )
 
@@ -226,4 +227,27 @@ func (s *FlowConfigHandlerTestSuite) TestMerge_EmptyWritableKeepsDeclarativeUser
 	merged, _ := s.handler.Merge(ro, flowconfig.FlowSectionConfig{}).(flowconfig.FlowSectionConfig)
 
 	s.Equal("default-user-deletion-flow", merged.UserDeletionFlow.DefaultHandle)
+}
+
+// The handles are looked up in the deployment the configuration is being written for, which the
+// caller's context carries. A tenant being provisioned holds the flows its own baseline just created,
+// and resolving against a background context instead would search the deployment the server itself
+// runs as and find none of them.
+func (s *FlowConfigHandlerTestSuite) TestValidate_LooksUpHandlesInTheCallersDeployment() {
+	var seen []string
+	s.handler.SetHandleValidator(func(ctx context.Context, _ string, _ providers.FlowType) bool {
+		seen = append(seen, deployment.Resolve(ctx, ""))
+		return true
+	})
+	cfg := flowconfig.FlowSectionConfig{
+		AuthFlow: flowconfig.FlowTypeConfig{DefaultHandle: "default-flow"},
+	}
+
+	err := s.handler.Validate(deployment.WithID(context.Background(), "acme"), cfg, nil, nil)
+
+	s.Require().NoError(err)
+	s.Require().NotEmpty(seen, "the handle validator should have been consulted")
+	for _, got := range seen {
+		s.Equal("acme", got, "the handle must be resolved in the caller's deployment")
+	}
 }
