@@ -352,11 +352,9 @@ func snakeOf(field string) string {
 }
 
 // targetSecretOutcome reports what a promote did about the destination's credentials.
+//
+// A promote touches none of them, so there is nothing to report but what the destination still needs.
 type targetSecretOutcome struct {
-	// Generated and Reused are kept for compatibility with the previous shape. A promote no longer
-	// touches credentials at all, so nothing is reported in either.
-	Generated []string `json:"generated"`
-	Reused    []string `json:"reused"`
 	// Skipped names the credentials the destination has to hold for the promoted configuration to work.
 	// They are set against the destination's own data plane, which is the only place they live.
 	Skipped []string `json:"skipped"`

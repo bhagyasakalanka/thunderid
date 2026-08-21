@@ -877,7 +877,7 @@ func (s *Service) Promote(ctx context.Context, in PromoteInput) (PromoteResult, 
 	// No credential travels with a promotion. The destination's control plane holds none, and its data
 	// plane's secret service is where they live and where an operator sets them; inventing one here
 	// would reach that data plane through capture and replace a credential already in use.
-	secretOutcome := targetSecretOutcome{Generated: []string{}, Reused: []string{}, Skipped: secretKeysOf(source)}
+	secretOutcome := targetSecretOutcome{Skipped: secretKeysOf(source)}
 
 	newVersion, err := s.store.AddVersion(ctx, model.Version{
 		EnvID:       in.ToEnvID,

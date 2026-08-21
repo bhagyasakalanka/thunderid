@@ -590,8 +590,8 @@ func TestPromoteLeavesTheDestinationsCredentialsAlone(t *testing.T) {
 
 	// Nothing invents a credential for the destination: it is named as one the destination has to hold,
 	// and set against its own data plane.
-	if len(result.Secrets.Generated) != 0 || len(result.Secrets.Skipped) != 1 {
-		t.Fatalf("a promote must not issue credentials, got %+v", result.Secrets)
+	if len(result.Secrets.Skipped) != 1 {
+		t.Fatalf("a promote must name what the destination still needs, got %+v", result.Secrets)
 	}
 	// A promotion is started from the source, so it must not reach into the destination's secret store:
 	// those credentials arrive by the destination's own control plane capturing them.
