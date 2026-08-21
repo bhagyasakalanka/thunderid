@@ -25,16 +25,12 @@ import (
 	"net/http"
 
 	"github.com/thunder-id/thunderid/internal/envmgr/auth"
-	"github.com/thunder-id/thunderid/internal/envmgr/service"
 	"github.com/thunder-id/thunderid/internal/system/middleware"
 )
 
 // Initialize mounts the environment manager on the given mux and returns its service.
-//
-// The hasher is what lets a credential that is only ever verified, such as an application's client
-// secret, be set from here: it is hashed the same way the server hashes one it captures itself.
-func Initialize(mux *http.ServeMux, hasher service.SecretHasher) (*registry, error) {
-	reg := newRegistry(hasher)
+func Initialize(mux *http.ServeMux) (*registry, error) {
+	reg := newRegistry()
 	registerRoutes(mux, reg)
 	return reg, nil
 }

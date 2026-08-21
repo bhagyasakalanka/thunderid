@@ -29,7 +29,6 @@ import (
 	"testing"
 
 	"github.com/thunder-id/thunderid/internal/system/config"
-	"github.com/thunder-id/thunderid/internal/system/cryptolib"
 	"github.com/thunder-id/thunderid/internal/system/deployment"
 )
 
@@ -155,17 +154,12 @@ func TestForwarderSurvivesAnUnavailableService(t *testing.T) {
 }
 
 func TestNewSecretForwarderIsDisabledWithoutAURL(t *testing.T) {
-	if f := newSecretForwarder(configWithSecretProviderURL(""), testHashConfig); f != nil {
+	if f := newSecretForwarder(configWithSecretProviderURL("")); f != nil {
 		t.Fatal("an empty URL must leave forwarding disabled so the local store is used")
 	}
-	if f := newSecretForwarder(configWithSecretProviderURL("http://localhost:9098"), testHashConfig); f == nil {
+	if f := newSecretForwarder(configWithSecretProviderURL("http://localhost:9098")); f == nil {
 		t.Fatal("a configured URL should enable forwarding")
 	}
-}
-
-// testHashConfig stands in for the server's configured hashing.
-func testHashConfig() (cryptolib.HashConfig, error) {
-	return cryptolib.HashConfig{Algorithm: cryptolib.PBKDF2, SaltSize: 16, Iterations: 1000, KeySize: 32}, nil
 }
 
 // tenantCtx carries the tenant a captured credential belongs to, as a request would.

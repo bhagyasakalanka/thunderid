@@ -135,8 +135,7 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 
 	// A captured credential is handed to the Data Plane's secret service, so the Control Plane holds no
 	// secret at rest and the credential is usable immediately rather than at the next promotion.
-	secretCapturer := secretcapture.Select(ctx, logger, config.GetServerRuntime().Config, envManager,
-		buildHashConfig)
+	secretCapturer := secretcapture.Select(ctx, logger, config.GetServerRuntime().Config, envManager)
 
 	runtime := config.GetServerRuntime()
 	joseCfg := joseconfig.Config{
@@ -497,7 +496,7 @@ func initEnvironmentManager(ctx context.Context, logger *log.Logger, mux *http.S
 		logger.Info(ctx, "No environment datasource is configured, so promotion is not hosted here")
 		return nil
 	}
-	reg, err := envmgr.Initialize(mux, secretcapture.HasherFor(buildHashConfig))
+	reg, err := envmgr.Initialize(mux)
 	if err != nil {
 		logger.Error(ctx, "Failed to start the in-process environment manager", log.Error(err))
 		return nil

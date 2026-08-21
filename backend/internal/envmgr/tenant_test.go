@@ -28,7 +28,7 @@ import (
 )
 
 func TestRegistryGivesEachDeploymentItsOwnManager(t *testing.T) {
-	reg := newRegistry(nil)
+	reg := newRegistry()
 
 	a, err := reg.serverFor(deployment.WithID(context.Background(), "tenant-a"))
 	if err != nil {
@@ -53,7 +53,7 @@ func TestRegistryGivesEachDeploymentItsOwnManager(t *testing.T) {
 }
 
 func TestRegistryRefusesARequestWithNoDeployment(t *testing.T) {
-	reg := newRegistry(nil)
+	reg := newRegistry()
 
 	// Serving this from a default store would hand one deployment another's environments.
 	if _, err := reg.serverFor(context.Background()); err == nil {
@@ -63,7 +63,7 @@ func TestRegistryRefusesARequestWithNoDeployment(t *testing.T) {
 
 func TestInitializeRegistersTheSecretRoutes(t *testing.T) {
 	mux := http.NewServeMux()
-	if _, err := Initialize(mux, nil); err != nil {
+	if _, err := Initialize(mux); err != nil {
 		t.Fatalf("initialize: %v", err)
 	}
 

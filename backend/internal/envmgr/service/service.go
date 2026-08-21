@@ -94,8 +94,6 @@ type Service struct {
 	store     Store
 	newClient ClientFactory
 	now       func() time.Time
-	// hasher hashes a credential that is only ever verified. It is nil until the server installs one.
-	hasher SecretHasher
 	// dataPlanes reaches the data planes connected to this control plane.
 	dataPlanes DataPlanes
 	// tokens issues the credential a data plane connects with.

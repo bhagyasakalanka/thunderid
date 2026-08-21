@@ -42,9 +42,6 @@ func secretsFixture(t *testing.T) (*Service, *fakeClient, model.Environment) {
 		secretNames: []string{"CONNECTION_CONN_A_CLIENT_SECRET"},
 	}
 	svc := newTestService(t, fake)
-	svc.SetSecretHasher(func(value string) (HashedSecret, error) {
-		return HashedSecret{Hash: "hashed:" + value, Algorithm: "SHA256", Salt: "salt"}, nil
-	})
 	env, err := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
 		Name:   "dev",
 		Target: model.Target{DataPlaneID: "dp"},
@@ -95,25 +92,23 @@ func TestListSecretsClassifiesByResourceAndReportsWhatTheDataPlaneHolds(t *testi
 	}
 }
 
-func TestSetSecretHashesOnlyTheVerifiableCredential(t *testing.T) {
+// Every credential is stored as its value, whether it is one that is only ever verified or one that is
+// replayed to a provider. Hashing is the importing API's job, so the store keeps what a resource needs.
+func TestSetSecretStoresEveryCredentialAsItsValue(t *testing.T) {
 	svc, fake, env := secretsFixture(t)
 	ctx := context.Background()
 
-	if _, err := svc.SetSecret(ctx, env.ID, "APPLICATION_APP_A_CLIENT_SECRET", "chosen"); err != nil {
-		t.Fatalf("set application secret: %v", err)
-	}
-	written := fake.kvWrites["APPLICATION_APP_A_CLIENT_SECRET"]
-	if written["kind"] != KindHash || written["value"] != "hashed:chosen" {
-		t.Fatalf("the credential must be stored as a hash, got %v", written)
-	}
-
-	if _, err := svc.SetSecret(ctx, env.ID, "CONNECTION_CONN_A_CLIENT_SECRET", "provider-issued"); err != nil {
-		t.Fatalf("set connection secret: %v", err)
-	}
-	written = fake.kvWrites["CONNECTION_CONN_A_CLIENT_SECRET"]
-	// Hashing this would leave the connection unable to authenticate to the provider.
-	if written["kind"] != KindValue || written["value"] != "provider-issued" {
-		t.Fatalf("the credential must be stored as is, got %v", written)
+	for name, value := range map[string]string{
+		"APPLICATION_APP_A_CLIENT_SECRET": "chosen",
+		"CONNECTION_CONN_A_CLIENT_SECRET": "provider-issued",
+	} {
+		if _, err := svc.SetSecret(ctx, env.ID, name, value); err != nil {
+			t.Fatalf("set %s: %v", name, err)
+		}
+		written := fake.kvWrites[name]
+		if written["kind"] != KindValue || written["value"] != value {
+			t.Fatalf("%s must be stored as its value, got %v", name, written)
+		}
 	}
 }
 
@@ -125,14 +120,14 @@ func TestRegenerateSecretIssuesAValueAndReturnsItOnce(t *testing.T) {
 		t.Fatalf("regenerate: %v", err)
 	}
 	if value == "" {
-		t.Fatal("the new credential has to be returned, because a hash cannot be read back")
+		t.Fatal("the new credential has to be returned, because this is the only time it is shown")
 	}
 	if !entry.Held {
 		t.Fatal("the secret was just written, so it is held")
 	}
 	written := fake.kvWrites["APPLICATION_APP_A_CLIENT_SECRET"]
-	if written["value"] != "hashed:"+value {
-		t.Fatalf("the stored hash must be of the returned value, got %v", written)
+	if written["value"] != value {
+		t.Fatalf("the stored credential must be the returned value, got %v", written)
 	}
 }
 
@@ -146,17 +141,28 @@ func TestRegenerateSecretRefusesACredentialThatIsReplayed(t *testing.T) {
 	}
 }
 
-func TestSetSecretRefusesToStoreAVerifiableCredentialWithNoHasher(t *testing.T) {
+// A credential is stored as its value even when it is one that is only ever verified.
+//
+// The data plane fills the placeholder with it at import and writes the resource through its own API,
+// which hashes it on the way in. Storing a hash here instead would leave nothing able to fill that
+// placeholder, because a hash cannot be turned back into the value the resource needs.
+func TestSetSecretStoresAVerifiableCredentialAsItsValue(t *testing.T) {
 	svc, fake, env := secretsFixture(t)
-	svc.SetSecretHasher(nil)
 
-	// Storing the plaintext where a hash is expected would be read back as the hash itself.
-	_, err := svc.SetSecret(context.Background(), env.ID, "APPLICATION_APP_A_CLIENT_SECRET", "chosen")
-	if !errors.Is(err, ErrValidation) {
-		t.Fatalf("expected a validation error, got %v", err)
+	if _, err := svc.SetSecret(context.Background(), env.ID,
+		"APPLICATION_APP_A_CLIENT_SECRET", "chosen"); err != nil {
+		t.Fatalf("set secret: %v", err)
 	}
-	if _, written := fake.kvWrites["APPLICATION_APP_A_CLIENT_SECRET"]; written {
-		t.Fatal("nothing may be written when the credential cannot be hashed")
+
+	written, ok := fake.kvWrites["APPLICATION_APP_A_CLIENT_SECRET"]
+	if !ok {
+		t.Fatal("expected the credential to be written")
+	}
+	if written["kind"] != KindValue {
+		t.Fatalf("expected the credential stored as its value, got %v", written["kind"])
+	}
+	if written["value"] != "chosen" {
+		t.Fatalf("expected the credential itself, got %v", written["value"])
 	}
 }
 

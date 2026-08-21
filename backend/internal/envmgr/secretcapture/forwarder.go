@@ -29,9 +29,7 @@ import (
 	"strings"
 	"time"
 
-	envmgrservice "github.com/thunder-id/thunderid/internal/envmgr/service"
 	"github.com/thunder-id/thunderid/internal/system/config"
-	"github.com/thunder-id/thunderid/internal/system/cryptolib"
 	"github.com/thunder-id/thunderid/internal/system/deployment"
 	"github.com/thunder-id/thunderid/internal/system/log"
 	"github.com/thunder-id/thunderid/internal/system/varname"
@@ -47,9 +45,6 @@ type secretForwarder struct {
 	baseURL string
 	token   string
 	http    *http.Client
-	// hashConfig reads the server's configured hashing. It is a field so a test can supply one without
-	// a server runtime.
-	hashConfig func() (cryptolib.HashConfig, error)
 }
 
 // newSecretForwarder builds a forwarder for the configured environment manager. It returns nil when
@@ -58,7 +53,7 @@ type secretForwarder struct {
 // The target is the environment manager rather than a secret provider directly: this server hosts every
 // tenant, so it cannot know which data plane's provider a captured credential belongs on. The
 // environment manager holds that mapping and routes by tenant.
-func newSecretForwarder(cfg config.Config, readHashConfig HashConfigReader) *secretForwarder {
+func newSecretForwarder(cfg config.Config) *secretForwarder {
 	sp := cfg.Server.SecurityConfig.SecretProvider.Service
 	if strings.TrimSpace(sp.URL) == "" {
 		return nil
@@ -68,10 +63,9 @@ func newSecretForwarder(cfg config.Config, readHashConfig HashConfigReader) *sec
 		timeout = 10 * time.Second
 	}
 	return &secretForwarder{
-		baseURL:    strings.TrimRight(sp.URL, "/"),
-		token:      sp.Token,
-		http:       &http.Client{Timeout: timeout},
-		hashConfig: readHashConfig,
+		baseURL: strings.TrimRight(sp.URL, "/"),
+		token:   sp.Token,
+		http:    &http.Client{Timeout: timeout},
 	}
 }
 
@@ -136,29 +130,6 @@ func (f *secretForwarder) buildBody(value string, description string) putSecretB
 	return putSecretBody{Kind: "value", Value: value, Description: description}
 }
 
-// hashCredential hashes a credential with the server's own configured hashing, so what is stored is
-// exactly what a local write would have produced. readHashConfig is a parameter so a test can supply a
-// configuration without a server runtime.
-func hashCredential(readHashConfig HashConfigReader, value string) (cryptolib.Credential, error) {
-	if readHashConfig == nil {
-		return cryptolib.Credential{}, fmt.Errorf("no password hashing configuration was supplied")
-	}
-	hashCfg, err := readHashConfig()
-	if err != nil {
-		return cryptolib.Credential{}, err
-	}
-	hashService, err := cryptolib.Initialize(hashCfg)
-	if err != nil {
-		return cryptolib.Credential{}, fmt.Errorf("failed to initialize hashing: %w", err)
-	}
-	hashed, err := hashService.Generate([]byte(value))
-	if err != nil {
-		return cryptolib.Credential{}, fmt.Errorf("failed to hash the credential: %w", err)
-	}
-	return hashed, nil
-}
-
-// put writes one secret to the secret service.
 func (f *secretForwarder) put(ctx context.Context, key string, body putSecretBody) error {
 	raw, err := json.Marshal(body)
 	if err != nil {
@@ -189,31 +160,6 @@ func (f *secretForwarder) put(ctx context.Context, key string, body putSecretBod
 		return fmt.Errorf("secret service returned %d", resp.StatusCode)
 	}
 	return nil
-}
-
-// HashConfigReader reads the server's password-hashing configuration. It is supplied by the caller
-// because that configuration is the server's, and each plane builds it for itself.
-type HashConfigReader func() (cryptolib.HashConfig, error)
-
-// HasherFor lets the environment manager store a credential that is only ever verified, such as a
-// client secret set by hand from the console. The hash is produced here rather than there so a
-// credential set by an operator is indistinguishable from one this server captured.
-func HasherFor(readHashConfig HashConfigReader) func(string) (envmgrservice.HashedSecret, error) {
-	return func(value string) (envmgrservice.HashedSecret, error) {
-		hashed, err := hashCredential(readHashConfig, value)
-		if err != nil {
-			return envmgrservice.HashedSecret{}, err
-		}
-		return envmgrservice.HashedSecret{
-			Hash:        hashed.Hash,
-			Algorithm:   string(hashed.Algorithm),
-			Salt:        hashed.Parameters.Salt,
-			Iterations:  hashed.Parameters.Iterations,
-			KeySize:     hashed.Parameters.KeySize,
-			Memory:      hashed.Parameters.Memory,
-			Parallelism: hashed.Parameters.Parallelism,
-		}, nil
-	}
 }
 
 // Capturer is the hook the resource services call after creating a credential, so it reaches the data
@@ -249,13 +195,13 @@ func (c unroutedSecretCapture) CaptureReplayableSecret(ctx context.Context, reso
 // deployment-to-data-plane mapping without a round trip, and it is the manager the console writes
 // through, so both paths reach the same data plane.
 func Select(ctx context.Context, logger *log.Logger, cfg config.Config,
-	router LocalCaptureRouter, readHashConfig HashConfigReader) Capturer {
+	router LocalCaptureRouter) Capturer {
 	if router != nil {
 		logger.Info(ctx, "Captured secrets will be routed by the environment manager in this server")
-		return &localSecretCapture{router: router, hashConfig: readHashConfig}
+		return &localSecretCapture{router: router}
 	}
 
-	forwarder := newSecretForwarder(cfg, readHashConfig)
+	forwarder := newSecretForwarder(cfg)
 	if forwarder == nil {
 		logger.Warn(ctx, "No secret service is configured, so captured secrets will be discarded")
 		return unroutedSecretCapture{}

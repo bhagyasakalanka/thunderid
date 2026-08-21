@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/thunder-id/thunderid/internal/system/cryptolib"
 	"github.com/thunder-id/thunderid/internal/system/deployment"
 	"github.com/thunder-id/thunderid/internal/system/log"
 	"github.com/thunder-id/thunderid/internal/system/varname"
@@ -45,9 +44,6 @@ type LocalCaptureRouter interface {
 // second environment manager running just to receive its own secrets.
 type localSecretCapture struct {
 	router LocalCaptureRouter
-	// hashConfig reads the server's configured hashing. It is a field so a test can supply one without
-	// a server runtime.
-	hashConfig func() (cryptolib.HashConfig, error)
 }
 
 // CaptureSecret hands over a credential.

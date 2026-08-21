@@ -38,7 +38,6 @@ import (
 // query carries the deployment, so the id simply does not resolve in the store the request is served
 // from. That is the same guarantee the row-scoped resources get.
 type registry struct {
-	hasher       service.SecretHasher
 	workspaceURL string
 	dataPlanes   service.DataPlanes
 	tokenIssuer  service.DataPlaneTokenIssuer
@@ -48,8 +47,8 @@ type registry struct {
 	servers map[string]*Server
 }
 
-func newRegistry(hasher service.SecretHasher) *registry {
-	return &registry{hasher: hasher, servers: make(map[string]*Server)}
+func newRegistry() *registry {
+	return &registry{servers: make(map[string]*Server)}
 }
 
 // serverFor returns the deployment's environment manager, building it on first use.
@@ -93,7 +92,6 @@ func (r *registry) serverForID(id string) (*Server, error) {
 	svc := service.New(st, func(baseURL string, creds thunder.Credentials, insecure bool) service.ThunderClient {
 		return thunder.New(baseURL, creds, insecure)
 	})
-	svc.SetSecretHasher(r.hasher)
 	svc.SetSecretSealer(r.sealer)
 	svc.SetWorkspaceURL(r.workspaceURL)
 	svc.SetOrganization(id)

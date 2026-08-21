@@ -50,28 +50,6 @@ var hashedFields = map[string]bool{
 	"flowsecret":   true,
 }
 
-// HashedSecret is a hashed credential in the form the secret service stores it.
-type HashedSecret struct {
-	Hash        string
-	Algorithm   string
-	Salt        string
-	Iterations  int
-	KeySize     int
-	Memory      int
-	Parallelism int
-}
-
-// SecretHasher hashes a credential. It is supplied by the server so a secret set here is hashed
-// exactly the way the server hashes one it captures itself; without it, only replayable credentials
-// can be written.
-type SecretHasher func(value string) (HashedSecret, error)
-
-// SetSecretHasher installs the hasher. It is separate from New because the hashing configuration
-// belongs to the server, which builds the service.
-func (s *Service) SetSecretHasher(h SecretHasher) {
-	s.hasher = h
-}
-
 // SecretEntry is one secret-backed placeholder of an environment, with what is known about it.
 type SecretEntry struct {
 	Name string `json:"name"`
@@ -169,10 +147,7 @@ func (s *Service) SetSecret(ctx context.Context, envID, name, value string) (Sec
 	}
 	entry := s.describeSecret(ctx, envID, name)
 
-	body, err := s.secretBody(entry.Kind, value, fmt.Sprintf("Set %s", name))
-	if err != nil {
-		return SecretEntry{}, err
-	}
+	body := secretBody(value, fmt.Sprintf("Set %s", name))
 	job, err := s.queueSecret(ctx, env, name, body)
 	if err != nil {
 		return SecretEntry{}, err
@@ -213,31 +188,13 @@ func (s *Service) RegenerateSecret(ctx context.Context, envID, name string) (Sec
 }
 
 // secretBody builds the secret service's write payload for the credential.
-func (s *Service) secretBody(kind, value, description string) (map[string]interface{}, error) {
-	if kind != KindHash {
-		return map[string]interface{}{"kind": KindValue, "value": value, "description": description}, nil
-	}
-	if s.hasher == nil {
-		return nil, fmt.Errorf("%w: this server cannot hash a credential, so only replayable secrets "+
-			"can be set here", ErrValidation)
-	}
-	hashed, err := s.hasher(value)
-	if err != nil {
-		return nil, fmt.Errorf("failed to hash the credential: %w", err)
-	}
-	return map[string]interface{}{
-		"kind":        KindHash,
-		"value":       hashed.Hash,
-		"algorithm":   hashed.Algorithm,
-		"description": description,
-		"parameters": map[string]interface{}{
-			"salt":        hashed.Salt,
-			"iterations":  hashed.Iterations,
-			"keySize":     hashed.KeySize,
-			"memory":      hashed.Memory,
-			"parallelism": hashed.Parallelism,
-		},
-	}, nil
+//
+// A credential is always stored as its value. The data plane fills the placeholder with it at import
+// and writes the resource through its own API, which hashes one that is only ever verified on the way
+// in. Storing a hash here instead would leave nothing able to fill that placeholder, because a hash
+// cannot be turned back into the value the resource needs.
+func secretBody(value, description string) map[string]interface{} {
+	return map[string]interface{}{"kind": KindValue, "value": value, "description": description}
 }
 
 // describeSecret finds what the environment's configuration says about a placeholder. A name the

@@ -37,13 +37,10 @@ var scalarTemplateVarPattern = regexp.MustCompile(`\{\{\s*\.([A-Za-z_][A-Za-z0-9
 //
 // A credential is different because it deliberately never travels with the configuration: it is set
 // against this deployment and the configuration carries only a placeholder. The placeholder is filled
-// with the credential itself, so the resource is written through the ordinary API with a real value and
-// is indistinguishable from one created here by hand. A credential that is only ever verified is
-// hashed by that API, the same as any other.
-//
-// A credential the store holds only as a hash cannot be filled in, because a hash cannot be turned
-// back into the value the resource needs. Those keep the reference, which is resolved at
-// authentication instead.
+// with the credential itself, so the resource is written through the ordinary API with a real value
+// and is indistinguishable from one created here by hand. Hashing is left to that API: a credential
+// that is only ever verified is hashed on the way in, the same as for any other write, so nothing
+// here needs to know which credentials those are.
 //
 // Values the caller did send always win, so an explicit request is never overridden.
 func fillSecretPlaceholders(ctx context.Context, content string,
@@ -57,13 +54,6 @@ func fillSecretPlaceholders(ctx context.Context, content string,
 
 	for _, name := range referencedVariables(scalarTemplateVarPattern, content) {
 		if _, ok := filled[name]; ok {
-			continue
-		}
-		// A hash cannot be turned back into the value a resource needs, and writing the hash itself
-		// into the configuration would store a credential nothing can verify against. Those keep the
-		// reference, which is resolved at authentication instead.
-		if _, found, err := resolver.ResolveHash(ctx, secretresolver.Prefix+name); err == nil && found {
-			filled[name] = secretresolver.Prefix + name
 			continue
 		}
 		if value, err := resolver.Resolve(ctx, secretresolver.Prefix+name); err == nil && value != "" {
