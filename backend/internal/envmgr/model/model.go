@@ -79,9 +79,17 @@ type Environment struct {
 	// when one is set against them deliberately.
 	//
 	// Exactly one environment of an organization holds this. Typically it is the development
-	// environment, but nothing requires that: with none marked, the lowest rank stands in, being the
-	// bottom of the promotion chain and where work starts.
+	// environment, but nothing requires that: the organization's first gateway takes the mark as it is
+	// created, and it can be moved afterwards.
 	ManagedByControlPlane bool `json:"managedByControlPlane,omitempty"`
+	// Attributes is what the environment manager records about this gateway, such as where it sits in
+	// the organization's environment hierarchy.
+	//
+	// This server never reads it. The hierarchy is not modeled here on purpose, and inventing typed
+	// fields for another service's model would fix a shape that service is free to change; keeping it
+	// opaque means it can record what it needs without a change here. It is written by the caller that
+	// holds the hierarchy, and returned unchanged.
+	Attributes map[string]string `json:"attributes,omitempty"`
 	// Excluded lists resource keys a user chose not to promote into this environment. The choice is
 	// remembered rather than asked again on every run: a resource held back once stays held back until
 	// it is deliberately selected again, at which point it is dropped from this list and promotes from

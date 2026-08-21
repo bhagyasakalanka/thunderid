@@ -42,7 +42,7 @@ func Initialize(mux *http.ServeMux) (*registry, error) {
 // and a data plane as the caller, and without the token those calls arrive unauthenticated.
 func registerRoutes(mux *http.ServeMux, reg *registry) {
 	opts := middleware.CORSOptions{
-		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE"},
 		AllowedHeaders:   middleware.DefaultAllowedHeaders,
 		AllowCredentials: true,
 		MaxAge:           600,
@@ -52,6 +52,7 @@ func registerRoutes(mux *http.ServeMux, reg *registry) {
 		"POST /environments":                     func(s *Server) http.HandlerFunc { return s.createEnvironment },
 		"GET /environments":                      func(s *Server) http.HandlerFunc { return s.listEnvironments },
 		"GET /environments/{id}":                 func(s *Server) http.HandlerFunc { return s.getEnvironment },
+		"PATCH /environments/{id}":               func(s *Server) http.HandlerFunc { return s.updateEnvironment },
 		"GET /data-plane-jobs/{id}":              func(s *Server) http.HandlerFunc { return s.getDataPlaneJob },
 		"DELETE /environments/{id}":              func(s *Server) http.HandlerFunc { return s.deleteEnvironment },
 		"POST /environments/{id}/versions":       func(s *Server) http.HandlerFunc { return s.createVersion },
@@ -78,10 +79,7 @@ func registerRoutes(mux *http.ServeMux, reg *registry) {
 		"PUT /tenants/{deploymentId}/secrets/{name}": func(s *Server) http.HandlerFunc { return s.captureSecret },
 	}
 	// Promotion is the one action gated on a scope; see requirePromotionScope.
-	promotionRoutes := map[string]bool{
-		"GET /promotions/preview": true,
-		"POST /promotions":        true,
-	}
+	promotionRoutes := promotionGatedRoutes()
 	for pattern, pick := range routes {
 		handler := reg.handler(pick)
 		if promotionRoutes[pattern] {
@@ -95,5 +93,18 @@ func registerRoutes(mux *http.ServeMux, reg *registry) {
 		mux.HandleFunc(middleware.WithCORS(pattern, func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
 		}, opts))
+	}
+}
+
+// promotionGatedRoutes are the routes only the environment manager may call.
+//
+// It holds the organization's environment hierarchy and is the only caller that promotes. The gateway
+// details it records describe that hierarchy, so writing them is gated the same way promoting is.
+// Applying and reverting are deliberately not here: those belong to any member of the organization.
+func promotionGatedRoutes() map[string]bool {
+	return map[string]bool{
+		"GET /promotions/preview":  true,
+		"POST /promotions":         true,
+		"PATCH /environments/{id}": true,
 	}
 }

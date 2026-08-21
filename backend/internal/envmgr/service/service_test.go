@@ -1125,3 +1125,96 @@ func TestPromoteSendsWhatTheSourceIsRunning(t *testing.T) {
 		t.Fatalf("expected app-a to be promoted:\n%s", promoted.Resources)
 	}
 }
+
+// The environment manager records what it knows about a gateway after promoting. This server never
+// reads those attributes, so they are stored and returned unchanged.
+func TestUpdateEnvironmentRecordsWhatTheEnvironmentManagerKnows(t *testing.T) {
+	svc := newTestService(t, &fakeClient{})
+	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "dev", Target: model.Target{DataPlaneID: "dev-dp"},
+	})
+
+	name := "development"
+	attrs := map[string]string{"tier": "nonprod", "hierarchyId": "env-7"}
+	updated, err := svc.UpdateEnvironment(context.Background(), env.ID, UpdateEnvironmentInput{
+		Name: &name, Attributes: &attrs,
+	})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+
+	if updated.Name != "development" {
+		t.Fatalf("expected the gateway renamed, got %q", updated.Name)
+	}
+	if updated.Attributes["tier"] != "nonprod" || updated.Attributes["hierarchyId"] != "env-7" {
+		t.Fatalf("expected the attributes stored unchanged, got %v", updated.Attributes)
+	}
+
+	stored, _ := svc.GetEnvironment(context.Background(), env.ID)
+	if stored.Attributes["tier"] != "nonprod" {
+		t.Fatalf("expected the attributes persisted, got %v", stored.Attributes)
+	}
+}
+
+// A field left out is left alone, so recording attributes does not silently rename the gateway.
+func TestUpdateEnvironmentLeavesOutFieldsAlone(t *testing.T) {
+	svc := newTestService(t, &fakeClient{})
+	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "dev", Target: model.Target{DataPlaneID: "dev-dp"},
+	})
+
+	attrs := map[string]string{"tier": "nonprod"}
+	updated, err := svc.UpdateEnvironment(context.Background(), env.ID, UpdateEnvironmentInput{
+		Attributes: &attrs,
+	})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+
+	if updated.Name != "dev" {
+		t.Fatalf("the name should have been left alone, got %q", updated.Name)
+	}
+	if updated.Target.DataPlaneID != "dev-dp" {
+		t.Fatalf("the target should have been left alone, got %+v", updated.Target)
+	}
+}
+
+// Replacing rather than merging keeps the caller that owns the attributes authoritative: a key it has
+// dropped goes away instead of lingering because nothing said to remove it.
+func TestUpdateEnvironmentReplacesTheAttributes(t *testing.T) {
+	svc := newTestService(t, &fakeClient{})
+	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "dev", Target: model.Target{DataPlaneID: "dev-dp"},
+	})
+	first := map[string]string{"tier": "nonprod", "stale": "yes"}
+	_, _ = svc.UpdateEnvironment(context.Background(), env.ID, UpdateEnvironmentInput{Attributes: &first})
+
+	second := map[string]string{"tier": "prod"}
+	updated, err := svc.UpdateEnvironment(context.Background(), env.ID, UpdateEnvironmentInput{
+		Attributes: &second,
+	})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+
+	if _, present := updated.Attributes["stale"]; present {
+		t.Fatalf("a dropped key must not linger, got %v", updated.Attributes)
+	}
+	if updated.Attributes["tier"] != "prod" {
+		t.Fatalf("expected the new value, got %v", updated.Attributes)
+	}
+}
+
+// A blank name is refused rather than stored, which would leave a gateway nothing can identify.
+func TestUpdateEnvironmentRefusesABlankName(t *testing.T) {
+	svc := newTestService(t, &fakeClient{})
+	env, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+		Name: "dev", Target: model.Target{DataPlaneID: "dev-dp"},
+	})
+
+	blank := "   "
+	if _, err := svc.UpdateEnvironment(context.Background(), env.ID,
+		UpdateEnvironmentInput{Name: &blank}); !errors.Is(err, ErrValidation) {
+		t.Fatalf("expected a validation error, got %v", err)
+	}
+}

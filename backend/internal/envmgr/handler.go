@@ -61,6 +61,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /environments", s.createEnvironment)
 	mux.HandleFunc("GET /environments", s.listEnvironments)
 	mux.HandleFunc("GET /environments/{id}", s.getEnvironment)
+	mux.HandleFunc("PATCH /environments/{id}", s.updateEnvironment)
 	mux.HandleFunc("DELETE /environments/{id}", s.deleteEnvironment)
 
 	mux.HandleFunc("POST /environments/{id}/versions", s.createVersion)
@@ -135,6 +136,27 @@ func (s *Server) listEnvironments(w http.ResponseWriter, r *http.Request) {
 		"environments": summaries,
 		"canPromote":   callerMayPromote(r),
 	})
+}
+
+// updateEnvironment changes a gateway's own details: its name, and what the environment manager
+// records about it. A field left out of the request is left as it is.
+func (s *Server) updateEnvironment(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name       *string            `json:"name,omitempty"`
+		Attributes *map[string]string `json:"attributes,omitempty"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	env, err := s.svc.UpdateEnvironment(r.Context(), r.PathValue("id"), service.UpdateEnvironmentInput{
+		Name:       req.Name,
+		Attributes: req.Attributes,
+	})
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, env)
 }
 
 // setManagedEnvironment moves the mark for the environment the control plane administers directly.

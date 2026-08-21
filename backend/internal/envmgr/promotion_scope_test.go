@@ -79,3 +79,23 @@ func TestPromotionIsRefusedWithNoScopes(t *testing.T) {
 		t.Fatalf("expected 403, got %d", w.Code)
 	}
 }
+
+// Recording gateway details is gated the same way promoting is. Those attributes belong to the
+// environment manager, which is the only caller that holds the hierarchy they describe; a console
+// user editing them would be describing a hierarchy they do not own.
+func TestRecordingGatewayDetailsNeedsThePromotionScope(t *testing.T) {
+	routes := promotionGatedRoutes()
+
+	if !routes["PATCH /environments/{id}"] {
+		t.Fatal("updating a gateway must require the promotion scope")
+	}
+	if !routes["POST /promotions"] {
+		t.Fatal("promoting must require the promotion scope")
+	}
+	// Applying and reverting stay open to any member of the organization.
+	for _, open := range []string{"POST /environments/{id}/apply", "POST /environments/{id}/revert"} {
+		if routes[open] {
+			t.Fatalf("%s must not require the promotion scope", open)
+		}
+	}
+}

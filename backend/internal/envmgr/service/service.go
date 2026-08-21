@@ -303,6 +303,47 @@ func (s *Service) ListEnvironmentSummaries(ctx context.Context) ([]EnvironmentSu
 	return out, nil
 }
 
+// UpdateEnvironmentInput is the input to UpdateEnvironment. A nil field is left as it is, so a caller
+// can change one thing without restating the rest.
+type UpdateEnvironmentInput struct {
+	// Name renames the gateway.
+	Name *string
+	// Attributes replaces what the environment manager records about this gateway. Replacing rather
+	// than merging keeps the caller that owns them authoritative: a key it has dropped goes away
+	// instead of lingering because nothing said to remove it.
+	Attributes *map[string]string
+}
+
+// UpdateEnvironment changes a gateway's own details.
+//
+// This is how the environment manager records what it knows after a promotion. It does not touch the
+// gateway's versions, its applied state or its target: those are this server's to manage, and a
+// caller that could rewrite them could claim a deployment is running something it is not.
+func (s *Service) UpdateEnvironment(ctx context.Context, id string,
+	in UpdateEnvironmentInput) (model.Environment, error) {
+	env, err := s.store.GetEnvironment(ctx, id)
+	if err != nil {
+		return model.Environment{}, err
+	}
+
+	if in.Name != nil {
+		name := strings.TrimSpace(*in.Name)
+		if name == "" {
+			return model.Environment{}, fmt.Errorf("%w: name cannot be blank", ErrValidation)
+		}
+		env.Name = name
+	}
+	if in.Attributes != nil {
+		env.Attributes = *in.Attributes
+	}
+	env.UpdatedAt = s.now().UTC()
+
+	if err := s.store.SaveEnvironment(ctx, env); err != nil {
+		return model.Environment{}, err
+	}
+	return env, nil
+}
+
 // SetManagedEnvironment makes an environment the one the control plane administers directly, and
 // takes the mark off whichever held it.
 //
