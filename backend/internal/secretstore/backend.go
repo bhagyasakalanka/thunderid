@@ -54,9 +54,9 @@ type Backend interface {
 type Mode string
 
 const (
-	// ModeDB keeps secrets in the configuration database, encrypted. It is the default, because the
-	// database is shared by every instance of a deployment: a credential set through one is usable by
-	// all of them, which a file beside one instance cannot manage.
+	// ModeDB keeps secrets in the configuration database, encrypted. The database is shared by every
+	// instance of a deployment, so a credential set through one is usable by all of them, which a file
+	// beside one instance cannot manage. It is what a Data Plane defaults to.
 	ModeDB Mode = "db"
 	// ModeFile keeps secrets in a JSON file beside the server.
 	ModeFile Mode = "file"
@@ -69,7 +69,8 @@ const (
 
 // Config describes where a deployment keeps its secrets.
 type Config struct {
-	// Mode selects the backend. An empty mode takes DefaultMode; ModeNone disables the store entirely.
+	// Mode selects the backend. An empty mode disables the store entirely; which mode an unset one
+	// should mean is the server's decision, not this package's, because it differs per plane.
 	Mode Mode
 	// FilePath backs ModeFile.
 	FilePath string
@@ -89,25 +90,13 @@ type DBConfig struct {
 	DeploymentID string
 }
 
-// DefaultMode is the backend used when a deployment configures none.
-const DefaultMode = ModeDB
-
-// ModeNone turns the store off, for a deployment that resolves no credential of its own.
-const ModeNone Mode = "none"
-
 // NewBackend builds the backend a configuration asks for.
 //
-// It returns a nil backend, and no error, for the modes that keep no store here: ModeNone, and
-// ModeService, where the standalone service holds the secrets itself. An unset mode takes
-// DefaultMode, so a deployment that configures nothing still keeps its credentials somewhere every
-// instance of it can read.
+// It returns a nil backend, and no error, for the modes that keep no store here: an empty mode, and
+// ModeService, where the standalone service holds the secrets itself.
 func NewBackend(cfg Config) (Backend, error) {
-	mode := cfg.Mode
-	if mode == "" {
-		mode = DefaultMode
-	}
-	switch mode {
-	case ModeNone:
+	switch cfg.Mode {
+	case "":
 		return nil, nil
 	case ModeService:
 		return nil, nil
@@ -128,7 +117,7 @@ func NewBackend(cfg Config) (Backend, error) {
 
 // modeNames lists the configurable modes, for an error that has to say what was expected.
 func modeNames() []string {
-	names := []string{string(ModeDB), string(ModeFile), string(ModeKV), string(ModeService), string(ModeNone)}
+	names := []string{string(ModeDB), string(ModeFile), string(ModeKV), string(ModeService)}
 	sort.Strings(names)
 	return names
 }

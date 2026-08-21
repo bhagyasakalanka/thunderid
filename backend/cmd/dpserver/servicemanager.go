@@ -819,8 +819,15 @@ func (s configSecretSealer) Open(ctx context.Context, sealed []byte) ([]byte, er
 // depends on no configuration types.
 func secretStoreConfig(cfg engineconfig.SecretProviderConfig,
 	configCrypto kmprovider.ConfigCryptoProvider, deploymentID string) secretstore.Config {
+	// A Data Plane holds the credentials the configuration applied to it refers to, so it keeps a store
+	// whether or not one was configured. The database is the default because every instance of the
+	// deployment shares it.
+	mode := secretstore.Mode(cfg.Mode)
+	if strings.TrimSpace(string(mode)) == "" {
+		mode = secretstore.ModeDB
+	}
 	return secretstore.Config{
-		Mode:     secretstore.Mode(cfg.Mode),
+		Mode:     mode,
 		FilePath: cfg.File.Path,
 		DB: secretstore.DBConfig{
 			Provider:     dbprovider.GetDBProvider(),

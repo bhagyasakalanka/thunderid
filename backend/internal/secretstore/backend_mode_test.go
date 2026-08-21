@@ -49,7 +49,7 @@ func TestFileModeRequiresAPath(t *testing.T) {
 // The modes that keep no store here build no backend, and that is not an error: a deployment reading
 // from the standalone provider, or holding no secrets at all, is a valid deployment.
 func TestTheModesThatKeepNoStoreHereBuildNoBackend(t *testing.T) {
-	for _, mode := range []Mode{ModeNone, ModeService} {
+	for _, mode := range []Mode{"", ModeService} {
 		backend, err := NewBackend(Config{Mode: mode})
 		if err != nil {
 			t.Fatalf("mode %q: %v", mode, err)
@@ -181,20 +181,6 @@ func TestTheKeyVaultTypeIsCaseInsensitive(t *testing.T) {
 	}
 	if backend == nil {
 		t.Fatal("expected a backend")
-	}
-}
-
-// A deployment that configures no mode gets the default rather than no store. Silently keeping no
-// credentials would leave every "kv:" reference unresolvable, which surfaces much later as a
-// credential that rejects every attempt.
-func TestAnUnsetModeTakesTheDefault(t *testing.T) {
-	if DefaultMode != ModeDB {
-		t.Fatalf("expected the database mode to be the default, got %q", DefaultMode)
-	}
-	// The default needs a provider and a sealer, so building it without them is refused. That refusal
-	// is what shows the unset mode resolved to the default rather than to no store at all.
-	if _, err := NewBackend(Config{}); err == nil {
-		t.Fatal("expected the default mode to require its database dependencies")
 	}
 }
 

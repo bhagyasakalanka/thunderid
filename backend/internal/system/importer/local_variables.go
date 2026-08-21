@@ -21,7 +21,9 @@ package importer
 import (
 	"context"
 	"regexp"
+	"strings"
 
+	"github.com/thunder-id/thunderid/internal/system/config"
 	"github.com/thunder-id/thunderid/internal/system/secretresolver"
 )
 
@@ -36,11 +38,18 @@ var scalarTemplateVarPattern = regexp.MustCompile(`\{\{\s*\.([A-Za-z_][A-Za-z0-9
 // two deployments end up disagreeing about what was applied to them.
 //
 // A credential is different because it deliberately never travels with the configuration: it is set
-// against this deployment and the configuration carries only a placeholder. The placeholder is filled
-// with the credential itself, so the resource is written through the ordinary API with a real value
-// and is indistinguishable from one created here by hand. Hashing is left to that API: a credential
-// that is only ever verified is hashed on the way in, the same as for any other write, so nothing
-// here needs to know which credentials those are.
+// against this deployment and the configuration carries only a placeholder.
+//
+// How that placeholder is filled depends on the plane. A Data Plane receives configuration applied
+// from a Control Plane, and the credential it refers to was pushed into this deployment's store
+// beforehand: the placeholder is filled with the credential itself, so the resource is written through
+// the ordinary API with a real value and is indistinguishable from one created here by hand. Hashing
+// is left to that API, so nothing here needs to know which credentials are only ever verified.
+//
+// Anywhere else, including a hybrid server, the placeholder keeps the reference for a credential held
+// as a hash, and only a readable one is substituted. A hybrid server is not applied to by a Control
+// Plane, so nothing has put the credential in its store for this import to find, and rewriting its
+// resources with values read from a local store would change what a plain import means.
 //
 // Values the caller did send always win, so an explicit request is never overridden.
 func fillSecretPlaceholders(ctx context.Context, content string,
@@ -51,9 +60,22 @@ func fillSecretPlaceholders(ctx context.Context, content string,
 	}
 
 	resolver := secretresolver.Default()
+	dataPlane := isDataPlane()
 
 	for _, name := range referencedVariables(scalarTemplateVarPattern, content) {
 		if _, ok := filled[name]; ok {
+			continue
+		}
+		if _, found, err := resolver.ResolveHash(ctx, secretresolver.Prefix+name); err == nil && found {
+			// On a Data Plane the store is expected to hold the credential itself, because that is what
+			// the Control Plane pushed there. A hash means the value this import needs is not present,
+			// so the placeholder is left alone and the import says so, rather than writing hash material
+			// into the resource and appearing to have worked.
+			if dataPlane {
+				continue
+			}
+			// Elsewhere a hash keeps its reference, resolved at authentication instead.
+			filled[name] = secretresolver.Prefix + name
 			continue
 		}
 		if value, err := resolver.Resolve(ctx, secretresolver.Prefix+name); err == nil && value != "" {
@@ -75,4 +97,19 @@ func referencedVariables(pattern *regexp.Regexp, content string) []string {
 		}
 	}
 	return names
+}
+
+// dataPlaneMode is the server.mode a Data Plane runs as.
+const dataPlaneMode = "dp"
+
+// isDataPlane reports whether this server is a Data Plane.
+//
+// Read at call time rather than captured, because the importer is built before the runtime
+// configuration is loaded in some entry points, and a stale answer here would decide how every
+// credential is written.
+func isDataPlane() bool {
+	if !config.IsServerRuntimeInitialized() {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(config.GetServerRuntime().Config.Server.Mode), dataPlaneMode)
 }

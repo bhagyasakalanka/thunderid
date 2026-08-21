@@ -23,7 +23,7 @@ server:
     #   db      - this deployment's configuration database, encrypted with the configuration crypto
     #             key. Shared by every instance, so a credential set through one is usable by all of
     #             them, and it needs nothing deployed beyond the database the server already has.
-    #             This is the default, and what an unset mode resolves to.
+    #             This is what a Data Plane uses when no mode is set.
     #   file    - a JSON file beside the server. Needs nothing else deployed, which suits a single
     #             instance and local development. Each instance has its own file, so a deployment
     #             running several of them does not share what it stores.
@@ -31,7 +31,6 @@ server:
     #             keep credentials outside the product's own database.
     #   service - the standalone secret provider service, over HTTP. Read only: the service owns its
     #             own writes, so the Control Plane cannot push a credential in from here.
-    #   none    - keep no store here, for a deployment that resolves no credential of its own.
     secret_provider:
       mode: "db"
       file:
