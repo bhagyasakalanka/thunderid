@@ -512,7 +512,6 @@ func writeError(w http.ResponseWriter, err error) {
 		errors.Is(err, service.ErrNoVersions),
 		errors.Is(err, service.ErrNothingApplied),
 		errors.Is(err, service.ErrNoPreviousVersion),
-		errors.Is(err, service.ErrNoPromotionPath),
 		errors.Is(err, service.ErrBadRef):
 		writeErrorStatus(w, http.StatusBadRequest, err.Error())
 	default:

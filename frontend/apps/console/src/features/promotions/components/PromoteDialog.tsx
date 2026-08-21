@@ -37,8 +37,6 @@ interface PromoteDialogProps {
    * Control Plane and does not need it, but applying to the Data Plane afterwards does.
    */
   toDataPlaneConnected?: boolean;
-  /** Labels the action as a demotion when promoting to a lower ranked environment. */
-  isDemotion?: boolean;
   /** Version of the source environment to promote. Defaults to its latest. */
   version?: string;
   onClose: () => void;
@@ -55,7 +53,6 @@ export default function PromoteDialog({
   toEnvId,
   toEnvName,
   toDataPlaneConnected = false,
-  isDemotion = false,
   version = undefined,
   onClose,
 }: PromoteDialogProps): JSX.Element {
@@ -129,13 +126,9 @@ export default function PromoteDialog({
     );
   };
 
-  const title: string = isDemotion
-    ? t('promotions:demote.title', 'Demote configuration')
-    : t('promotions:promote.title', 'Promote configuration');
-
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
-      <DialogTitle>{title}</DialogTitle>
+      <DialogTitle>{t('promotions:promote.title', 'Promote configuration')}</DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{mb: 2}}>
           {t('promotions:promote.description', 'Review what will change in {{target}}, taken from {{source}}.', {

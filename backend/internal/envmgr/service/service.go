@@ -160,7 +160,6 @@ var (
 	ErrNothingApplied    = errors.New("environment has nothing applied yet")
 	ErrNoPreviousVersion = errors.New("environment has no previous version to revert to")
 	ErrBadRef            = errors.New("invalid version reference")
-	ErrNoPromotionPath   = errors.New("no promotion path exists between these environments")
 )
 
 // ---- environments ----
