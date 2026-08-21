@@ -28,16 +28,22 @@ import (
 var scalarTemplateVarPattern = regexp.MustCompile(`\{\{\s*\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}`)
 
 // fillSecretPlaceholders supplies values for the credential placeholders the caller did not send,
-// reading them from this deployment's own secret provider.
+// reading them from this deployment's own secret store.
 //
 // Secrets are the only thing this server fills in. Every other value belongs to whoever is applying
 // the configuration and arrives in the request, so a placeholder with no value fails the import rather
 // than being resolved from something on this host: silently taking a different value from here is how
 // two deployments end up disagreeing about what was applied to them.
 //
-// A credential is different because it deliberately never travels with the configuration. It is
-// verified against this deployment's provider at authentication, so the placeholder is filled with the
-// reference itself and the secret is never written into this deployment's database.
+// A credential is different because it deliberately never travels with the configuration: it is set
+// against this deployment and the configuration carries only a placeholder. The placeholder is filled
+// with the credential itself, so the resource is written through the ordinary API with a real value and
+// is indistinguishable from one created here by hand. A credential that is only ever verified is
+// hashed by that API, the same as any other.
+//
+// A credential the store holds only as a hash cannot be filled in, because a hash cannot be turned
+// back into the value the resource needs. Those keep the reference, which is resolved at
+// authentication instead.
 //
 // Values the caller did send always win, so an explicit request is never overridden.
 func fillSecretPlaceholders(ctx context.Context, content string,
@@ -53,6 +59,9 @@ func fillSecretPlaceholders(ctx context.Context, content string,
 		if _, ok := filled[name]; ok {
 			continue
 		}
+		// A hash cannot be turned back into the value a resource needs, and writing the hash itself
+		// into the configuration would store a credential nothing can verify against. Those keep the
+		// reference, which is resolved at authentication instead.
 		if _, found, err := resolver.ResolveHash(ctx, secretresolver.Prefix+name); err == nil && found {
 			filled[name] = secretresolver.Prefix + name
 			continue
