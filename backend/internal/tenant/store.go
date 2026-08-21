@@ -20,6 +20,7 @@ package tenant
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -149,19 +150,29 @@ func (s *tenantStore) PurgeTenantData(ctx context.Context, deploymentID string) 
 		return err
 	}
 
-	persistentClient, err := s.dbProvider.GetRuntimePersistentDBClient()
-	if err != nil {
-		return fmt.Errorf("failed to get runtime-persistent database client: %w", err)
-	}
-	if err := purgeTables(ctx, persistentClient, runtimePersistentPurgeTables, deploymentID); err != nil {
+	// A plane that holds no runtime state configures no runtime datasource, and has nothing there to
+	// purge. That is a Control Plane, which is also where a tenant is deprovisioned from, so an absent
+	// datasource is skipped rather than failing a deprovision that has already done its work.
+	if err := s.purgeRuntime(ctx, s.dbProvider.GetRuntimePersistentDBClient,
+		runtimePersistentPurgeTables, "runtime-persistent", deploymentID); err != nil {
 		return err
 	}
+	return s.purgeRuntime(ctx, s.dbProvider.GetRuntimeTransientDBClient,
+		runtimeTransientPurgeTables, "runtime-transient", deploymentID)
+}
 
-	transientClient, err := s.dbProvider.GetRuntimeTransientDBClient()
+// purgeRuntime clears a deployment's rows from one runtime datasource, treating a datasource this
+// deployment does not configure as nothing to do.
+func (s *tenantStore) purgeRuntime(ctx context.Context,
+	open func() (provider.DBClientInterface, error), tables []string, name, deploymentID string) error {
+	client, err := open()
 	if err != nil {
-		return fmt.Errorf("failed to get runtime-transient database client: %w", err)
+		if errors.Is(err, provider.ErrDataSourceNotConfigured) {
+			return nil
+		}
+		return fmt.Errorf("failed to get %s database client: %w", name, err)
 	}
-	return purgeTables(ctx, transientClient, runtimeTransientPurgeTables, deploymentID)
+	return purgeTables(ctx, client, tables, deploymentID)
 }
 
 // purgeTables issues DELETE ... WHERE DEPLOYMENT_ID = ? for each table in order. Tables that do not
