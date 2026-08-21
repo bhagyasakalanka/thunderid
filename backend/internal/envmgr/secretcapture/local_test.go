@@ -44,7 +44,7 @@ func (r *recordingRouter) CaptureSecret(_ context.Context, deploymentID, name st
 
 func TestLocalCaptureRoutesToTheTenantUnderThePlaceholderKey(t *testing.T) {
 	router := &recordingRouter{}
-	capturer := &localSecretCapture{router: router, hashConfig: testHashConfig}
+	capturer := &localSecretCapture{router: router}
 
 	ctx := deployment.WithID(context.Background(), "tenant-a")
 	capturer.CaptureSecret(ctx, "application", "App A", "clientSecret", "s3cret")
@@ -56,18 +56,19 @@ func TestLocalCaptureRoutesToTheTenantUnderThePlaceholderKey(t *testing.T) {
 	if router.name != "APPLICATION_APP_A_CLIENT_SECRET" {
 		t.Fatalf("unexpected key %q", router.name)
 	}
-	// An application's client secret is only ever compared, so nothing needs the original.
-	if router.body["kind"] != "hash" {
-		t.Fatalf("expected a hash, got %v", router.body["kind"])
+	// The credential travels as itself. The data plane writes the resource through its own API, which
+	// hashes one that is only ever compared exactly as it would for a locally created resource.
+	if router.body["kind"] != "value" {
+		t.Fatalf("expected the credential itself, got %v", router.body["kind"])
 	}
-	if router.body["value"] == "s3cret" {
-		t.Fatal("the plaintext credential must never be handed over")
+	if router.body["value"] != "s3cret" {
+		t.Fatalf("expected the credential itself, got %v", router.body["value"])
 	}
 }
 
 func TestLocalCaptureKeepsAReplayedCredentialReadable(t *testing.T) {
 	router := &recordingRouter{}
-	capturer := &localSecretCapture{router: router, hashConfig: testHashConfig}
+	capturer := &localSecretCapture{router: router}
 
 	ctx := deployment.WithID(context.Background(), "tenant-a")
 	capturer.CaptureReplayableSecret(ctx, "connection", "Twilio", "authToken", "provider-issued")
@@ -80,7 +81,7 @@ func TestLocalCaptureKeepsAReplayedCredentialReadable(t *testing.T) {
 
 func TestLocalCaptureRefusesToRouteWithoutATenant(t *testing.T) {
 	router := &recordingRouter{}
-	capturer := &localSecretCapture{router: router, hashConfig: testHashConfig}
+	capturer := &localSecretCapture{router: router}
 
 	// Without a tenant the credential would land on some other deployment's data plane.
 	capturer.CaptureSecret(context.Background(), "application", "App A", "clientSecret", "s3cret")
@@ -92,7 +93,7 @@ func TestLocalCaptureRefusesToRouteWithoutATenant(t *testing.T) {
 
 func TestLocalCaptureSurvivesAFailingEnvironmentManager(t *testing.T) {
 	router := &recordingRouter{err: errors.New("data plane unreachable")}
-	capturer := &localSecretCapture{router: router, hashConfig: testHashConfig}
+	capturer := &localSecretCapture{router: router}
 
 	// Creating a resource must not fail because a data plane is briefly unavailable.
 	ctx := deployment.WithID(context.Background(), "tenant-a")
@@ -105,7 +106,7 @@ func TestLocalCaptureSurvivesAFailingEnvironmentManager(t *testing.T) {
 
 func TestLocalCaptureIgnoresAnEmptyValue(t *testing.T) {
 	router := &recordingRouter{}
-	capturer := &localSecretCapture{router: router, hashConfig: testHashConfig}
+	capturer := &localSecretCapture{router: router}
 
 	ctx := deployment.WithID(context.Background(), "tenant-a")
 	capturer.CaptureSecret(ctx, "application", "App A", "clientSecret", "")

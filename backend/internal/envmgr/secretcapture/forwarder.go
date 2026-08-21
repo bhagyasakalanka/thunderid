@@ -75,16 +75,6 @@ func newSecretForwarder(cfg config.Config, readHashConfig HashConfigReader) *sec
 	}
 }
 
-// verifiableFields are the credentials that are only ever checked against something a caller presents.
-// Those are forwarded as a hash, because nothing needs the original. Every other credential, such as a
-// Vonage API secret or an SMS gateway key, has to be replayed to a third party and is forwarded as a
-// readable value.
-var verifiableFields = map[string]bool{
-	"clientsecret": true,
-	"password":     true,
-	"flowsecret":   true,
-}
-
 // CaptureSecret forwards the credential to the secret service under its declarative placeholder key.
 // It is best-effort: a failure is logged and never propagated, matching the local capturer, so creating
 // a resource does not fail because the secret service is briefly unavailable.
@@ -93,7 +83,7 @@ func (f *secretForwarder) CaptureSecret(ctx context.Context, resourceType, resou
 		return
 	}
 
-	f.capture(ctx, resourceType, resourceName, field, value, verifiableFields[strings.ToLower(field)])
+	f.capture(ctx, resourceType, resourceName, field, value)
 }
 
 // CaptureReplayableSecret forwards a credential that has to stay readable because the Data Plane hands
@@ -105,19 +95,13 @@ func (f *secretForwarder) CaptureReplayableSecret(ctx context.Context, resourceT
 	if value == "" {
 		return
 	}
-	f.capture(ctx, resourceType, resourceName, field, value, false)
+	f.capture(ctx, resourceType, resourceName, field, value)
 }
 
-// capture builds the body for the chosen representation and writes it to the secret service.
-func (f *secretForwarder) capture(ctx context.Context, resourceType, resourceName, field, value string,
-	verifiable bool) {
+// capture writes the credential to the secret service under its declarative placeholder key.
+func (f *secretForwarder) capture(ctx context.Context, resourceType, resourceName, field, value string) {
 	key := varname.DeriveVariableName(resourceType, resourceName, field)
-	body, err := f.buildBody(value, verifiable, fmt.Sprintf("Captured %s for %s", field, resourceName))
-	if err != nil {
-		log.GetLogger().Warn(ctx, "Failed to prepare a secret for the secret service",
-			log.String("key", key), log.Error(err))
-		return
-	}
+	body := f.buildBody(value, fmt.Sprintf("Captured %s for %s", field, resourceName))
 	if err := f.put(ctx, key, body); err != nil {
 		log.GetLogger().Warn(ctx, "Failed to forward a secret to the secret service",
 			log.String("key", key), log.Error(err))
@@ -141,32 +125,15 @@ type hashParameters struct {
 	Parallelism int    `json:"parallelism,omitempty"`
 }
 
-// buildBody decides how the credential is held and, for a verifiable one, hashes it here so the
-// plaintext never leaves this process. The hash comes from the server's own configured hashing, so what
-// is stored is exactly what a local write would have produced.
-func (f *secretForwarder) buildBody(value string, verifiable bool, description string) (putSecretBody, error) {
-	if !verifiable {
-		return putSecretBody{Kind: "value", Value: value, Description: description}, nil
-	}
-
-	hashed, err := hashCredential(f.hashConfig, value)
-	if err != nil {
-		return putSecretBody{}, err
-	}
-
-	return putSecretBody{
-		Kind:      "hash",
-		Value:     hashed.Hash,
-		Algorithm: string(hashed.Algorithm),
-		Parameters: &hashParameters{
-			Salt:        hashed.Parameters.Salt,
-			Iterations:  hashed.Parameters.Iterations,
-			KeySize:     hashed.Parameters.KeySize,
-			Memory:      hashed.Parameters.Memory,
-			Parallelism: hashed.Parameters.Parallelism,
-		},
-		Description: description,
-	}, nil
+// buildBody carries the credential itself, whatever it is for.
+//
+// A hash is deliberately not produced here. The data plane fills the placeholder with this value at
+// import and writes the resource through its own API, which hashes a credential that is only ever
+// verified exactly as it would for one created locally. Sending a hash instead would mean the data
+// plane storing a hash of a hash, and there would be no way to hand the credential to a third party
+// that needs the original.
+func (f *secretForwarder) buildBody(value string, description string) putSecretBody {
+	return putSecretBody{Kind: "value", Value: value, Description: description}
 }
 
 // hashCredential hashes a credential with the server's own configured hashing, so what is stored is

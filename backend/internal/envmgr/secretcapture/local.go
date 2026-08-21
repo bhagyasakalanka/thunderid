@@ -50,13 +50,13 @@ type localSecretCapture struct {
 	hashConfig func() (cryptolib.HashConfig, error)
 }
 
-// CaptureSecret hands over a credential, hashing it first when nothing needs the original.
+// CaptureSecret hands over a credential.
 func (c *localSecretCapture) CaptureSecret(ctx context.Context, resourceType, resourceName, field,
 	value string) {
 	if value == "" {
 		return
 	}
-	c.capture(ctx, resourceType, resourceName, field, value, verifiableFields[strings.ToLower(field)])
+	c.capture(ctx, resourceType, resourceName, field, value)
 }
 
 // CaptureReplayableSecret hands over a credential that has to stay readable because the Data Plane
@@ -66,13 +66,12 @@ func (c *localSecretCapture) CaptureReplayableSecret(ctx context.Context, resour
 	if value == "" {
 		return
 	}
-	c.capture(ctx, resourceType, resourceName, field, value, false)
+	c.capture(ctx, resourceType, resourceName, field, value)
 }
 
 // capture builds the same body the HTTP forwarder sends and delivers it in process. Failures are logged
 // rather than propagated, so creating a resource does not fail because a data plane is unreachable.
-func (c *localSecretCapture) capture(ctx context.Context, resourceType, resourceName, field, value string,
-	verifiable bool) {
+func (c *localSecretCapture) capture(ctx context.Context, resourceType, resourceName, field, value string) {
 	key := varname.DeriveVariableName(resourceType, resourceName, field)
 	tenant := deployment.Resolve(ctx, "")
 	if strings.TrimSpace(tenant) == "" {
@@ -81,13 +80,8 @@ func (c *localSecretCapture) capture(ctx context.Context, resourceType, resource
 		return
 	}
 
-	forwarder := &secretForwarder{hashConfig: c.hashConfig}
-	body, err := forwarder.buildBody(value, verifiable, fmt.Sprintf("Captured %s for %s", field, resourceName))
-	if err != nil {
-		log.GetLogger().Warn(ctx, "Failed to prepare a secret for the environment manager",
-			log.String("key", key), log.Error(err))
-		return
-	}
+	forwarder := &secretForwarder{}
+	body := forwarder.buildBody(value, fmt.Sprintf("Captured %s for %s", field, resourceName))
 	payload, err := toBodyMap(body)
 	if err != nil {
 		log.GetLogger().Warn(ctx, "Failed to encode a secret for the environment manager",

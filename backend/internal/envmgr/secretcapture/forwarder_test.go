@@ -83,7 +83,7 @@ func TestForwarderSendsAReplayableCredentialAsAReadableValue(t *testing.T) {
 
 func TestForwarderKeepsAConnectionClientSecretReadable(t *testing.T) {
 	srv, rec := newFakeSecretService(t)
-	f := &secretForwarder{baseURL: srv.URL, http: srv.Client(), hashConfig: testHashConfig}
+	f := &secretForwarder{baseURL: srv.URL, http: srv.Client()}
 
 	// The field name is the same one an application uses, but a connection's client secret is sent on
 	// to the upstream provider rather than verified here, so hashing it would break every login
@@ -97,31 +97,35 @@ func TestForwarderKeepsAConnectionClientSecretReadable(t *testing.T) {
 	}
 }
 
-func TestForwarderNeverSendsAVerifiableCredentialInClear(t *testing.T) {
+// Every credential is forwarded as itself, including one that is only ever verified.
+//
+// The data plane fills the placeholder with this value at import and writes the resource through its
+// own API, which hashes a verifiable credential exactly as it would for one created locally. Sending
+// a hash would leave the data plane storing a hash of a hash, and would make a credential that has to
+// be replayed to a third party unusable.
+func TestForwarderSendsTheCredentialItself(t *testing.T) {
 	srv, rec := newFakeSecretService(t)
-	f := &secretForwarder{baseURL: srv.URL, http: srv.Client(), hashConfig: testHashConfig}
+	f := &secretForwarder{baseURL: srv.URL, http: srv.Client()}
 
 	const plaintext = "the-client-secret"
 	f.CaptureSecret(tenantCtx(), "application", "My App", "ClientSecret", plaintext)
 
 	rec.mu.Lock()
 	defer rec.mu.Unlock()
-	if rec.body["kind"] != "hash" {
-		t.Fatalf("a client secret must be forwarded as a hash, got %#v", rec.body)
+	if rec.body["kind"] != testSecretValue {
+		t.Fatalf("a credential must be forwarded as its value, got %#v", rec.body)
 	}
-	// The whole point: the plaintext must not appear anywhere in the payload.
-	raw, _ := json.Marshal(rec.body)
-	if strings.Contains(string(raw), plaintext) {
-		t.Fatalf("the plaintext leaked into the payload: %s", raw)
+	if rec.body[testSecretValue] != plaintext {
+		t.Fatalf("expected the credential itself, got %#v", rec.body["value"])
 	}
-	if rec.body["algorithm"] == "" || rec.body["algorithm"] == nil {
-		t.Fatalf("a hash needs its algorithm to be verifiable later: %#v", rec.body)
+	if rec.body["algorithm"] != nil && rec.body["algorithm"] != "" {
+		t.Fatalf("a value carries no hashing algorithm, got %#v", rec.body)
 	}
 }
 
 func TestForwarderIgnoresAnEmptyValue(t *testing.T) {
 	srv, rec := newFakeSecretService(t)
-	f := &secretForwarder{baseURL: srv.URL, http: srv.Client(), hashConfig: testHashConfig}
+	f := &secretForwarder{baseURL: srv.URL, http: srv.Client()}
 
 	f.CaptureSecret(tenantCtx(), "application", "My App", "ClientSecret", "")
 
