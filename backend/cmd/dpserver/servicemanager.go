@@ -146,7 +146,8 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 	// The secret store is served from this process in the file and kv modes, so a deployment can
 	// resolve its kv: references without a separate provider service. The resolver below reads from
 	// that store directly, or from the standalone service in the service mode.
-	localSecrets := initSecretStore(ctx, logger, mux, runtime.Config.Server.SecurityConfig.SecretProvider)
+	localSecrets := initSecretStore(ctx, logger, mux, runtime.Config.Server.SecurityConfig.SecretProvider,
+		configCryptoSvc, runtime.Config.Server.Identifier)
 
 	initSecretResolver(ctx, logger, runtime.Config.Server.SecurityConfig.SecretProvider, localSecrets)
 
@@ -766,8 +767,9 @@ func initManagedResources(ctx context.Context, logger *log.Logger, mux *http.Ser
 // A misconfiguration is logged rather than fatal: the deployment may also have a standalone provider,
 // and a server that cannot serve its own store is still able to read from that one.
 func initSecretStore(ctx context.Context, logger *log.Logger, mux *http.ServeMux,
-	cfg engineconfig.SecretProviderConfig) *secretstore.Store {
-	store, err := secretstore.Initialize(ctx, mux, secretStoreConfig(cfg))
+	cfg engineconfig.SecretProviderConfig, configCrypto kmprovider.ConfigCryptoProvider,
+	deploymentID string) *secretstore.Store {
+	store, err := secretstore.Initialize(ctx, mux, secretStoreConfig(cfg, configCrypto, deploymentID))
 	if store == nil {
 		if err != nil {
 			logger.Error(ctx, "Failed to start the secret store", log.Error(err))
@@ -796,12 +798,35 @@ func (a sessionCriteriaRevoker) RevokeTokenFamily(ctx context.Context, tokenFami
 	return a.revoker.RevokeTokenFamily(ctx, tokenFamilyID, revocation.RevocationReasonSessionLogout)
 }
 
+// configSecretSealer adapts the server's configuration crypto to what the secret store needs. A stored
+// credential is encrypted with the same key the rest of the server's configuration secrets use, so
+// there is one key to manage rather than one per subsystem.
+type configSecretSealer struct {
+	crypto kmprovider.ConfigCryptoProvider
+}
+
+// Seal encrypts a credential for storage.
+func (s configSecretSealer) Seal(ctx context.Context, plaintext []byte) ([]byte, error) {
+	return s.crypto.Encrypt(ctx, plaintext)
+}
+
+// Open decrypts a stored credential.
+func (s configSecretSealer) Open(ctx context.Context, sealed []byte) ([]byte, error) {
+	return s.crypto.Decrypt(ctx, sealed)
+}
+
 // secretStoreConfig maps the deployment configuration onto the store's own, so the store package
 // depends on no configuration types.
-func secretStoreConfig(cfg engineconfig.SecretProviderConfig) secretstore.Config {
+func secretStoreConfig(cfg engineconfig.SecretProviderConfig,
+	configCrypto kmprovider.ConfigCryptoProvider, deploymentID string) secretstore.Config {
 	return secretstore.Config{
 		Mode:     secretstore.Mode(cfg.Mode),
 		FilePath: cfg.File.Path,
+		DB: secretstore.DBConfig{
+			Provider:     dbprovider.GetDBProvider(),
+			Sealer:       configSecretSealer{crypto: configCrypto},
+			DeploymentID: deploymentID,
+		},
 		KV: secretstore.KVConfig{
 			Type:       cfg.KV.Type,
 			Address:    cfg.KV.Address,

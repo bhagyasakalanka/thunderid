@@ -49,7 +49,7 @@ func TestFileModeRequiresAPath(t *testing.T) {
 // The modes that keep no store here build no backend, and that is not an error: a deployment reading
 // from the standalone provider, or holding no secrets at all, is a valid deployment.
 func TestTheModesThatKeepNoStoreHereBuildNoBackend(t *testing.T) {
-	for _, mode := range []Mode{"", ModeService} {
+	for _, mode := range []Mode{ModeNone, ModeService} {
 		backend, err := NewBackend(Config{Mode: mode})
 		if err != nil {
 			t.Fatalf("mode %q: %v", mode, err)
@@ -68,7 +68,7 @@ func TestAnUnknownModeIsRefusedAndSaysWhatIsExpected(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an unknown mode to be refused")
 	}
-	for _, expected := range []string{string(ModeFile), string(ModeKV), string(ModeService)} {
+	for _, expected := range []string{string(ModeDB), string(ModeFile), string(ModeKV), string(ModeService)} {
 		if !strings.Contains(err.Error(), expected) {
 			t.Fatalf("expected the error to list %q, got %v", expected, err)
 		}
@@ -181,5 +181,31 @@ func TestTheKeyVaultTypeIsCaseInsensitive(t *testing.T) {
 	}
 	if backend == nil {
 		t.Fatal("expected a backend")
+	}
+}
+
+// A deployment that configures no mode gets the default rather than no store. Silently keeping no
+// credentials would leave every "kv:" reference unresolvable, which surfaces much later as a
+// credential that rejects every attempt.
+func TestAnUnsetModeTakesTheDefault(t *testing.T) {
+	if DefaultMode != ModeDB {
+		t.Fatalf("expected the database mode to be the default, got %q", DefaultMode)
+	}
+	// The default needs a provider and a sealer, so building it without them is refused. That refusal
+	// is what shows the unset mode resolved to the default rather than to no store at all.
+	if _, err := NewBackend(Config{}); err == nil {
+		t.Fatal("expected the default mode to require its database dependencies")
+	}
+}
+
+// Storing a credential in the clear is refused rather than done quietly.
+func TestTheDatabaseModeRefusesToStorePlaintext(t *testing.T) {
+	_, err := NewBackend(Config{Mode: ModeDB})
+
+	if err == nil {
+		t.Fatal("expected a database-backed store with no sealer to be refused")
+	}
+	if !strings.Contains(err.Error(), "sealer") {
+		t.Fatalf("expected the error to name the missing sealer, got %v", err)
 	}
 }

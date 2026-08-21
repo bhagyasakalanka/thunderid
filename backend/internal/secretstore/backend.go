@@ -24,6 +24,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/thunder-id/thunderid/internal/system/database/provider"
 )
 
 // Backend is where a store's secrets are actually kept.
@@ -52,6 +54,10 @@ type Backend interface {
 type Mode string
 
 const (
+	// ModeDB keeps secrets in the configuration database, encrypted. It is the default, because the
+	// database is shared by every instance of a deployment: a credential set through one is usable by
+	// all of them, which a file beside one instance cannot manage.
+	ModeDB Mode = "db"
 	// ModeFile keeps secrets in a JSON file beside the server.
 	ModeFile Mode = "file"
 	// ModeKV keeps secrets in an external key vault.
@@ -63,24 +69,50 @@ const (
 
 // Config describes where a deployment keeps its secrets.
 type Config struct {
-	// Mode selects the backend. An empty mode disables the store entirely.
+	// Mode selects the backend. An empty mode takes DefaultMode; ModeNone disables the store entirely.
 	Mode Mode
 	// FilePath backs ModeFile.
 	FilePath string
 	// KV backs ModeKV.
 	KV KVConfig
+	// DB backs ModeDB.
+	DB DBConfig
 }
+
+// DBConfig is what the database-backed mode needs beyond the server's own database provider.
+type DBConfig struct {
+	// Provider opens the configuration database the secrets are stored in.
+	Provider provider.DBProviderInterface
+	// Sealer encrypts a value before it is stored. Required: the mode refuses to store plaintext.
+	Sealer Sealer
+	// DeploymentID scopes the rows when a caller carries no deployment of its own.
+	DeploymentID string
+}
+
+// DefaultMode is the backend used when a deployment configures none.
+const DefaultMode = ModeDB
+
+// ModeNone turns the store off, for a deployment that resolves no credential of its own.
+const ModeNone Mode = "none"
 
 // NewBackend builds the backend a configuration asks for.
 //
-// It returns a nil backend, and no error, for the modes that keep no store here: an empty mode, and
-// ModeService, where the standalone service holds the secrets itself.
+// It returns a nil backend, and no error, for the modes that keep no store here: ModeNone, and
+// ModeService, where the standalone service holds the secrets itself. An unset mode takes
+// DefaultMode, so a deployment that configures nothing still keeps its credentials somewhere every
+// instance of it can read.
 func NewBackend(cfg Config) (Backend, error) {
-	switch cfg.Mode {
-	case "":
+	mode := cfg.Mode
+	if mode == "" {
+		mode = DefaultMode
+	}
+	switch mode {
+	case ModeNone:
 		return nil, nil
 	case ModeService:
 		return nil, nil
+	case ModeDB:
+		return NewDBBackend(cfg.DB.Provider, cfg.DB.Sealer, cfg.DB.DeploymentID)
 	case ModeFile:
 		if strings.TrimSpace(cfg.FilePath) == "" {
 			return nil, fmt.Errorf("secret store mode %q requires file.path", ModeFile)
@@ -96,7 +128,7 @@ func NewBackend(cfg Config) (Backend, error) {
 
 // modeNames lists the configurable modes, for an error that has to say what was expected.
 func modeNames() []string {
-	names := []string{string(ModeFile), string(ModeKV), string(ModeService)}
+	names := []string{string(ModeDB), string(ModeFile), string(ModeKV), string(ModeService), string(ModeNone)}
 	sort.Strings(names)
 	return names
 }

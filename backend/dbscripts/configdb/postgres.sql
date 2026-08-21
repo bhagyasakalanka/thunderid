@@ -421,3 +421,28 @@ CREATE TABLE "DATA_PLANE_TOKEN" (
     UPDATED_AT    TIMESTAMPTZ  DEFAULT NOW()
 );
 CREATE INDEX idx_data_plane_token_deployment ON "DATA_PLANE_TOKEN" (DEPLOYMENT_ID);
+
+
+-- Credentials this deployment holds, backing the "kv:NAME" references configuration carries.
+--
+-- A credential never travels with configuration: it is promoted as a placeholder and the value is set
+-- against the deployment that needs it. This is where it lands. Names are unique per deployment,
+-- because a reference names a credential by name alone.
+--
+-- VALUE holds the ciphertext, encrypted with the configuration crypto service, so a database dump
+-- reveals no credential. KIND records whether the plaintext is the credential itself or a one-way
+-- hash of it, and ALGORITHM and PARAMETERS carry what verifying a hash needs.
+CREATE TABLE "SECRET" (
+    DEPLOYMENT_ID VARCHAR(255) NOT NULL,
+    ID            VARCHAR(36)  PRIMARY KEY,
+    NAME          VARCHAR(255) NOT NULL,
+    KIND          VARCHAR(10)  NOT NULL CHECK (KIND IN ('hash', 'value')),
+    VALUE         TEXT         NOT NULL,
+    ALGORITHM     VARCHAR(50),
+    PARAMETERS    TEXT,
+    DESCRIPTION   VARCHAR(255),
+    CREATED_AT    TIMESTAMPTZ  DEFAULT NOW(),
+    UPDATED_AT    TIMESTAMPTZ  DEFAULT NOW(),
+    CONSTRAINT unique_secret_name UNIQUE (DEPLOYMENT_ID, NAME)
+);
+CREATE INDEX idx_secret_deployment ON "SECRET" (DEPLOYMENT_ID);

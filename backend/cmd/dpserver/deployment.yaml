@@ -20,15 +20,20 @@ server:
     # resolves those references, and what a Control Plane writes a new credential into.
     #
     # mode is one of:
+    #   db      - this deployment's configuration database, encrypted with the configuration crypto
+    #             key. Shared by every instance, so a credential set through one is usable by all of
+    #             them, and it needs nothing deployed beyond the database the server already has.
+    #             This is the default, and what an unset mode resolves to.
     #   file    - a JSON file beside the server. Needs nothing else deployed, which suits a single
     #             instance and local development. Each instance has its own file, so a deployment
     #             running several of them does not share what it stores.
-    #   kv      - an external key vault, shared by every instance of the deployment. This is the
-    #             production choice.
+    #   kv      - an external key vault, shared by every instance of the deployment. Choose this to
+    #             keep credentials outside the product's own database.
     #   service - the standalone secret provider service, over HTTP. Read only: the service owns its
     #             own writes, so the Control Plane cannot push a credential in from here.
+    #   none    - keep no store here, for a deployment that resolves no credential of its own.
     secret_provider:
-      mode: "file"
+      mode: "db"
       file:
         path: "repository/secrets/secrets.json"
 
