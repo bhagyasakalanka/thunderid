@@ -5,7 +5,7 @@ import {useMutation, useQueryClient, type UseMutationResult} from '@tanstack/rea
 import {useToast} from '@thunderid/contexts';
 import {useThunderID} from '@thunderid/react';
 import {useTranslation} from 'react-i18next';
-import useEnvManagerUrl from './useEnvManagerUrl';
+import usePromotionServiceUrl from './usePromotionServiceUrl';
 import PromotionQueryKeys from '../constants/promotion-query-keys';
 import type {PromoteResult} from '../models/promotion';
 
@@ -30,7 +30,7 @@ export interface PromoteVariables {
  */
 export default function usePromote(): UseMutationResult<PromoteResult, Error, PromoteVariables> {
   const {http} = useThunderID();
-  const baseUrl: string | undefined = useEnvManagerUrl();
+  const baseUrl: string | undefined = usePromotionServiceUrl();
   const queryClient: ReturnType<typeof useQueryClient> = useQueryClient();
   const {t} = useTranslation('promotions');
   const {showToast} = useToast();

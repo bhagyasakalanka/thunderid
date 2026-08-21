@@ -42,6 +42,13 @@ window.__THUNDERID_RUNTIME_CONFIG__ = {
   // is ever made and none has to be allowed. Setting it to one fixed host would instead break the
   // console on every other name the server answers to.
   server: {},
+  // The environment manager, which provides promotion. Promotion is not part of the product: a
+  // gateway is a flat resource of the organization here, and which gateway may be promoted into
+  // which comes from the organization's own environment hierarchy, held by this service. Leave the
+  // URL empty to serve a console with no promotion views at all.
+  env_manager: {
+    public_url: '',
+  },
   trusted_issuer: {
     type: 'generic',
     public_url: 'https://api.asgardeo.io/t/b1zt/oauth2/token',

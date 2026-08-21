@@ -3,7 +3,7 @@
 
 import {useQuery, type UseQueryResult} from '@tanstack/react-query';
 import {useThunderID} from '@thunderid/react';
-import useEnvManagerUrl from './useEnvManagerUrl';
+import usePromotionServiceUrl from './usePromotionServiceUrl';
 import PromotionQueryKeys from '../constants/promotion-query-keys';
 import type {Diff} from '../models/promotion';
 
@@ -13,7 +13,7 @@ import type {Diff} from '../models/promotion';
  */
 export default function useGetPromotionPreview(fromEnv: string, toEnv: string, version?: string): UseQueryResult<Diff> {
   const {http} = useThunderID();
-  const baseUrl: string | undefined = useEnvManagerUrl();
+  const baseUrl: string | undefined = usePromotionServiceUrl();
 
   return useQuery<Diff>({
     queryKey: [PromotionQueryKeys.PROMOTION_PREVIEW, fromEnv, toEnv, version ?? 'latest'],

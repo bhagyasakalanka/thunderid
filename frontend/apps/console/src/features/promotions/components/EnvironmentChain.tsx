@@ -8,6 +8,7 @@ import {useNavigate} from 'react-router';
 import DataPlaneStatusChip from './DataPlaneStatusChip';
 import useEnvManagerUrl from '../api/useEnvManagerUrl';
 import useGetEnvironments from '../api/useGetEnvironments';
+import usePromotionServiceUrl from '../api/usePromotionServiceUrl';
 import useSetManagedEnvironment from '../api/useSetManagedEnvironment';
 import type {Environment} from '../models/promotion';
 
@@ -16,9 +17,9 @@ import type {Environment} from '../models/promotion';
  * belong to a gateway on its own: history, secrets, variables, and which one the Control Plane
  * administers directly.
  *
- * Which gateway may be promoted into which is not shown here. That hierarchy belongs to the
- * organization and is held outside this server, so promotion is driven by the environment manager
- * rather than from this list.
+ * A promote action appears only when an environment manager is configured. Which gateway may be
+ * promoted into which comes from the organization's environment hierarchy, which that service holds;
+ * without one there is nothing to ask, so the action is left out rather than offered and refused.
  */
 export default function EnvironmentChain(): JSX.Element {
   const {t} = useTranslation();
@@ -26,6 +27,7 @@ export default function EnvironmentChain(): JSX.Element {
   const baseUrl: string | undefined = useEnvManagerUrl();
   const {data, isLoading, error} = useGetEnvironments();
   const setManaged = useSetManagedEnvironment();
+  const promotionService: string | undefined = usePromotionServiceUrl();
 
   if (!baseUrl) {
     return (
@@ -109,6 +111,18 @@ export default function EnvironmentChain(): JSX.Element {
               >
                 {t('promotions:listing.viewHistory', 'History')}
               </Button>
+
+              {promotionService && (
+                <Button
+                  variant="contained"
+                  disabled={env.latestSeq === 0}
+                  onClick={() => {
+                    void navigate(`/promotions/${env.id}/promote`);
+                  }}
+                >
+                  {t('promotions:listing.promote', 'Promote')}
+                </Button>
+              )}
 
               {!env.managedByControlPlane && (
                 <Button

@@ -121,6 +121,7 @@ const ConnectionCreateWizardPage = lazy(() =>
 const PromotionsListPage = lazy(() => import('./features/promotions/pages/PromotionsListPage'));
 const EnvironmentDetailPage = lazy(() => import('./features/promotions/pages/EnvironmentDetailPage'));
 const EnvironmentSecretsPage = lazy(() => import('./features/promotions/pages/EnvironmentSecretsPage'));
+const PromotePage = lazy(() => import('./features/promotions/pages/PromotePage'));
 const EnvironmentVariablesListPage = lazy(
   () => import('./features/environment-variables/pages/EnvironmentVariablesListPage'),
 );
@@ -228,6 +229,7 @@ export default function App(): JSX.Element {
                 <Route path="promotions" element={<PromotionsListPage />} />
                 <Route path="promotions/:envId" element={<EnvironmentDetailPage />} />
                 <Route path="promotions/:envId/secrets" element={<EnvironmentSecretsPage />} />
+                <Route path="promotions/:envId/promote" element={<PromotePage />} />
                 {/* A variable belongs to an environment, so it is reached through one. */}
                 <Route path="promotions/:envId/variables" element={<EnvironmentVariablesListPage />} />
                 <Route
