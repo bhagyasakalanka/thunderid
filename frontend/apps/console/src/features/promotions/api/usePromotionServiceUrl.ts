@@ -2,24 +2,25 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {useConfig} from '@thunderid/contexts';
+import useEnvManagerUrl from './useEnvManagerUrl';
 
 /**
- * Resolves the environment manager's base URL, which is where promotion lives.
+ * Resolves where promotion is carried out.
  *
- * Promotion is not part of the product. A gateway is a flat resource of the organization, and which
- * gateway may be promoted into which comes from the organization's environment hierarchy, which a
- * separate service holds. This returns that service's URL when one is configured.
+ * On its own, the Control Plane can move a version between any two of an organization's gateways: the
+ * set is flat, so every other gateway is a possible target and the operator picks one. That is what an
+ * on-premise deployment gets, and it is served by the Control Plane itself.
  *
- * Undefined means no such service is configured, and the promotion views are left out rather than
- * offering an action with nothing behind it. That is the normal case for a deployment that promotes
- * by other means, or not at all.
+ * With an environment manager connected, that service answers instead. It holds the organization's
+ * environment hierarchy, so it is the one that knows which moves the hierarchy actually permits, and
+ * the targets offered narrow from "any gateway" to the ones it allows.
+ *
+ * Undefined only on a plane that promotes nothing at all.
  */
 export default function usePromotionServiceUrl(): string | undefined {
   const {config} = useConfig();
-  if (config.plane !== 'cp') {
-    return undefined;
-  }
-  const url: string = config.env_manager?.public_url?.trim() ?? '';
+  const controlPlaneUrl: string | undefined = useEnvManagerUrl();
+  const configured: string = config.env_manager?.public_url?.trim() ?? '';
 
-  return url ? url.replace(/\/+$/, '') : undefined;
+  return configured ? configured.replace(/\/+$/, '') : controlPlaneUrl;
 }

@@ -7,7 +7,6 @@ import {useState, type JSX} from 'react';
 import {useTranslation} from 'react-i18next';
 import {useParams} from 'react-router';
 import useGetEnvironments from '../api/useGetEnvironments';
-import usePromotionServiceUrl from '../api/usePromotionServiceUrl';
 import DataPlaneStatusChip from '../components/DataPlaneStatusChip';
 import PromoteDialog from '../components/PromoteDialog';
 import type {Environment} from '../models/promotion';
@@ -15,33 +14,19 @@ import type {Environment} from '../models/promotion';
 /**
  * Chooses which gateway to promote a version into.
  *
- * The target is picked here rather than derived from a chain: gateways are a flat set, and which
- * moves an organization permits comes from its environment hierarchy, which the environment manager
- * holds. This offers every other gateway and leaves that service to accept or refuse the move.
+ * The target is picked here rather than derived from a chain, because gateways are a flat set. On its
+ * own the Control Plane permits any pair, so every other gateway is offered. With an environment
+ * manager connected the hierarchy decides, and it accepts or refuses the move that is asked for.
  */
 export default function PromotePage(): JSX.Element {
   const {t} = useTranslation();
   const {envId = ''} = useParams<{envId: string}>();
-  const promotionService: string | undefined = usePromotionServiceUrl();
   const {data} = useGetEnvironments();
   const [target, setTarget] = useState<Environment | undefined>(undefined);
 
   const environments: Environment[] = data?.environments ?? [];
   const source: Environment | undefined = environments.find((env: Environment) => env.id === envId);
   const targets: Environment[] = environments.filter((env: Environment) => env.id !== envId);
-
-  if (!promotionService) {
-    return (
-      <PageContent>
-        <Alert severity="info">
-          {t(
-            'promotions:promote.notConfigured',
-            'No environment manager is configured, so promotion is not available on this deployment.',
-          )}
-        </Alert>
-      </PageContent>
-    );
-  }
 
   return (
     <PageContent>
