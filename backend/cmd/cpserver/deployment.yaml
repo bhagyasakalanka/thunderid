@@ -54,12 +54,18 @@ channel:
     read_limit_bytes: 8388608
     rpc_timeout_seconds: 120
 
-# Promoting a version towards production is a release decision, so it is the one environment action
-# gated on a scope. Every other action, including applying and reverting, is open to any member of the
-# organization. Set this when the authorization server issuing your tokens names the scope
-# differently; it defaults to system:promote.
+# Promoting is the one gateway action gated on a scope. Every other action, including applying and
+# reverting, is open to any member of the organization.
+#
+# The caller is the environment manager, not a person: it holds the organization's environment
+# hierarchy and decides which moves are allowed, then asks this server to carry one out. It presents a
+# token from the same issuer the console uses, carrying this organization, and this scope is what
+# distinguishes it from a console user, who cannot promote directly.
+#
+# The name follows security.system_permission_prefix above, because a scope from the trusted issuer
+# names the instance it grants against. Change it to match whatever your authorization server issues.
 promotion:
-  scope: "system:promote"
+  scope: "tenant_instance:system:promote"
 
 database:
   config:
