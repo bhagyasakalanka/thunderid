@@ -64,12 +64,7 @@ func (m *memStore) ListEnvironments(_ context.Context) ([]model.Environment, err
 	for _, env := range m.envs {
 		out = append(out, env)
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Rank != out[j].Rank {
-			return out[i].Rank < out[j].Rank
-		}
-		return out[i].Name < out[j].Name
-	})
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
 
@@ -80,16 +75,6 @@ func (m *memStore) DeleteEnvironment(_ context.Context, id string) error {
 	delete(m.envs, id)
 	delete(m.versions, id)
 	return nil
-}
-
-func (m *memStore) NextRank(_ context.Context) (int, error) {
-	max := 0
-	for _, env := range m.envs {
-		if env.Rank > max {
-			max = env.Rank
-		}
-	}
-	return max + 1, nil
 }
 
 func (m *memStore) AddVersion(_ context.Context, v model.Version) (model.Version, error) {

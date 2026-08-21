@@ -25,13 +25,12 @@ import useGetVersions from '../api/useGetVersions';
 import ApplyDialog from '../components/ApplyDialog';
 import DataPlaneStatusChip from '../components/DataPlaneStatusChip';
 import MissingVariablesNotice from '../components/MissingVariablesNotice';
-import PromoteDialog from '../components/PromoteDialog';
 import QueuedWorkNotice from '../components/QueuedWorkNotice';
 import RevertDialog from '../components/RevertDialog';
 import type {Environment, Version} from '../models/promotion';
 
 /**
- * Page showing one environment's version history, with apply, revert and demote actions.
+ * Page showing one gateway's version history, with apply and revert actions.
  */
 export default function EnvironmentDetailPage(): JSX.Element {
   const {t} = useTranslation();
@@ -49,23 +48,10 @@ export default function EnvironmentDetailPage(): JSX.Element {
   const {data: variableStatus} = useCheckVariables(envId);
 
   const [revertTo, setRevertTo] = useState<string | undefined>(undefined);
-  const [demoteTo, setDemoteTo] = useState<Environment | undefined>(undefined);
 
   const environments: Environment[] = useMemo(() => envData?.environments ?? [], [envData]);
   const environment: Environment | undefined = environments.find((env: Environment) => env.id === envId);
   const versions: Version[] = versionData?.versions ?? [];
-
-  // Demotion pushes a version back down an incoming edge, so the candidates are exactly the
-  // environments that can promote into this one.
-  const lowerEnvironments: Environment[] = useMemo(() => {
-    if (!environment) {
-      return [];
-    }
-    const byId = new Map<string, Environment>(environments.map((env: Environment) => [env.id, env]));
-    return (environment.promotedFrom ?? [])
-      .map((id: string) => byId.get(id))
-      .filter((candidate): candidate is Environment => Boolean(candidate));
-  }, [environments, environment]);
 
   return (
     <PageContent>
@@ -92,16 +78,6 @@ export default function EnvironmentDetailPage(): JSX.Element {
                 ? t('promotions:capture.inProgress', 'Capturing...')
                 : t('promotions:capture.action', 'Capture version')}
             </Button>
-            {lowerEnvironments.map((env: Environment) => (
-              <Button
-                key={env.id}
-                onClick={() => {
-                  setDemoteTo(env);
-                }}
-              >
-                {t('promotions:detail.demoteTo', 'Demote to {{target}}', {target: env.name})}
-              </Button>
-            ))}
             <Button
               startIcon={<KeyRound size={16} />}
               onClick={() => {
@@ -228,20 +204,6 @@ export default function EnvironmentDetailPage(): JSX.Element {
           toVersion={revertTo}
           onClose={() => {
             setRevertTo(undefined);
-          }}
-        />
-      )}
-
-      {demoteTo && environment && (
-        <PromoteDialog
-          open
-          isDemotion
-          fromEnvId={environment.id}
-          fromEnvName={environment.name}
-          toEnvId={demoteTo.id}
-          toEnvName={demoteTo.name}
-          onClose={() => {
-            setDemoteTo(undefined);
           }}
         />
       )}

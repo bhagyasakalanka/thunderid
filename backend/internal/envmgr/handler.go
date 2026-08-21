@@ -61,7 +61,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /environments", s.createEnvironment)
 	mux.HandleFunc("GET /environments", s.listEnvironments)
 	mux.HandleFunc("GET /environments/{id}", s.getEnvironment)
-	mux.HandleFunc("PUT /environments/{id}/edges", s.updateEnvironmentEdges)
 	mux.HandleFunc("DELETE /environments/{id}", s.deleteEnvironment)
 
 	mux.HandleFunc("POST /environments/{id}/versions", s.createVersion)
@@ -87,12 +86,8 @@ func (s *Server) Handler() http.Handler {
 // ---- environment handlers ----
 
 type createEnvironmentRequest struct {
-	Name string `json:"name"`
-	Rank *int   `json:"rank,omitempty"`
-	// PromotesTo are the environments this one can promote into. Omit to fall back to the next
-	// environment by rank.
-	PromotesTo []string     `json:"promotesTo,omitempty"`
-	Target     model.Target `json:"target"`
+	Name   string       `json:"name"`
+	Target model.Target `json:"target"`
 	// ManagedByControlPlane marks this the one environment the control plane administers directly, so
 	// it is where a credential created in the workspace is issued.
 	ManagedByControlPlane bool `json:"managedByControlPlane,omitempty"`
@@ -118,7 +113,7 @@ func (s *Server) createEnvironment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	env, err := s.svc.CreateEnvironment(r.Context(), service.CreateEnvironmentInput{
-		Name: req.Name, Rank: req.Rank, PromotesTo: req.PromotesTo, Target: req.Target,
+		Name: req.Name, Target: req.Target,
 		ManagedByControlPlane: req.ManagedByControlPlane,
 	})
 	if err != nil {
@@ -126,22 +121,6 @@ func (s *Server) createEnvironment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, env)
-}
-
-// updateEnvironmentEdges replaces an environment's outgoing promotion edges.
-func (s *Server) updateEnvironmentEdges(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		PromotesTo []string `json:"promotesTo"`
-	}
-	if !decode(w, r, &req) {
-		return
-	}
-	env, err := s.svc.UpdateEnvironmentEdges(r.Context(), r.PathValue("id"), req.PromotesTo)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, env)
 }
 
 func (s *Server) listEnvironments(w http.ResponseWriter, r *http.Request) {

@@ -60,7 +60,7 @@ func New(deploymentID string) (*Store, error) {
 // client resolves the environment datasource. It is resolved per call rather than held, so building
 // a store for a deployment does not open a connection before anything asks it for one.
 func (s *Store) client() (provider.DBClientInterface, error) {
-	dbClient, err := provider.GetDBProvider().GetEnvironmentDBClient()
+	dbClient, err := provider.GetDBProvider().GetConfigDBClient()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get database client: %w", err)
 	}
@@ -73,7 +73,7 @@ func (s *Store) client() (provider.DBClientInterface, error) {
 // tenant means finding which organization's chain already manages the tenant being copied from,
 // which cannot be answered from inside one store.
 func Deployments(ctx context.Context) ([]string, error) {
-	dbClient, err := provider.GetDBProvider().GetEnvironmentDBClient()
+	dbClient, err := provider.GetDBProvider().GetConfigDBClient()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get database client: %w", err)
 	}
@@ -150,12 +150,8 @@ func (s *Store) ListEnvironments(ctx context.Context) ([]model.Environment, erro
 		}
 		out = append(out, env)
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Rank != out[j].Rank {
-			return out[i].Rank < out[j].Rank
-		}
-		return out[i].Name < out[j].Name
-	})
+	// Gateways are unordered, so they are listed by name: a stable order a reader can predict.
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
 
@@ -175,22 +171,6 @@ func (s *Store) DeleteEnvironment(ctx context.Context, id string) error {
 		return fmt.Errorf("failed to delete environment: %w", err)
 	}
 	return nil
-}
-
-// NextRank returns a rank one above the current maximum, for placing a new environment at the top of
-// the chain by default.
-func (s *Store) NextRank(ctx context.Context) (int, error) {
-	envs, err := s.ListEnvironments(ctx)
-	if err != nil {
-		return 0, err
-	}
-	max := 0
-	for _, env := range envs {
-		if env.Rank > max {
-			max = env.Rank
-		}
-	}
-	return max + 1, nil
 }
 
 // ---- versions ----

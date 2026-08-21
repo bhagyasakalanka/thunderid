@@ -88,14 +88,8 @@ func (s *EnvironmentSeeder) setConsoleURLsForDataPlane(ctx context.Context, depl
 // created, rather than leaving it as a second call an operator has to remember.
 func (s *EnvironmentSeeder) RegisterEnvironment(ctx context.Context,
 	in tenant.RegisterEnvironmentInput) (*tenant.EnvironmentSummary, error) {
-	var rank *int
-	if in.Rank > 0 {
-		rank = &in.Rank
-	}
-
 	env, err := s.registry.CreateEnvironment(ctx, in.DeploymentID, envmgrservice.CreateEnvironmentInput{
 		Name: in.Name,
-		Rank: rank,
 		Target: model.Target{
 			DataPlaneID: in.DataPlane.ID,
 			BaseURL:     in.DataPlane.BaseURL,
@@ -108,7 +102,7 @@ func (s *EnvironmentSeeder) RegisterEnvironment(ctx context.Context,
 		return nil, err
 	}
 	return &tenant.EnvironmentSummary{
-		ID: env.ID, Name: env.Name, Rank: env.Rank, DataPlaneToken: env.DataPlaneToken,
+		ID: env.ID, Name: env.Name, DataPlaneToken: env.DataPlaneToken,
 	}, nil
 }
 

@@ -90,9 +90,6 @@ type DatabaseConfig struct {
 	RuntimeTransient  DataSource `yaml:"runtime_transient"  json:"runtime_transient"`
 	Entity            DataSource `yaml:"entity"             json:"entity"`
 	RuntimePersistent DataSource `yaml:"runtime_persistent" json:"runtime_persistent"`
-	// Environment backs the environment manager, which only a Control Plane runs. It is left unset
-	// on every other plane, and the client is not opened when it is.
-	Environment DataSource `yaml:"environment" json:"environment"`
 }
 
 // NotificationConfig holds the notification configuration details.

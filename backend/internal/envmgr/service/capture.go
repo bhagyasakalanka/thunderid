@@ -61,18 +61,17 @@ func (s *Service) CaptureSecretForTenant(ctx context.Context, deploymentID, name
 // managedEnvironment is the environment the control plane administers directly, which is where a
 // credential created in the workspace is issued.
 //
-// It is the one marked. With none marked, the lowest rank stands in: that is the bottom of the
-// promotion chain, so it is where work starts and where a newly created resource belongs.
+// It is the one marked. The organization's first gateway takes the mark as it is created, so a set
+// with none marked is one whose marked gateway was removed; the first listed stands in, which keeps a
+// credential landing somewhere rather than nowhere.
 func managedEnvironment(envs []model.Environment) (model.Environment, bool) {
-	var chosen model.Environment
-	found := false
 	for _, env := range envs {
 		if env.ManagedByControlPlane {
 			return env, true
 		}
-		if !found || env.Rank < chosen.Rank {
-			chosen, found = env, true
-		}
 	}
-	return chosen, found
+	if len(envs) == 0 {
+		return model.Environment{}, false
+	}
+	return envs[0], true
 }

@@ -63,7 +63,6 @@ type Store interface {
 	GetEnvironment(ctx context.Context, id string) (model.Environment, error)
 	ListEnvironments(ctx context.Context) ([]model.Environment, error)
 	DeleteEnvironment(ctx context.Context, id string) error
-	NextRank(ctx context.Context) (int, error)
 	AddVersion(ctx context.Context, v model.Version) (model.Version, error)
 	GetVersion(ctx context.Context, envID string, seq int) (model.Version, error)
 	ListVersions(ctx context.Context, envID string) ([]model.Version, error)
@@ -168,10 +167,8 @@ var (
 
 // CreateEnvironmentInput is the input to CreateEnvironment.
 type CreateEnvironmentInput struct {
-	Name       string
-	Rank       *int
-	PromotesTo []string
-	Target     model.Target
+	Name   string
+	Target model.Target
 	// ManagedByControlPlane marks this the one environment the control plane administers directly,
 	// which is where a credential created in the workspace is issued. The organization's first
 	// environment takes it whether or not it is asked for, so a credential always has somewhere to go.
@@ -187,13 +184,6 @@ func (s *Service) CreateEnvironment(ctx context.Context,
 	if strings.TrimSpace(in.Target.DataPlaneID) == "" {
 		return CreateEnvironmentResult{}, fmt.Errorf("%w: target.dataPlaneId is required", ErrValidation)
 	}
-	rank, err := s.store.NextRank(ctx)
-	if err != nil {
-		return CreateEnvironmentResult{}, err
-	}
-	if in.Rank != nil {
-		rank = *in.Rank
-	}
 	existing, err := s.store.ListEnvironments(ctx)
 	if err != nil {
 		return CreateEnvironmentResult{}, err
@@ -201,19 +191,14 @@ func (s *Service) CreateEnvironment(ctx context.Context,
 
 	now := s.now().UTC()
 	env := model.Environment{
-		ID:         newID("env"),
-		Name:       in.Name,
-		Rank:       rank,
-		PromotesTo: in.PromotesTo,
-		Target:     in.Target,
+		ID:     newID("env"),
+		Name:   in.Name,
+		Target: in.Target,
 		// The organization's first environment takes the mark whatever was asked for: a credential
 		// created before a second one exists has nowhere else to go.
 		ManagedByControlPlane: in.ManagedByControlPlane || len(existing) == 0,
 		CreatedAt:             now,
 		UpdatedAt:             now,
-	}
-	if err := validateGraph(append(existing, env)); err != nil {
-		return CreateEnvironmentResult{}, err
 	}
 	if err := s.store.SaveEnvironment(ctx, env); err != nil {
 		return CreateEnvironmentResult{}, err
@@ -271,36 +256,6 @@ func (s *Service) RegenerateDataPlaneToken(ctx context.Context, envID string) (s
 	return s.issueDataPlaneToken(ctx, env)
 }
 
-// UpdateEnvironmentEdges replaces an environment's outgoing promotion edges. Edges are set after the
-// fact because the environments they point at generally do not exist yet when the first one is
-// registered.
-func (s *Service) UpdateEnvironmentEdges(ctx context.Context, envID string,
-	promotesTo []string) (model.Environment, error) {
-	env, err := s.store.GetEnvironment(ctx, envID)
-	if err != nil {
-		return model.Environment{}, err
-	}
-	env.PromotesTo = promotesTo
-	env.UpdatedAt = s.now().UTC()
-
-	envs, err := s.store.ListEnvironments(ctx)
-	if err != nil {
-		return model.Environment{}, err
-	}
-	for i := range envs {
-		if envs[i].ID == envID {
-			envs[i] = env
-		}
-	}
-	if err := validateGraph(envs); err != nil {
-		return model.Environment{}, err
-	}
-	if err := s.store.SaveEnvironment(ctx, env); err != nil {
-		return model.Environment{}, err
-	}
-	return env, nil
-}
-
 // GetEnvironment returns an environment.
 func (s *Service) GetEnvironment(ctx context.Context, id string) (model.Environment, error) {
 	return s.store.GetEnvironment(ctx, id)
@@ -316,11 +271,6 @@ func (s *Service) ListEnvironments(ctx context.Context) ([]model.Environment, er
 type EnvironmentSummary struct {
 	model.Environment
 	LatestSeq int `json:"latestSeq"`
-	// PromotesToResolved are the outgoing edges actually in effect, with the rank fallback applied,
-	// so a caller does not have to reproduce that rule.
-	PromotesToResolved []string `json:"promotesToResolved"`
-	// PromotedFrom are the incoming edges: the environments that can promote into this one.
-	PromotedFrom []string `json:"promotedFrom"`
 	// HasPendingChanges reports whether the latest version differs from what is applied.
 	HasPendingChanges bool `json:"hasPendingChanges"`
 	// DataPlane reports whether this environment's data plane is connected. Nothing can be applied or
@@ -329,44 +279,25 @@ type EnvironmentSummary struct {
 	DataPlane model.DataPlaneStatus `json:"dataPlane"`
 }
 
-// ListEnvironmentSummaries returns every environment in promotion order (each one before those it
-// promotes into), annotated with its version state and its edges in the promotion graph.
+// ListEnvironmentSummaries returns every gateway of the organization, annotated with its version
+// state. The set is flat: which gateway promotes into which is not this server's to say.
 func (s *Service) ListEnvironmentSummaries(ctx context.Context) ([]EnvironmentSummary, error) {
 	envs, err := s.store.ListEnvironments(ctx)
 	if err != nil {
 		return nil, err
 	}
-	ordered := topologicalOrder(envs)
-	adjacency := buildAdjacency(envs)
 
-	incoming := make(map[string][]string, len(envs))
-	for _, env := range ordered {
-		for _, target := range adjacency[env.ID] {
-			incoming[target] = append(incoming[target], env.ID)
-		}
-	}
-
-	out := make([]EnvironmentSummary, 0, len(ordered))
-	for _, env := range ordered {
+	out := make([]EnvironmentSummary, 0, len(envs))
+	for _, env := range envs {
 		latest, err := s.store.LatestSeq(ctx, env.ID)
 		if err != nil {
 			return nil, err
 		}
-		resolved := adjacency[env.ID]
-		if resolved == nil {
-			resolved = []string{}
-		}
-		from := incoming[env.ID]
-		if from == nil {
-			from = []string{}
-		}
 		out = append(out, EnvironmentSummary{
-			Environment:        env,
-			LatestSeq:          latest,
-			PromotesToResolved: resolved,
-			PromotedFrom:       from,
-			HasPendingChanges:  latest > 0 && latest != env.AppliedSeq,
-			DataPlane:          s.DataPlaneStatus(env),
+			Environment:       env,
+			LatestSeq:         latest,
+			HasPendingChanges: latest > 0 && latest != env.AppliedSeq,
+			DataPlane:         s.DataPlaneStatus(env),
 		})
 	}
 	return out, nil
@@ -1051,16 +982,9 @@ func (s *Service) promoteInputs(ctx context.Context, fromEnvID, toEnvID, version
 	if err != nil {
 		return model.Version{}, promoteContext{}, nil, nil, err
 	}
-	// Movement must follow an edge of the promotion graph. The reverse direction is allowed too, which
-	// is what a demotion is: pushing a version back down the same edge it came up.
-	envs, listErr := s.store.ListEnvironments(ctx)
-	if listErr != nil {
-		return model.Version{}, promoteContext{}, nil, nil, listErr
-	}
-	if !canPromote(envs, fromEnvID, toEnvID) && !canPromote(envs, toEnvID, fromEnvID) {
-		return model.Version{}, promoteContext{}, nil, nil, ErrNoPromotionPath
-	}
-
+	// Any gateway may be moved to any other. Which moves an organization actually permits comes from
+	// its environment hierarchy, which is held outside this server: the caller that knows the hierarchy
+	// decides, and this carries out the move it asks for.
 	// A promotion moves what the source is running, not what has been captured from it. A caller naming
 	// a version explicitly still gets that one.
 	sourceSeq, err := s.resolveSeq(ctx, fromEnv, defaultRef(versionRef, "promotable"))

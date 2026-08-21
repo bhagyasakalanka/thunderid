@@ -486,16 +486,13 @@ func buildHashConfig() (cryptolib.HashConfig, error) {
 // fatal: promotion is one capability of the control plane, and losing it should not stop the
 // management APIs from serving.
 // It returns the manager when one is mounted, so captured credentials can be routed through it instead
-// of over HTTP; a nil result means promotion is not hosted here.
+// of over HTTP; a nil result means it could not be started.
+//
+// A Control Plane always hosts it: attaching gateways is what a Control Plane is for, and a gateway is
+// a resource of the organization held in the configuration database alongside the rest of it, so there
+// is nothing to configure and nothing to turn off.
 func initEnvironmentManager(ctx context.Context, logger *log.Logger, mux *http.ServeMux,
-	cfg config.Config) envmgrRegistry {
-	// The environment manager keeps its environments and versions in their own datasource. Leaving it
-	// unconfigured is how a deployment that promotes by other means turns the module off, and without
-	// it there is nowhere for a captured version to go.
-	if strings.TrimSpace(cfg.Database.Environment.Type) == "" {
-		logger.Info(ctx, "No environment datasource is configured, so promotion is not hosted here")
-		return nil
-	}
+	_ config.Config) envmgrRegistry {
 	reg, err := envmgr.Initialize(mux)
 	if err != nil {
 		logger.Error(ctx, "Failed to start the in-process environment manager", log.Error(err))

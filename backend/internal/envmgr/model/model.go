@@ -56,23 +56,18 @@ type DataPlaneStatus struct {
 	LastSeen  time.Time `json:"lastSeen,omitempty"`
 }
 
-// Environment is a node in the promotion graph, bound to one data-plane target.
+// Environment is one gateway an organization's configuration can be applied to.
 //
-// An environment is a resource of an organization rather than a deployment of its own: the
-// organization has a single workspace that every environment captures from, and an environment holds
-// the versions, variables and secrets that reach its own data plane.
+// It is a resource of the organization rather than a deployment of its own: the organization has a
+// single workspace that every gateway captures from, and a gateway holds the versions, variables and
+// secrets that reach its own data plane.
+//
+// Gateways are unordered. Which one may be promoted into which is not modeled here: that hierarchy
+// belongs to the organization and is held outside this server, so the set here is a flat one.
 type Environment struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	// Rank orders environments for display, lowest first. It no longer defines the promotion path.
-	Rank int `json:"rank"`
-	// PromotesTo lists the environments this one can promote into: the outgoing edges of the
-	// promotion graph, which is a DAG. An environment can fan out to several (a shared dev promoting
-	// to both eu-prod and us-prod) and can be fanned into by several (a prod gated behind both qa and
-	// staging). When empty, the edge falls back to the next environment by rank, which keeps a simple
-	// linear chain working without declaring edges.
-	PromotesTo []string `json:"promotesTo,omitempty"`
-	Target     Target   `json:"target"`
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Target Target `json:"target"`
 	// ManagedByControlPlane marks the one environment the control plane administers directly, rather
 	// than only promotes into. Editing configuration in the organization's workspace is editing this
 	// environment; every other environment receives that configuration when it is promoted and

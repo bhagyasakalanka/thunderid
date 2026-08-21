@@ -132,7 +132,7 @@ func (s *Store) GetJob(ctx context.Context, id string) (Job, error) {
 // It reaches across deployments, because a pod holds connections for whichever Data Planes dialed
 // it rather than for one organization.
 func ClaimNextJob(ctx context.Context, dataPlaneID, claimedBy string) (Job, bool, error) {
-	dbClient, err := provider.GetDBProvider().GetEnvironmentDBClient()
+	dbClient, err := provider.GetDBProvider().GetConfigDBClient()
 	if err != nil {
 		return Job{}, false, fmt.Errorf("failed to get database client: %w", err)
 	}
@@ -176,7 +176,7 @@ func CompleteJob(ctx context.Context, deploymentID, id, result, failure string) 
 		status = JobFailed
 	}
 
-	dbClient, err := provider.GetDBProvider().GetEnvironmentDBClient()
+	dbClient, err := provider.GetDBProvider().GetConfigDBClient()
 	if err != nil {
 		return fmt.Errorf("failed to get database client: %w", err)
 	}
@@ -190,7 +190,7 @@ func CompleteJob(ctx context.Context, deploymentID, id, result, failure string) 
 // ReleaseJob returns a claimed job to the queue, for a delivery that could not be attempted. A
 // delivery that was attempted and failed is recorded with CompleteJob instead.
 func ReleaseJob(ctx context.Context, deploymentID, id string) error {
-	dbClient, err := provider.GetDBProvider().GetEnvironmentDBClient()
+	dbClient, err := provider.GetDBProvider().GetConfigDBClient()
 	if err != nil {
 		return fmt.Errorf("failed to get database client: %w", err)
 	}

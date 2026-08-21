@@ -11,7 +11,6 @@ export type ChangeType = 'added' | 'updated' | 'deleted' | 'unchanged';
 export interface Environment {
   id: string;
   name: string;
-  rank: number;
   appliedSeq: number;
   /**
    * Resource keys a user chose not to promote into this environment. The choice is remembered, so a
@@ -26,10 +25,6 @@ export interface Environment {
    * credential created there is issued against it. Exactly one environment holds this.
    */
   managedByControlPlane?: boolean;
-  /** Outgoing promotion edges, with the rank fallback already applied by the service. */
-  promotesToResolved: string[];
-  /** Incoming edges: the environments that can promote into this one. */
-  promotedFrom: string[];
   /**
    * Whether this environment's Data Plane is currently connected. The Data Plane dials the Control
    * Plane and holds that connection open, so nothing can be applied or promoted to one that is not

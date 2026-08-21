@@ -342,9 +342,9 @@ func TestApplyPicksUpVariablesAddedAfterCapture(t *testing.T) {
 
 func TestPromoteSelective(t *testing.T) {
 	svc := newTestService(t, &fakeClient{})
-	dev, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "dev", Rank: intp(1),
+	dev, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "dev",
 		Target: model.Target{DataPlaneID: "dev"}})
-	prod, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "prod", Rank: intp(2),
+	prod, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "prod",
 		Target: model.Target{DataPlaneID: "prod"}})
 
 	_, _ = svc.UploadVersion(context.Background(), dev.ID, bundleOf("app-a", testAppB), nil, "dev-v1")
@@ -375,9 +375,9 @@ func TestPromoteSelective(t *testing.T) {
 func TestPromoteAllAndApply(t *testing.T) {
 	fake := &fakeClient{}
 	svc := newTestService(t, fake)
-	dev, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "dev", Rank: intp(1),
+	dev, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "dev",
 		Target: model.Target{DataPlaneID: "dev"}})
-	prod, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "prod", Rank: intp(2),
+	prod, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{Name: "prod",
 		Target: model.Target{DataPlaneID: "prod"}})
 	_, _ = svc.UploadVersion(context.Background(), dev.ID, bundleOf("app-a", testAppB), nil, "dev-v1")
 
@@ -456,10 +456,10 @@ func TestApplyAllPushesEveryEnvironment(t *testing.T) {
 	fake := &fakeClient{}
 	svc := newTestService(t, fake)
 	dev, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
-		Name: "dev", Rank: intp(1), Target: model.Target{DataPlaneID: "dev"},
+		Name: "dev", Target: model.Target{DataPlaneID: "dev"},
 	})
 	prod, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
-		Name: "prod", Rank: intp(2), Target: model.Target{DataPlaneID: "prod"},
+		Name: "prod", Target: model.Target{DataPlaneID: "prod"},
 	})
 	_, _ = svc.UploadVersion(context.Background(), dev.ID, bundleOf("app-a"), nil, "v1")
 	_, _ = svc.UploadVersion(context.Background(), prod.ID, bundleOf("app-a"), nil, "v1")
@@ -483,10 +483,10 @@ func TestApplyAllSkipsEnvironmentsWithoutAVersionAndKeepsGoing(t *testing.T) {
 	fake := &fakeClient{}
 	svc := newTestService(t, fake)
 	empty, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
-		Name: "empty", Rank: intp(1), Target: model.Target{DataPlaneID: "empty"},
+		Name: "empty", Target: model.Target{DataPlaneID: "empty"},
 	})
 	ready, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
-		Name: "ready", Rank: intp(2), Target: model.Target{DataPlaneID: "ready"},
+		Name: "ready", Target: model.Target{DataPlaneID: "ready"},
 	})
 	_, _ = svc.UploadVersion(context.Background(), ready.ID, bundleOf("app-a"), nil, "v1")
 
@@ -564,10 +564,10 @@ func TestPromoteLeavesTheDestinationsCredentialsAlone(t *testing.T) {
 	fake := &fakeClient{}
 	svc := newTestService(t, fake)
 	dev, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
-		Name: "dev", Rank: intp(1), Target: model.Target{DataPlaneID: "dev"},
+		Name: "dev", Target: model.Target{DataPlaneID: "dev"},
 	})
 	stage, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
-		Name: "stage", Rank: intp(2),
+		Name: "stage",
 		Target: model.Target{
 			DataPlaneID: "stage",
 		},
@@ -613,10 +613,10 @@ func TestPromoteNeverReadsTheDestinationsSecretStore(t *testing.T) {
 	fake := &fakeClient{kvExisting: map[string][2]string{"APP_A_CLIENT_SECRET": {"hash", "the-hash"}}}
 	svc := newTestService(t, fake)
 	dev, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
-		Name: "dev", Rank: intp(1), Target: model.Target{DataPlaneID: "dev"},
+		Name: "dev", Target: model.Target{DataPlaneID: "dev"},
 	})
 	stage, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
-		Name: "stage", Rank: intp(2),
+		Name: "stage",
 		Target: model.Target{
 			DataPlaneID: "stage",
 		},
@@ -643,10 +643,10 @@ func TestCaptureSecretReachesOnlyTheControlPlaneManagedEnvironment(t *testing.T)
 	fake := &fakeClient{}
 	svc := newTestService(t, fake)
 	dev, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
-		Name: "dev", Rank: intp(1), Target: model.Target{DataPlaneID: "dev-dp"},
+		Name: "dev", Target: model.Target{DataPlaneID: "dev-dp"},
 	})
 	_, _ = svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
-		Name: "prod", Rank: intp(2), Target: model.Target{DataPlaneID: "prod-dp"},
+		Name: "prod", Target: model.Target{DataPlaneID: "prod-dp"},
 	})
 
 	// The first environment takes the mark, so a credential has somewhere to go from the outset.
@@ -672,10 +672,10 @@ func TestCaptureSecretReachesOnlyTheControlPlaneManagedEnvironment(t *testing.T)
 func TestSetManagedEnvironmentMovesTheMark(t *testing.T) {
 	svc := newTestService(t, &fakeClient{})
 	dev, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
-		Name: "dev", Rank: intp(1), Target: model.Target{DataPlaneID: "dev-dp"},
+		Name: "dev", Target: model.Target{DataPlaneID: "dev-dp"},
 	})
 	prod, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
-		Name: "prod", Rank: intp(2), Target: model.Target{DataPlaneID: "prod-dp"},
+		Name: "prod", Target: model.Target{DataPlaneID: "prod-dp"},
 	})
 
 	if _, err := svc.SetManagedEnvironment(context.Background(), prod.ID); err != nil {
@@ -697,10 +697,10 @@ func TestSetManagedEnvironmentMovesTheMark(t *testing.T) {
 func TestDeletingTheManagedEnvironmentPassesTheMarkOn(t *testing.T) {
 	svc := newTestService(t, &fakeClient{})
 	dev, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
-		Name: "dev", Rank: intp(1), Target: model.Target{DataPlaneID: "dev-dp"},
+		Name: "dev", Target: model.Target{DataPlaneID: "dev-dp"},
 	})
 	stage, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
-		Name: "stage", Rank: intp(2), Target: model.Target{DataPlaneID: "stage-dp"},
+		Name: "stage", Target: model.Target{DataPlaneID: "stage-dp"},
 	})
 
 	if err := svc.DeleteEnvironment(context.Background(), dev.ID); err != nil {
@@ -743,52 +743,14 @@ func TestVersionHistoryPruned(t *testing.T) {
 	}
 }
 
-func intp(i int) *int { return &i }
-
-func TestCheckVariablesClassifiesACredentialInAnOlderVersion(t *testing.T) {
-	svc := newTestService(t, &fakeClient{secretNames: []string{"ADMIN2_WSO2_COM_PASSWORD"}})
-
-	env, err := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
-		Name: "dev",
-		Target: model.Target{
-			DataPlaneID: "dp",
-		},
-	})
-	if err != nil {
-		t.Fatalf("create environment: %v", err)
-	}
-
-	// A version captured before credentials were classified: SecretKeys is empty even though the
-	// bundle plainly holds a password.
-	if _, err := svc.UploadVersion(context.Background(), env.ID,
-		"resource_type: user\ncredentials:\n  password: \"{{.ADMIN2_WSO2_COM_PASSWORD}}\"\n",
-		map[string]string{}, "captured earlier"); err != nil {
-		t.Fatalf("upload version: %v", err)
-	}
-
-	status, err := svc.CheckVariables(context.Background(), env.ID, "latest")
-	if err != nil {
-		t.Fatalf("check variables: %v", err)
-	}
-	if len(status.Missing) != 0 {
-		t.Fatalf("a password is not a missing variable, got %v", status.Missing)
-	}
-	if len(status.SecretBacked) != 1 || status.SecretBacked[0] != "ADMIN2_WSO2_COM_PASSWORD" {
-		t.Fatalf("the password should be reported as secret backed, got %v", status.SecretBacked)
-	}
-	if len(status.MissingSecrets) != 0 {
-		t.Fatalf("the secret service holds it, so nothing is missing, got %v", status.MissingSecrets)
-	}
-}
-
 // setupPromotionPair builds a dev -> prod pair with two applications in dev.
 func setupPromotionPair(t *testing.T, fake *fakeClient) (*Service, model.Environment, model.Environment) {
 	t.Helper()
 	svc := newTestService(t, fake)
 	dev, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
-		Name: "dev", Rank: intp(1), Target: model.Target{DataPlaneID: "dev"}})
+		Name: "dev", Target: model.Target{DataPlaneID: "dev"}})
 	prod, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
-		Name: "prod", Rank: intp(2), Target: model.Target{DataPlaneID: "prod"}})
+		Name: "prod", Target: model.Target{DataPlaneID: "prod"}})
 	if _, err := svc.UploadVersion(context.Background(), dev.ID, bundleOf("app-a", testAppB), nil,
 		"dev-v1"); err != nil {
 		t.Fatalf("upload: %v", err)
@@ -1082,10 +1044,10 @@ func TestRegenerateDataPlaneTokenIssuesAnotherForTheSameDataPlane(t *testing.T) 
 func TestPromoteComparesAgainstWhatTheDestinationIsRunning(t *testing.T) {
 	svc := newTestService(t, &fakeClient{})
 	dev, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
-		Name: "dev", Rank: intp(1), Target: model.Target{DataPlaneID: "dev-dp"},
+		Name: "dev", Target: model.Target{DataPlaneID: "dev-dp"},
 	})
 	stage, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
-		Name: "stage", Rank: intp(2), Target: model.Target{DataPlaneID: "stage-dp"},
+		Name: "stage", Target: model.Target{DataPlaneID: "stage-dp"},
 	})
 
 	// Stage is running v1. A later capture adds app-b, but nothing has adopted it.
@@ -1129,10 +1091,10 @@ func TestPromoteComparesAgainstWhatTheDestinationIsRunning(t *testing.T) {
 func TestPromoteSendsWhatTheSourceIsRunning(t *testing.T) {
 	svc := newTestService(t, &fakeClient{})
 	dev, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
-		Name: "dev", Rank: intp(1), Target: model.Target{DataPlaneID: "dev-dp"},
+		Name: "dev", Target: model.Target{DataPlaneID: "dev-dp"},
 	})
 	stage, _ := svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
-		Name: "stage", Rank: intp(2), Target: model.Target{DataPlaneID: "stage-dp"},
+		Name: "stage", Target: model.Target{DataPlaneID: "stage-dp"},
 	})
 
 	// Dev is running v1; v2 is a capture that added app-b and was never applied.

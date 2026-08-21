@@ -53,7 +53,6 @@ func registerRoutes(mux *http.ServeMux, reg *registry) {
 		"GET /environments":                      func(s *Server) http.HandlerFunc { return s.listEnvironments },
 		"GET /environments/{id}":                 func(s *Server) http.HandlerFunc { return s.getEnvironment },
 		"GET /data-plane-jobs/{id}":              func(s *Server) http.HandlerFunc { return s.getDataPlaneJob },
-		"PUT /environments/{id}/edges":           func(s *Server) http.HandlerFunc { return s.updateEnvironmentEdges },
 		"DELETE /environments/{id}":              func(s *Server) http.HandlerFunc { return s.deleteEnvironment },
 		"POST /environments/{id}/versions":       func(s *Server) http.HandlerFunc { return s.createVersion },
 		"GET /environments/{id}/versions":        func(s *Server) http.HandlerFunc { return s.listVersions },
