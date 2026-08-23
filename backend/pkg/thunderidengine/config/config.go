@@ -126,6 +126,11 @@ type ServerConfig struct {
 	Port      int    `yaml:"port"       json:"port"`
 	HTTPOnly  bool   `yaml:"http_only"  json:"http_only"`
 	PublicURL string `yaml:"public_url" json:"public_url"`
+	// ControlPlaneManaged marks resources that arrived from a control plane as read only on this
+	// deployment, so a local edit cannot drift from what will be applied over it. Resources created
+	// on this deployment are unaffected and stay editable. Off by default, which is what a standalone
+	// server with no control plane in front of it wants.
+	ControlPlaneManaged bool `yaml:"control_plane_managed" json:"control_plane_managed"`
 	// Identifier is the deployment id that scopes all persisted resources. It is put on every
 	// request's context at the edge, and it is the only value stores partition by.
 	Identifier     string         `yaml:"identifier" json:"identifier"`
