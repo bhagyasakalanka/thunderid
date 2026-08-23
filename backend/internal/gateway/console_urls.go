@@ -32,9 +32,17 @@ import (
 const (
 	consoleURLVariable          = "APPLICATION_CONSOLE_URL"
 	consoleRedirectURIsVariable = "APPLICATION_CONSOLE_REDIRECT_URIS"
+	consoleClientIDVariable     = "APPLICATION_CONSOLE_CLIENT_ID"
 )
 
-// setConsoleURLs points a newly created gateway's Console application at that gateway.
+// consoleClientID is the client id every Console signs in with. The bootstrap bundle gives the
+// Console this fixed id and each plane's console is built to use it, so it is a convention rather
+// than an operator's choice. The exporter externalizes client ids as a rule, which leaves this one
+// as a placeholder with nobody to fill it, so it is filled here.
+const consoleClientID = "CONSOLE"
+
+// setConsoleVariables fills in what a newly created gateway's Console application needs: where it
+// serves, and the client id it signs in with.
 //
 // The Console is the one application a control plane creates for itself, so its URL and redirect URI
 // are the control plane's. Applied unchanged they would send a data plane's users to the control
@@ -46,7 +54,7 @@ const (
 //
 // A gateway registered without an address has nothing to point at, and its Console keeps the control
 // plane's URLs until the gateway records one.
-func (s *Server) setConsoleURLs(ctx context.Context, envID, dataPlaneURL string) error {
+func (s *Server) setConsoleVariables(ctx context.Context, envID, dataPlaneURL string) error {
 	if s.envVars == nil || strings.TrimSpace(dataPlaneURL) == "" {
 		return nil
 	}
@@ -58,6 +66,7 @@ func (s *Server) setConsoleURLs(ctx context.Context, envID, dataPlaneURL string)
 		consoleURLVariable: console,
 		// An array placeholder is read as a JSON array when it is not supplied as indexed values.
 		consoleRedirectURIsVariable: fmt.Sprintf("[%q]", console),
+		consoleClientIDVariable:     consoleClientID,
 	} {
 		_, svcErr := s.envVars.CreateGatewayVariable(scoped, envID,
 			gatewayvariable.CreateGatewayVariableRequest{

@@ -54,6 +54,7 @@ import (
 	"github.com/thunder-id/thunderid/internal/gateway/jobrunner"
 	"github.com/thunder-id/thunderid/internal/gateway/secretcapture"
 	gatewayservice "github.com/thunder-id/thunderid/internal/gateway/service"
+	"github.com/thunder-id/thunderid/internal/gateway/thunder"
 	"github.com/thunder-id/thunderid/internal/gatewayvariable"
 	"github.com/thunder-id/thunderid/internal/group"
 	"github.com/thunder-id/thunderid/internal/idp"
@@ -344,9 +345,18 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 	)
 
 	// A capture reads the organization's workspace, which is this very server, so the gateway
-	// manager is told where that answers.
+	// manager is told where that answers and which certificate it presents. The certificate is this
+	// server's own, and is trusted explicitly because on-premise it is commonly signed by a private
+	// CA that the system roots do not carry.
 	if gatewayManager != nil {
-		gatewayManager.SetWorkspaceURL(gateway.WorkspaceURL(config.GetServerRuntime().Config))
+		runtime := config.GetServerRuntime()
+		gatewayManager.SetWorkspaceURL(gateway.WorkspaceURL(runtime.Config))
+		workspaceCA := gateway.WorkspaceCA(runtime.Config, runtime.ServerHome)
+		if err := thunder.CheckCA(workspaceCA); err != nil {
+			logger.Error(ctx, "The workspace certificate cannot be trusted, so a capture will fail",
+				log.Error(err))
+		}
+		gatewayManager.SetWorkspaceCA(workspaceCA)
 	}
 
 	// Register the health service.
@@ -507,6 +517,7 @@ func initGatewayManager(ctx context.Context, logger *log.Logger, mux *http.Serve
 type gatewayRegistry interface {
 	secretcapture.LocalCaptureRouter
 	SetWorkspaceURL(baseURL string)
+	SetWorkspaceCA(caFile string)
 	SetDataPlanes(planes gatewayservice.DataPlanes)
 	SetDataPlaneTokenIssuer(issuer gatewayservice.DataPlaneTokenIssuer)
 	SetSecretSealer(sealer gatewayservice.SecretSealer)

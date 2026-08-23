@@ -20,6 +20,7 @@ package gateway
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/thunder-id/thunderid/internal/system/config"
@@ -32,4 +33,17 @@ func WorkspaceURL(cfg config.Config) string {
 		return url
 	}
 	return fmt.Sprintf("https://%s:%d", cfg.Server.Hostname, cfg.Server.Port)
+}
+
+// WorkspaceCA is the certificate a capture trusts when it reads the workspace.
+//
+// The workspace is this very server, so what it presents is this server's own certificate. Trusting
+// it explicitly is what lets a control plane serving a certificate from a private CA read its own
+// configuration, rather than turning verification off to get there.
+func WorkspaceCA(cfg config.Config, serverHome string) string {
+	certFile := strings.TrimSpace(cfg.TLS.CertFile)
+	if certFile == "" || filepath.IsAbs(certFile) {
+		return certFile
+	}
+	return filepath.Join(serverHome, certFile)
 }

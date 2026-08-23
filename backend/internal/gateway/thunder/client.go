@@ -25,12 +25,14 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 )
@@ -51,18 +53,52 @@ type Client struct {
 	http    *http.Client
 }
 
-// New builds a client for baseURL. When insecure is set, TLS certificate verification is skipped
-// (useful for self-signed local development servers).
-func New(baseURL string, creds Credentials, insecure bool) *Client {
+// New builds a client for baseURL, trusting the certificate in caFile in addition to the system
+// roots. An empty caFile leaves the system roots alone, which is what a server presenting a
+// publicly-trusted certificate needs.
+//
+// Verification is never turned off. The one server this talks to is the control plane it runs inside,
+// which commonly serves a certificate from a private CA that the system roots do not carry, so the
+// certificate is trusted explicitly rather than by trusting everything.
+func New(baseURL string, creds Credentials, caFile string) *Client {
 	transport := &http.Transport{}
-	if insecure {
-		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // opt-in for local dev
+	if pool, err := rootsWith(caFile); err == nil && pool != nil {
+		transport.TLSClientConfig = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
 	}
 	return &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		creds:   creds,
 		http:    &http.Client{Timeout: 60 * time.Second, Transport: transport},
 	}
+}
+
+// rootsWith returns the system roots plus the certificate in caFile, or nil when there is nothing to
+// add. A pool that could not be built is reported so the caller can say so at startup rather than
+// leaving every capture to fail with a certificate error.
+func rootsWith(caFile string) (*x509.CertPool, error) {
+	if strings.TrimSpace(caFile) == "" {
+		return nil, nil
+	}
+	// The path is this server's own configured certificate, not anything a request supplies.
+	pem, err := os.ReadFile(caFile) //nolint:gosec // operator-configured path, never request input
+	if err != nil {
+		return nil, fmt.Errorf("failed to read the workspace certificate %q: %w", caFile, err)
+	}
+	pool, err := x509.SystemCertPool()
+	if err != nil || pool == nil {
+		pool = x509.NewCertPool()
+	}
+	if !pool.AppendCertsFromPEM(pem) {
+		return nil, fmt.Errorf("the workspace certificate %q holds no PEM certificate", caFile)
+	}
+	return pool, nil
+}
+
+// CheckCA reports whether caFile can be used to trust the workspace, so a misconfigured path is
+// named once at startup instead of surfacing as a certificate error on every capture.
+func CheckCA(caFile string) error {
+	_, err := rootsWith(caFile)
+	return err
 }
 
 // ExportResult is the parsed response of an export call.
@@ -99,9 +135,15 @@ type exportOptions struct {
 	Format              string `json:"format"`
 }
 
+// jsonExportResponse mirrors the export API's response.
+//
+// The field names are that API's contract, not this package's naming. "environment_variables" is the
+// body of the .env file the export generates, in the operating-system sense of the term, and has
+// nothing to do with a gateway: renaming it here would silently decode to nothing and leave every
+// captured version with no variable values at all.
 type jsonExportResponse struct {
-	Resources        string `json:"resources"`
-	GatewayVariables string `json:"gateway_variables"`
+	Resources            string `json:"resources"`
+	EnvironmentVariables string `json:"environment_variables"`
 }
 
 // Export requests every resource type and returns the combined parameterized YAML and the .env body.
@@ -121,7 +163,7 @@ func (c *Client) Export(ctx context.Context) (ExportResult, error) {
 	if err := c.do(ctx, http.MethodPost, "/export", req, &resp); err != nil {
 		return ExportResult{}, err
 	}
-	return ExportResult{Resources: resp.Resources, EnvFile: resp.GatewayVariables}, nil
+	return ExportResult{Resources: resp.Resources, EnvFile: resp.EnvironmentVariables}, nil
 }
 
 type secretListEntry struct {
