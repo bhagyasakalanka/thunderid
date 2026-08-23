@@ -325,13 +325,11 @@ func InitSystemPermissions(handle string) {
 		{"PUT /environment-variables/**", p.EnvVar},
 		{"DELETE /environment-variables/**", p.EnvVar},
 
-		// System tenant-management APIs. The `system` root scope satisfies these; the service
-		// additionally requires the caller to belong to the system tenant.
-		{"GET /system/tenants", p.TenantView},
-		{"POST /system/tenants", p.Tenant},
-		{"GET /system/tenants/**", p.TenantView},
-		{"POST /system/tenants/**", p.Tenant},
-		{"DELETE /system/tenants/**", p.Tenant},
+		// Tenant self-management APIs. These act on the caller's own workspace, named by the deployment
+		// claim in its token, so the scope is all there is to check.
+		{"GET /system/tenant", p.TenantView},
+		{"POST /system/tenant", p.Tenant},
+		{"DELETE /system/tenant", p.Tenant},
 
 		// Import APIs.
 		{"POST /import", p.Root},

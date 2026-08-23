@@ -260,7 +260,7 @@ func (s *Service) GetEnvironment(ctx context.Context, id string) (model.Environm
 	return s.store.GetEnvironment(ctx, id)
 }
 
-// ListEnvironments returns all environments ordered by rank.
+// ListEnvironments returns all environments ordered by name.
 func (s *Service) ListEnvironments(ctx context.Context) ([]model.Environment, error) {
 	return s.store.ListEnvironments(ctx)
 }

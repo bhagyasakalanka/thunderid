@@ -46,7 +46,7 @@ var (
 	}
 
 	// queryListEnvironments retrieves every environment document for the deployment. Ordering is
-	// resolved in the server, which sorts by rank and then name, neither of which is a column.
+	// resolved in the server, which sorts by name, which is not a column.
 	queryListEnvironments = dbmodel.DBQuery{
 		ID:    "EMQ-ENV-003",
 		Query: `SELECT DATA FROM "ENVIRONMENT" WHERE DEPLOYMENT_ID = $1`,

@@ -42,15 +42,15 @@ These scripts create tables unconditionally, so run them against empty databases
 
 ### Why there is nothing to seed
 
-**The Control Plane's own tenant holds no resources.** The tenant named by
-`server.system_deployment_id` is an identity rather than a resource owner. Callers authenticate
-against the trusted issuer, which is validated from `deployment.yaml` against the issuer's JWKS and
-reads no rows, and the plane issues no tokens of its own. Nothing seeds from it either: a new tenant
-copies the oldest tenant of its own organization, or, when there is none, is provisioned from the
-`bootstrap/` bundle in the image.
+**No tenant is privileged over another.** Callers authenticate against the trusted issuer, which is
+validated from `deployment.yaml` against the issuer's JWKS and reads no rows, and the plane issues no
+tokens of its own. Every tenant API acts on the organization named by the caller's own
+`deploymentId` claim, so there is no tenant that provisions, lists, or deletes the others.
 
-That bundle exists for the tenants created through `/system/tenants`, which provision themselves as
-they are created. It stays in the image for that reason, and is never applied to the system tenant.
+An organization provisions itself with `POST /system/tenant`, which applies the `bootstrap/` bundle
+in the image into that organization's own partition. That is what the bundle is in the image for.
+Nothing is copied from another tenant: an organization has one workspace, and its gateways are
+resources inside it, registered with `POST /environments` using the same token.
 
 **A Data Plane holds nothing either, at first.** It is fed by a Control Plane: its organization
 units, user types, applications, flows and themes all arrive on the first apply, so seeding any of

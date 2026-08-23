@@ -510,8 +510,7 @@ type envmgrRegistry interface {
 	SetDataPlanes(planes envmgrservice.DataPlanes)
 	SetDataPlaneTokenIssuer(issuer envmgrservice.DataPlaneTokenIssuer)
 	SetSecretSealer(sealer envmgrservice.SecretSealer)
+	SetEnvironmentVariables(envVars environmentvariable.EnvironmentVariableServiceInterface)
 	// DeliverPending carries out work queued for a data plane this pod holds a connection to.
 	DeliverPending(ctx context.Context, dataPlaneID string) error
-	CreateEnvironment(ctx context.Context, deploymentID string,
-		in envmgrservice.CreateEnvironmentInput) (envmgrservice.CreateEnvironmentResult, error)
 }

@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/thunder-id/thunderid/internal/environmentvariable"
 	"github.com/thunder-id/thunderid/internal/envmgr/model"
 	"github.com/thunder-id/thunderid/internal/envmgr/service"
 )
@@ -33,11 +34,17 @@ import (
 // Server routes HTTP requests to the application service.
 type Server struct {
 	svc *service.Service
+	// org is the organization this server serves, and the partition its gateways and their variables
+	// are recorded under.
+	org string
+	// envVars holds the per-environment values an apply resolves its placeholders from.
+	envVars environmentvariable.EnvironmentVariableServiceInterface
 }
 
 // New builds a Server.
-func New(svc *service.Service) *Server {
-	return &Server{svc: svc}
+func New(svc *service.Service, org string,
+	envVars environmentvariable.EnvironmentVariableServiceInterface) *Server {
+	return &Server{svc: svc, org: org, envVars: envVars}
 }
 
 // ProtectedHandler returns the full handler with protect applied to every route except the health
@@ -118,6 +125,10 @@ func (s *Server) createEnvironment(w http.ResponseWriter, r *http.Request) {
 		ManagedByControlPlane: req.ManagedByControlPlane,
 	})
 	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if err := s.setConsoleURLs(r.Context(), env.Environment.ID, req.Target.BaseURL); err != nil {
 		writeError(w, err)
 		return
 	}

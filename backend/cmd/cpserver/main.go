@@ -44,7 +44,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/thunder-id/thunderid/internal/envmgr"
 	"github.com/thunder-id/thunderid/internal/system/cache"
 	"github.com/thunder-id/thunderid/internal/system/config"
 	"github.com/thunder-id/thunderid/internal/system/constants"
@@ -135,20 +134,19 @@ func main() {
 		return
 	}
 
-	// Register the platform tenant-management APIs (usable only by the system tenant). These reuse the
-	// same import service the bootstrap uses to provision a new tenant's baseline at runtime.
-	tenantService, err := tenant.Initialize(mux, importService, tenant.Config{
-		DefaultsDir:        path.Join(serverHome, "bootstrap"),
-		PublicURL:          config.GetServerURL(&cfg.Server),
-		SystemDeploymentID: cfg.Server.SystemDeploymentID,
-	})
-	if err != nil {
+	// Register the tenant self-management APIs, through which an organization provisions and
+	// deprovisions its own workspace. These reuse the same import service the bootstrap uses to
+	// provision a tenant's baseline at runtime.
+	if _, err := tenant.Initialize(mux, importService, tenant.Config{
+		DefaultsDir: path.Join(serverHome, "bootstrap"),
+		PublicURL:   config.GetServerURL(&cfg.Server),
+	}); err != nil {
 		logger.Fatal(ctx, "Failed to initialize TenantService", log.Error(err))
 	}
-	// Registering a deployment as an environment of its organization is done through the environment
-	// manager, so the tenant service is given the way in when one is hosted here.
+	// A gateway's Console is pointed at that gateway's own address as it is created, which is recorded
+	// as an environment variable.
 	if envManager != nil {
-		tenantService.SetBaselineSeeder(envmgr.NewEnvironmentSeeder(envManager, envVarService))
+		envManager.SetEnvironmentVariables(envVarService)
 	}
 
 	// Initialize the Resource Server token-revocation cache. The initial deny-list snapshot is loaded

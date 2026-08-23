@@ -25,6 +25,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/thunder-id/thunderid/internal/environmentvariable"
 	"github.com/thunder-id/thunderid/internal/envmgr/service"
 	"github.com/thunder-id/thunderid/internal/envmgr/store"
 	"github.com/thunder-id/thunderid/internal/envmgr/thunder"
@@ -42,6 +43,7 @@ type registry struct {
 	dataPlanes   service.DataPlanes
 	tokenIssuer  service.DataPlaneTokenIssuer
 	sealer       service.SecretSealer
+	envVars      environmentvariable.EnvironmentVariableServiceInterface
 
 	mu      sync.Mutex
 	servers map[string]*Server
@@ -56,28 +58,13 @@ func (r *registry) serverFor(ctx context.Context) (*Server, error) {
 	return r.serverForID(deployment.ResolveDefault(ctx))
 }
 
-// storeKeyFor returns the store an environment belongs in.
-//
-// An organization's environments share one store, because promotion is a relationship between them:
-// each has to see the others to be promoted to, and a credential captured in one has to reach that
-// one's data plane. A deployment id names its organization ("<org>:<env>"), so the organization is
-// the key. An id that names no organization is its own store, which is what a deployment provisioned
-// before organizations existed keeps.
-func storeKeyFor(deploymentID string) string {
-	org, _, found := strings.Cut(deploymentID, ":")
-	if !found || strings.TrimSpace(org) == "" {
-		return deploymentID
-	}
-	return org
-}
-
 // serverForID returns a named deployment's environment manager. It exists for the capture path, which
 // knows the deployment the credential belongs to without a request to resolve it from.
 func (r *registry) serverForID(id string) (*Server, error) {
 	if strings.TrimSpace(id) == "" {
 		return nil, fmt.Errorf("no deployment in context, so the environment manager cannot be scoped")
 	}
-	id = storeKeyFor(id)
+	id = deployment.OrganizationOf(id)
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -97,20 +84,21 @@ func (r *registry) serverForID(id string) (*Server, error) {
 	svc.SetOrganization(id)
 	svc.SetDataPlanes(r.dataPlanes)
 	svc.SetDataPlaneTokenIssuer(r.tokenIssuer)
-	server := New(svc)
+	server := New(svc, id, r.envVars)
 	r.servers[id] = server
 	return server, nil
 }
 
-// CreateEnvironment registers an environment in the store its deployment belongs to, so a tenant
-// appears in its organization's promotion chain without a second call to set it up.
-func (r *registry) CreateEnvironment(ctx context.Context, deploymentID string,
-	in service.CreateEnvironmentInput) (service.CreateEnvironmentResult, error) {
-	server, err := r.serverForID(deploymentID)
-	if err != nil {
-		return service.CreateEnvironmentResult{}, err
+// SetEnvironmentVariables installs the store a new gateway's Console URLs are recorded in. It is set
+// after the fact because the environment variable service is built after the environment manager is
+// mounted.
+func (r *registry) SetEnvironmentVariables(envVars environmentvariable.EnvironmentVariableServiceInterface) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.envVars = envVars
+	for _, server := range r.servers {
+		server.envVars = envVars
 	}
-	return server.svc.CreateEnvironment(ctx, in)
 }
 
 // SetDataPlaneTokenIssuer installs what mints the credential a data plane connects with. It is set

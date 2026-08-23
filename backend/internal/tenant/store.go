@@ -32,43 +32,43 @@ import (
 type tenantStoreInterface interface {
 	CreateTenant(ctx context.Context, t Tenant) error
 	GetTenant(ctx context.Context, deploymentID string) (Tenant, error)
-	ListTenants(ctx context.Context) ([]Tenant, error)
 	DeleteTenantRecord(ctx context.Context, deploymentID string) error
 	IsProvisioned(ctx context.Context, deploymentID string) (bool, error)
 	PurgeTenantData(ctx context.Context, deploymentID string) error
 }
 
-// tenantStore is the default implementation of tenantStoreInterface. The registry rows it manages are
-// owned by (scoped to) the system tenant; the purge operates on an arbitrary target deployment id.
+// tenantStore is the default implementation of tenantStoreInterface. A registry row is owned by the
+// organization it describes, so it is partitioned by the same deployment id as everything else that
+// organization owns.
 type tenantStore struct {
-	dbProvider         provider.DBProviderInterface
-	systemDeploymentID string
+	dbProvider provider.DBProviderInterface
 }
 
-func newTenantStore(systemDeploymentID string) tenantStoreInterface {
-	return &tenantStore{dbProvider: provider.GetDBProvider(), systemDeploymentID: systemDeploymentID}
+func newTenantStore() tenantStoreInterface {
+	return &tenantStore{dbProvider: provider.GetDBProvider()}
 }
 
-// CreateTenant records a managed tenant in the registry.
+// CreateTenant records a tenant in the registry.
 func (s *tenantStore) CreateTenant(ctx context.Context, t Tenant) error {
 	dbClient, err := s.dbProvider.GetConfigDBClient()
 	if err != nil {
 		return fmt.Errorf("failed to get database client: %w", err)
 	}
-	_, err = dbClient.QueryContext(ctx, queryCreateTenant, t.ID, t.DeploymentID, t.Name, s.systemDeploymentID)
+	// The organization owns its own row, so it is both the row's subject and its partition.
+	_, err = dbClient.QueryContext(ctx, queryCreateTenant, t.ID, t.DeploymentID, t.Name, t.DeploymentID)
 	if err != nil {
 		return fmt.Errorf("failed to create tenant record: %w", err)
 	}
 	return nil
 }
 
-// GetTenant retrieves a managed tenant's registry row by deployment id.
+// GetTenant retrieves a tenant's registry row by deployment id.
 func (s *tenantStore) GetTenant(ctx context.Context, deploymentID string) (Tenant, error) {
 	dbClient, err := s.dbProvider.GetConfigDBClient()
 	if err != nil {
 		return Tenant{}, fmt.Errorf("failed to get database client: %w", err)
 	}
-	results, err := dbClient.QueryContext(ctx, queryGetTenantByDeploymentID, deploymentID, s.systemDeploymentID)
+	results, err := dbClient.QueryContext(ctx, queryGetTenantByDeploymentID, deploymentID)
 	if err != nil {
 		return Tenant{}, fmt.Errorf("failed to execute query: %w", err)
 	}
@@ -78,30 +78,13 @@ func (s *tenantStore) GetTenant(ctx context.Context, deploymentID string) (Tenan
 	return parseTenantRow(results[0]), nil
 }
 
-// ListTenants returns all managed tenants.
-func (s *tenantStore) ListTenants(ctx context.Context) ([]Tenant, error) {
-	dbClient, err := s.dbProvider.GetConfigDBClient()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get database client: %w", err)
-	}
-	results, err := dbClient.QueryContext(ctx, queryListTenants, s.systemDeploymentID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to execute query: %w", err)
-	}
-	tenants := make([]Tenant, 0, len(results))
-	for _, row := range results {
-		tenants = append(tenants, parseTenantRow(row))
-	}
-	return tenants, nil
-}
-
-// DeleteTenantRecord removes a managed tenant's registry row (no-op if absent).
+// DeleteTenantRecord removes a tenant's registry row (no-op if absent).
 func (s *tenantStore) DeleteTenantRecord(ctx context.Context, deploymentID string) error {
 	dbClient, err := s.dbProvider.GetConfigDBClient()
 	if err != nil {
 		return fmt.Errorf("failed to get database client: %w", err)
 	}
-	if _, err := dbClient.ExecuteContext(ctx, queryDeleteTenantRecord, deploymentID, s.systemDeploymentID); err != nil {
+	if _, err := dbClient.ExecuteContext(ctx, queryDeleteTenantRecord, deploymentID); err != nil {
 		return fmt.Errorf("failed to delete tenant record: %w", err)
 	}
 	return nil

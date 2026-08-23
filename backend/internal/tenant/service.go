@@ -23,7 +23,6 @@ import (
 	"errors"
 	"os"
 	"regexp"
-	"strings"
 	"sync"
 
 	tidcommon "github.com/thunder-id/thunderid/pkg/thunderidengine/common"
@@ -37,117 +36,70 @@ import (
 
 const tenantLoggerComponentName = "TenantService"
 
-// deploymentIDPattern restricts a managed tenant's deployment id to a safe, portable character set.
-var deploymentIDPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]+$`)
+// deploymentIDPattern restricts a tenant's deployment id to a safe, portable character set.
+var deploymentIDPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
-// orgEnvPattern restricts an organization and environment name. It excludes the separator, so a
-// deployment id always splits back into the pair it was built from.
-var orgEnvPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
-
-// BaselineSeeder copies an organization's existing configuration into a newly created tenant.
-//
-// It is supplied by the server rather than built here, because the configuration comes from the
-// environment manager, which is hosted alongside this service rather than owned by it. Without one, a
-// second environment is created empty and is populated by the first promotion into it.
-type BaselineSeeder interface {
-	// RegisterEnvironment records the tenant as an environment of its organization, so it takes part
-	// in promotion without a second call to set it up.
-	RegisterEnvironment(ctx context.Context, in RegisterEnvironmentInput) (*EnvironmentSummary, error)
-}
-
-// RegisterEnvironmentInput describes the promotion entry a new tenant is registered as.
-type RegisterEnvironmentInput struct {
-	// Name is the environment's name within its organization, e.g. "dev".
-	Name string
-	// DeploymentID is the tenant this environment's configuration is held in.
-	DeploymentID string
-	// Rank orders it in the promotion chain. Zero means the end of the chain.
-	Rank      int
-	DataPlane DataPlane
-}
-
-// TenantServiceInterface defines platform tenant-management operations, usable only by the system
-// tenant.
+// TenantServiceInterface defines the operations a tenant performs on its own workspace.
 type TenantServiceInterface interface {
-	CreateTenant(ctx context.Context, request CreateTenantRequest) (*CreateTenantResponse, *tidcommon.ServiceError)
-	ListTenants(ctx context.Context) (*TenantListResponse, *tidcommon.ServiceError)
-	DeleteTenant(ctx context.Context, deploymentID string) *tidcommon.ServiceError
-	// RegisterEnvironment registers an existing tenant as an environment of its organization, for a
-	// tenant created before its data plane existed.
-	RegisterEnvironment(ctx context.Context, deploymentID string,
-		request RegisterEnvironmentRequest) (*EnvironmentSummary, *tidcommon.ServiceError)
-	// SetBaselineSeeder installs what a later environment of an organization is copied from.
-	SetBaselineSeeder(seeder BaselineSeeder)
+	CreateTenant(ctx context.Context, request CreateTenantRequest) (*Tenant, *tidcommon.ServiceError)
+	GetTenant(ctx context.Context) (*Tenant, *tidcommon.ServiceError)
+	DeleteTenant(ctx context.Context) *tidcommon.ServiceError
 }
 
 // tenantService is the default implementation of TenantServiceInterface.
 type tenantService struct {
-	store              tenantStoreInterface
-	importSvc          importer.ImportServiceInterface
-	defaultsDir        string
-	publicURL          string
-	systemDeploymentID string
+	store       tenantStoreInterface
+	importSvc   importer.ImportServiceInterface
+	defaultsDir string
+	publicURL   string
 	// bootstrapRun provisions a tenant's baseline. It defaults to bootstrap.Run and is a field so
 	// tests can substitute it.
 	bootstrapRun func(ctx context.Context, importSvc importer.ImportServiceInterface, opts bootstrap.Options) error
-	// seeder copies an organization's configuration into its later environments.
-	seeder BaselineSeeder
 	// provisionMu serializes provisioning because it sets process-global env vars for the bootstrap
 	// bundle's template substitution and runs the bootstrap import.
 	provisionMu sync.Mutex
 }
 
-// SetBaselineSeeder installs what a later environment of an organization is copied from. It is set
-// after the fact because the environment manager is built after this service.
-func (s *tenantService) SetBaselineSeeder(seeder BaselineSeeder) {
-	s.seeder = seeder
-}
-
 func newTenantService(store tenantStoreInterface, importSvc importer.ImportServiceInterface,
-	defaultsDir, publicURL, systemDeploymentID string) TenantServiceInterface {
+	defaultsDir, publicURL string) TenantServiceInterface {
 	return &tenantService{
-		store:              store,
-		importSvc:          importSvc,
-		defaultsDir:        defaultsDir,
-		publicURL:          publicURL,
-		systemDeploymentID: systemDeploymentID,
-		bootstrapRun:       bootstrap.Run,
+		store:        store,
+		importSvc:    importSvc,
+		defaultsDir:  defaultsDir,
+		publicURL:    publicURL,
+		bootstrapRun: bootstrap.Run,
 	}
 }
 
-// requireSystemTenant ensures the caller belongs to the system tenant (its token carries the system
-// deployment id). This is what makes tenant management exclusive to the system tenant.
-func (s *tenantService) requireSystemTenant(ctx context.Context) *tidcommon.ServiceError {
-	id, ok := deployment.IDFromContext(ctx)
-	if !ok || id != s.systemDeploymentID {
-		return &ErrorNotSystemTenant
-	}
-	return nil
-}
-
-// CreateTenant provisions an organization's environment and records it in the registry.
+// callerOrganization is the organization the request acts on: the one its token names, and the only
+// one it can reach. It comes from the token rather than the request, so there is nothing to authorize
+// beyond the claim already being there.
 //
-// The organization's first environment is provisioned from the bootstrap baseline. Every later one is
-// created empty and seeded from the first, so an organization's environments hold the same resources
-// under the same ids and configuration can be promoted between them. Provisioning each from the
-// baseline instead would give every environment its own organization unit, user types and themes, and
-// a promotion would then collide with them or name ids the destination has never had.
+// A server that takes no deployment from the token has a single tenant provisioned at install time,
+// and nothing here applies to it.
+func (s *tenantService) callerOrganization(ctx context.Context) (string, *tidcommon.ServiceError) {
+	id, ok := deployment.IDFromContext(ctx)
+	if !ok {
+		return "", &ErrorNoTenantInToken
+	}
+	// The deployment claim may name an environment ("<org>:<env>"). The workspace is the
+	// organization's, so everything the organization owns stays in one partition.
+	org := deployment.OrganizationOf(id)
+	if !deploymentIDPattern.MatchString(org) {
+		return "", &ErrorInvalidDeploymentID
+	}
+	return org, nil
+}
+
+// CreateTenant provisions the caller's own workspace from the bootstrap baseline.
+//
+// The workspace holds the organization's configuration. Its gateways are resources inside it rather
+// than workspaces of their own, and are created through the environment API once this exists.
 func (s *tenantService) CreateTenant(ctx context.Context,
-	request CreateTenantRequest) (*CreateTenantResponse, *tidcommon.ServiceError) {
-	if svcErr := s.requireSystemTenant(ctx); svcErr != nil {
+	request CreateTenantRequest) (*Tenant, *tidcommon.ServiceError) {
+	deploymentID, svcErr := s.callerOrganization(ctx)
+	if svcErr != nil {
 		return nil, svcErr
-	}
-	if !orgEnvPattern.MatchString(request.Org) || !orgEnvPattern.MatchString(request.Env) {
-		return nil, &ErrorInvalidDeploymentID
-	}
-	// The deployment is the organization. Its environments are resources inside that one workspace
-	// rather than deployments of their own, so a second environment adds no deployment.
-	deploymentID := request.Org
-	if deploymentID == s.systemDeploymentID {
-		return nil, &ErrorReservedSystemTenant
-	}
-	if !deploymentIDPattern.MatchString(deploymentID) {
-		return nil, &ErrorInvalidDeploymentID
 	}
 
 	provisioned, err := s.store.IsProvisioned(ctx, deploymentID)
@@ -163,17 +115,7 @@ func (s *tenantService) CreateTenant(ctx context.Context,
 		return nil, s.internalError(ctx, "failed to generate tenant id", err)
 	}
 
-	// A deployment is provisioned from the baseline bundle. Nothing is copied from a sibling: an
-	// organization has one workspace, and its environments are resources inside it rather than
-	// deployments of their own.
 	if svcErr := s.provision(ctx, deploymentID); svcErr != nil {
-		return nil, svcErr
-	}
-
-	// This is the organization's first environment: the deployment did not exist a moment ago.
-	rank := 1
-	environment, svcErr := s.registerEnvironment(ctx, request, deploymentID, rank)
-	if svcErr != nil {
 		return nil, svcErr
 	}
 
@@ -181,102 +123,11 @@ func (s *tenantService) CreateTenant(ctx context.Context,
 	if err := s.store.CreateTenant(ctx, tenant); err != nil {
 		return nil, s.internalError(ctx, "failed to record tenant", err)
 	}
-	return &CreateTenantResponse{Tenant: tenant, Environment: environment}, nil
+	return &tenant, nil
 }
 
-// RegisterEnvironment registers an existing tenant as an environment of its organization.
-//
-// It exists because a tenant can be created before its data plane does, and the environment cannot be
-// registered until there is one to apply to. Doing it here rather than through the environment API
-// means the platform can complete the setup with the same system credentials it created the tenant
-// with, instead of needing a token for that tenant.
-func (s *tenantService) RegisterEnvironment(ctx context.Context, deploymentID string,
-	request RegisterEnvironmentRequest) (*EnvironmentSummary, *tidcommon.ServiceError) {
-	if svcErr := s.requireSystemTenant(ctx); svcErr != nil {
-		return nil, svcErr
-	}
-	if strings.TrimSpace(request.DataPlane.ID) == "" {
-		return nil, &ErrorInvalidDataPlane
-	}
-	// The environment is named by the request, because the deployment is the organization and its id
-	// names no environment. Without a name there is nothing to register.
-	if !orgEnvPattern.MatchString(request.Env) {
-		return nil, &ErrorInvalidDeploymentID
-	}
-	if deploymentID == s.systemDeploymentID {
-		return nil, &ErrorReservedSystemTenant
-	}
-
-	provisioned, err := s.store.IsProvisioned(ctx, deploymentID)
-	if err != nil {
-		return nil, s.internalError(ctx, "failed to check tenant provisioning state", err)
-	}
-	if !provisioned {
-		return nil, &ErrorTenantNotFound
-	}
-	if s.seeder == nil {
-		return nil, &ErrorEnvironmentRegistrationUnavailable
-	}
-
-	rank := 0
-	if request.Rank != nil {
-		rank = *request.Rank
-	}
-
-	summary, err := s.seeder.RegisterEnvironment(ctx, RegisterEnvironmentInput{
-		Name:         request.Env,
-		DeploymentID: deploymentID,
-		Rank:         rank,
-		DataPlane:    request.DataPlane,
-	})
-	if err != nil {
-		log.GetLogger().With(log.String(log.LoggerKeyComponentName, tenantLoggerComponentName)).
-			Error(ctx, "Failed to register the tenant as an environment",
-				log.String("deploymentId", deploymentID), log.Error(err))
-		svcErr := ErrorEnvironmentRegistrationFailed
-		svcErr.ErrorDescription = tidcommon.I18nMessage{
-			Key:          "error.tenantservice.environment_registration_failed_description",
-			DefaultValue: err.Error(),
-		}
-		return nil, &svcErr
-	}
-	return summary, nil
-}
-
-// registerEnvironment records the new tenant as an environment of its organization. Without a data
-// plane to apply to there is no environment to register, which is not an error: the tenant is usable
-// and the environment can be registered once its data plane exists.
-func (s *tenantService) registerEnvironment(ctx context.Context, request CreateTenantRequest,
-	deploymentID string, rank int) (*EnvironmentSummary, *tidcommon.ServiceError) {
-	if request.DataPlane == nil || strings.TrimSpace(request.DataPlane.ID) == "" {
-		return nil, nil
-	}
-	if s.seeder == nil {
-		return nil, nil
-	}
-
-	summary, err := s.seeder.RegisterEnvironment(ctx, RegisterEnvironmentInput{
-		Name:         request.Env,
-		DeploymentID: deploymentID,
-		Rank:         rank,
-		DataPlane:    *request.DataPlane,
-	})
-	if err != nil {
-		log.GetLogger().With(log.String(log.LoggerKeyComponentName, tenantLoggerComponentName)).
-			Error(ctx, "Failed to register the tenant as an environment",
-				log.String("deploymentId", deploymentID), log.Error(err))
-		svcErr := ErrorEnvironmentRegistrationFailed
-		svcErr.ErrorDescription = tidcommon.I18nMessage{
-			Key:          "error.tenantservice.environment_registration_failed_description",
-			DefaultValue: err.Error(),
-		}
-		return nil, &svcErr
-	}
-	return summary, nil
-}
-
-// provision runs the bootstrap import scoped to the target deployment id. It is serialized because it
-// sets process-global env vars that the bootstrap bundle's placeholders resolve from.
+// provision runs the bootstrap import scoped to the caller's deployment id. It is serialized because
+// it sets process-global env vars that the bootstrap bundle's placeholders resolve from.
 func (s *tenantService) provision(ctx context.Context, deploymentID string) *tidcommon.ServiceError {
 	s.provisionMu.Lock()
 	defer s.provisionMu.Unlock()
@@ -301,26 +152,28 @@ func (s *tenantService) provision(ctx context.Context, deploymentID string) *tid
 	return nil
 }
 
-// ListTenants returns all managed tenants.
-func (s *tenantService) ListTenants(ctx context.Context) (*TenantListResponse, *tidcommon.ServiceError) {
-	if svcErr := s.requireSystemTenant(ctx); svcErr != nil {
+// GetTenant returns the caller's own registry row.
+func (s *tenantService) GetTenant(ctx context.Context) (*Tenant, *tidcommon.ServiceError) {
+	deploymentID, svcErr := s.callerOrganization(ctx)
+	if svcErr != nil {
 		return nil, svcErr
 	}
-	tenants, err := s.store.ListTenants(ctx)
+	tenant, err := s.store.GetTenant(ctx, deploymentID)
 	if err != nil {
-		return nil, s.internalError(ctx, "failed to list tenants", err)
+		if errors.Is(err, errTenantNotFound) {
+			return nil, &ErrorTenantNotFound
+		}
+		return nil, s.internalError(ctx, "failed to read tenant", err)
 	}
-	return &TenantListResponse{TotalResults: len(tenants), Count: len(tenants), Tenants: tenants}, nil
+	return &tenant, nil
 }
 
-// DeleteTenant deprovisions a tenant: purges all of its data and removes its registry row. The system
-// tenant itself cannot be deleted.
-func (s *tenantService) DeleteTenant(ctx context.Context, deploymentID string) *tidcommon.ServiceError {
-	if svcErr := s.requireSystemTenant(ctx); svcErr != nil {
+// DeleteTenant deprovisions the caller's own workspace: purges all of its data and removes its
+// registry row.
+func (s *tenantService) DeleteTenant(ctx context.Context) *tidcommon.ServiceError {
+	deploymentID, svcErr := s.callerOrganization(ctx)
+	if svcErr != nil {
 		return svcErr
-	}
-	if deploymentID == s.systemDeploymentID {
-		return &ErrorReservedSystemTenant
 	}
 
 	provisioned, err := s.store.IsProvisioned(ctx, deploymentID)

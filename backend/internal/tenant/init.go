@@ -25,62 +25,42 @@ import (
 	"github.com/thunder-id/thunderid/internal/system/middleware"
 )
 
-// DefaultSystemDeploymentID is the reserved deployment id of the platform system tenant, used when
-// Config.SystemDeploymentID is empty.
-const DefaultSystemDeploymentID = "root"
-
-// Config holds the settings the tenant module needs to provision tenants.
+// Config holds the settings the tenant module needs to provision a workspace.
 type Config struct {
 	// DefaultsDir is the bootstrap bundle directory (e.g. <serverHome>/bootstrap).
 	DefaultsDir string
 	// PublicURL is the Control Plane's public base URL, used to template the provisioned baseline.
 	PublicURL string
-	// SystemDeploymentID is the reserved deployment id of the platform system tenant.
-	SystemDeploymentID string
 }
 
-// Initialize creates the tenant service and registers the /system/tenants routes.
+// Initialize creates the tenant service and registers the /system/tenant routes.
 func Initialize(mux *http.ServeMux, importSvc importer.ImportServiceInterface,
 	cfg Config) (TenantServiceInterface, error) {
-	systemDeploymentID := cfg.SystemDeploymentID
-	if systemDeploymentID == "" {
-		systemDeploymentID = DefaultSystemDeploymentID
-	}
-	store := newTenantStore(systemDeploymentID)
-	service := newTenantService(store, importSvc, cfg.DefaultsDir, cfg.PublicURL, systemDeploymentID)
+	store := newTenantStore()
+	service := newTenantService(store, importSvc, cfg.DefaultsDir, cfg.PublicURL)
 	handler := newTenantHandler(service)
 	registerTenantRoutes(mux, handler)
 	return service, nil
 }
 
-// registerTenantRoutes registers the platform tenant-management routes under /system/tenants.
+// registerTenantRoutes registers the tenant self-management routes under /system/tenant.
+//
+// The path names no tenant because a caller can only ever act on its own: the organization comes from
+// the token, so there is nothing to address.
 func registerTenantRoutes(mux *http.ServeMux, h *tenantHandler) {
-	const basePath = "/system/tenants"
+	const basePath = "/system/tenant"
 
-	opts1 := middleware.CORSOptions{
-		AllowedMethods:   []string{"GET", "POST"},
+	opts := middleware.CORSOptions{
+		AllowedMethods:   []string{"GET", "POST", "DELETE"},
 		AllowedHeaders:   middleware.DefaultAllowedHeaders,
 		AllowCredentials: true,
 		MaxAge:           600,
 	}
-	mux.HandleFunc(middleware.WithCORS("POST "+basePath, h.HandleTenantPostRequest, opts1))
-	mux.HandleFunc(middleware.WithCORS("GET "+basePath, h.HandleTenantListRequest, opts1))
-	mux.HandleFunc(middleware.WithCORS("POST "+basePath+"/{id}/environment",
-		h.HandleEnvironmentPostRequest, opts1))
+	mux.HandleFunc(middleware.WithCORS("POST "+basePath, h.HandleTenantPostRequest, opts))
+	mux.HandleFunc(middleware.WithCORS("GET "+basePath, h.HandleTenantGetRequest, opts))
+	mux.HandleFunc(middleware.WithCORS("DELETE "+basePath, h.HandleTenantDeleteRequest, opts))
 	mux.HandleFunc(middleware.WithCORS("OPTIONS "+basePath,
-		func(w http.ResponseWriter, r *http.Request) {
+		func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
-		}, opts1))
-
-	opts2 := middleware.CORSOptions{
-		AllowedMethods:   []string{"DELETE"},
-		AllowedHeaders:   middleware.DefaultAllowedHeaders,
-		AllowCredentials: true,
-		MaxAge:           600,
-	}
-	mux.HandleFunc(middleware.WithCORS("DELETE "+basePath+"/{id}", h.HandleTenantDeleteRequest, opts2))
-	mux.HandleFunc(middleware.WithCORS("OPTIONS "+basePath+"/{id}",
-		func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusNoContent)
-		}, opts2))
+		}, opts))
 }

@@ -27,6 +27,7 @@ package deployment
 
 import (
 	"context"
+	"strings"
 
 	"github.com/thunder-id/thunderid/internal/system/config"
 	engineconfig "github.com/thunder-id/thunderid/pkg/thunderidengine/config"
@@ -102,4 +103,18 @@ func sourceIsToken() bool {
 // letting callers that must fail closed distinguish "tenant scoped" from "unscoped".
 func IDFromContext(ctx context.Context) (string, bool) {
 	return fromContext(ctx)
+}
+
+// OrganizationOf returns the organization a deployment id belongs to.
+//
+// A deployment id names an environment as "<org>:<env>", and everything an organization owns across
+// its environments - its gateways, their variables, its registry row - is partitioned under the
+// organization rather than under any one environment. An id naming no organization is its own
+// organization, which is what a single-tenant deployment has.
+func OrganizationOf(id string) string {
+	org, _, found := strings.Cut(id, ":")
+	if !found || strings.TrimSpace(org) == "" {
+		return id
+	}
+	return org
 }

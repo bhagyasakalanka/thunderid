@@ -130,7 +130,7 @@ func (s *Store) GetEnvironment(ctx context.Context, id string) (model.Environmen
 	return decodeEnvironment(results[0]["data"])
 }
 
-// ListEnvironments returns all environments ordered by rank then name.
+// ListEnvironments returns all environments ordered by name.
 func (s *Store) ListEnvironments(ctx context.Context) ([]model.Environment, error) {
 	dbClient, err := s.client()
 	if err != nil {
