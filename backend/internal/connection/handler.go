@@ -156,6 +156,7 @@ func (h *handler) listInstances(idpType providers.IDPType) http.HandlerFunc {
 				Description: instance.Description,
 			})
 		}
+		markManagedSummaries(ctx, summaries)
 		sysutils.WriteSuccessResponse(ctx, w, http.StatusOK, summaries)
 	}
 }
@@ -372,6 +373,7 @@ func (h *handler) listSMSInstances(provider ncommon.MessageProviderType) http.Ha
 				Description: instance.Description,
 			})
 		}
+		markManagedSummaries(ctx, summaries)
 		sysutils.WriteSuccessResponse(ctx, w, http.StatusOK, summaries)
 	}
 }

@@ -16,6 +16,7 @@ import (
 
 	serverconst "github.com/thunder-id/thunderid/internal/system/constants"
 	"github.com/thunder-id/thunderid/internal/system/log"
+	"github.com/thunder-id/thunderid/internal/system/managedresource"
 	"github.com/thunder-id/thunderid/internal/system/resourcedependency"
 	"github.com/thunder-id/thunderid/internal/system/security"
 	"github.com/thunder-id/thunderid/internal/system/sysauthz"
@@ -201,6 +202,8 @@ func (ous *organizationUnitService) listAllOrganizationUnits(
 		return nil, &tidcommon.InternalServerError
 	}
 
+	markManagedOUs(ctx, ouList)
+
 	return &providers.OrganizationUnitListResponse{
 		TotalResults:      totalCount,
 		OrganizationUnits: ouList,
@@ -254,6 +257,7 @@ func (ous *organizationUnitService) listAccessibleOrganizationUnits(
 			end = total
 		}
 		page := filtered[start:end]
+		markManagedOUs(ctx, page)
 
 		return &providers.OrganizationUnitListResponse{
 			TotalResults:      total,
@@ -529,6 +533,11 @@ func (ous *organizationUnitService) IsParent(
 func (ous *organizationUnitService) UpdateOrganizationUnit(
 	ctx context.Context, id string, request providers.OrganizationUnitRequestWithID,
 ) (providers.OrganizationUnit, *tidcommon.ServiceError) {
+	// A resource applied from the control plane is owned there. Changing it here would last only
+	// until the next promotion overwrote it, so the change is refused instead.
+	if svcErr := managedresource.Guard(ctx, managedresource.TypeOrganizationUnit, id); svcErr != nil {
+		return providers.OrganizationUnit{}, svcErr
+	}
 	logger := log.GetLogger().With(log.String(log.LoggerKeyComponentName, loggerComponentNameService))
 	logger.Debug(ctx, "Updating organization unit", log.String("ouID", id))
 
@@ -593,6 +602,14 @@ func (ous *organizationUnitService) UpdateOrganizationUnitByPath(
 				return err
 			}
 			return err
+		}
+
+		// The path had to be resolved before the owner of this OU was known. Creating a child under a
+		// control plane owned OU stays allowed; changing the OU itself does not.
+		if svcErr := managedresource.Guard(txCtx, managedresource.TypeOrganizationUnit,
+			existingOU.ID); svcErr != nil {
+			capturedSvcErr = svcErr
+			return errors.New("managed resource")
 		}
 
 		if svcErr := ous.checkOUAccess(txCtx, security.ActionUpdateOU, existingOU.ID); svcErr != nil {
@@ -733,6 +750,11 @@ func (ous *organizationUnitService) updateOUInternal(
 // DeleteOrganizationUnit deletes an organization unit.
 func (ous *organizationUnitService) DeleteOrganizationUnit(
 	ctx context.Context, id string) *tidcommon.ServiceError {
+	// A resource applied from the control plane is owned there. Changing it here would last only
+	// until the next promotion overwrote it, so the change is refused instead.
+	if svcErr := managedresource.Guard(ctx, managedresource.TypeOrganizationUnit, id); svcErr != nil {
+		return svcErr
+	}
 	logger := log.GetLogger().With(log.String(log.LoggerKeyComponentName, loggerComponentNameService))
 	logger.Debug(ctx, "Deleting organization unit", log.String("ouID", id))
 
@@ -798,6 +820,11 @@ func (ous *organizationUnitService) DeleteOrganizationUnitByPath(
 			return err
 		}
 		ouID = existingOU.ID
+
+		if svcErr := managedresource.Guard(txCtx, managedresource.TypeOrganizationUnit, ouID); svcErr != nil {
+			capturedSvcErr = svcErr
+			return errors.New("managed resource")
+		}
 
 		if svcErr := ous.checkOUAccess(txCtx, security.ActionDeleteOU, ouID); svcErr != nil {
 			capturedSvcErr = svcErr
@@ -1044,7 +1071,7 @@ func (ous *organizationUnitService) GetOrganizationUnitChildren(
 		return nil, svcErr
 	}
 	base := fmt.Sprintf("/organization-units/%s/ous", id)
-	return buildOrganizationUnitListResponse(base, items, totalCount, limit, offset)
+	return buildOrganizationUnitListResponse(ctx, base, items, totalCount, limit, offset)
 }
 
 // GetOrganizationUnitChildrenByPath retrieves a list of child organization units by hierarchical handle path.
@@ -1434,12 +1461,13 @@ func buildRoleListResponse(
 }
 
 func buildOrganizationUnitListResponse(
-	base string, items interface{}, totalCount, limit, offset int,
+	ctx context.Context, base string, items interface{}, totalCount, limit, offset int,
 ) (*providers.OrganizationUnitListResponse, *tidcommon.ServiceError) {
 	children, ok := items.([]providers.OrganizationUnitBasic)
 	if !ok {
 		return nil, &tidcommon.InternalServerError
 	}
+	markManagedOUs(ctx, children)
 	return &providers.OrganizationUnitListResponse{
 		TotalResults:      totalCount,
 		OrganizationUnits: children,
@@ -1483,4 +1511,24 @@ func stringPtrEqual(a, b *string) bool {
 		return false
 	}
 	return *a == *b
+}
+
+// markManagedOUs reports the control plane owned organization units as read only. A client renders
+// its edit and delete controls from this, so without it those controls are offered for a change the
+// server refuses. Creating a child under one of these stays allowed, which is why only the OU itself
+// is marked.
+func markManagedOUs(ctx context.Context, ous []providers.OrganizationUnitBasic) {
+	managed, err := managedresource.Default().ManagedIDs(ctx, managedresource.TypeOrganizationUnit)
+	if err != nil {
+		log.GetLogger().Warn(ctx, "Failed to read which resources the control plane owns", log.Error(err))
+		return
+	}
+	if len(managed) == 0 {
+		return
+	}
+	for i := range ous {
+		if managed[ous[i].ID] {
+			ous[i].IsReadOnly = true
+		}
+	}
 }

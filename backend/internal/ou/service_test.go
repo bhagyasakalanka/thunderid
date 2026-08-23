@@ -2473,7 +2473,7 @@ func (suite *OrganizationUnitServiceTestSuite) TestOUService_BuildGroupListRespo
 }
 
 func (suite *OrganizationUnitServiceTestSuite) TestOUService_BuildOrganizationUnitListResponse_InvalidType() {
-	resp, err := buildOrganizationUnitListResponse("/organization-units", struct{}{}, 10, 5, 0)
+	resp, err := buildOrganizationUnitListResponse(context.Background(), "/organization-units", struct{}{}, 10, 5, 0)
 	suite.Nil(resp)
 	suite.NotNil(err)
 	suite.Equal(tidcommon.InternalServerError, *err)
