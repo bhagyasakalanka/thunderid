@@ -1,1 +1,0 @@
-var e=`default`;export{e as t};

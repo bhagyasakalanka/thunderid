@@ -1,1 +1,0 @@
-import{Ni as e,Sr as t,ar as n}from"./dist-ByIdA76I.js";var r=e();function i(){return(0,r.jsx)(n,{sx:{display:`flex`,alignItems:`center`,justifyContent:`center`,height:`100vh`},children:(0,r.jsx)(t,{"aria-label":`Loading content`})})}export{i as t};

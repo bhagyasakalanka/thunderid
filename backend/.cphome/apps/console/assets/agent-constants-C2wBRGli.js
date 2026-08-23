@@ -1,1 +1,0 @@
-var e={AGENTS:`agents`,AGENT:`agent`,AGENT_GROUPS:`agentGroups`,AGENT_ROLES:`agentRoles`},t={DEFAULT_AVATAR:`avatar:shape=circle,variant=anonymous_entity,content=bot_head,colors=0`,NAME_MIN_LENGTH:1,NAME_MAX_LENGTH:100};export{e as n,t};

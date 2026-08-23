@@ -1,1 +1,0 @@
-import{o as e}from"./chunk-CMxvf4Kt.js";import{t}from"./react-CoHAqsLe.js";var n=(0,e(t(),1).createContext)(void 0),r={ORGANIZATION_UNIT:`ORGANIZATION_UNIT`,NAME:`NAME`,PROFILE:`PROFILE`,OWNER:`OWNER`};export{n,r as t};

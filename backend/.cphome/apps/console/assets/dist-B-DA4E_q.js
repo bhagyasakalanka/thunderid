@@ -1,1 +1,0 @@
-import{i as e,r as t,t as n}from"./dist-CoMIRiUh.js";export{e as CreateUserTypePage,t as UserTypesListPage,n as ViewUserTypePage};

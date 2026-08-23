@@ -1,1 +1,0 @@
-import{Pi as e,o as t}from"./dist-ByIdA76I.js";var n=e(),r={flows:{list:()=>`/flows`,create:()=>`/flows/create`,detail:e=>`/flows/${e}`}};function i(){let e=(0,n.c)(2),i=t().flows??r.flows,a;return e[0]===i?a=e[1]:(a={flows:i},e[0]=i,e[1]=a),a}export{i as t};

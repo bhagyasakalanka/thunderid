@@ -1,1 +1,0 @@
-var e=`__I18nCacheInvalidate__`;function t(t){window[e]=t}function n(){delete window[e]}function r(){window[e]?.()}export{t as n,n as r,r as t};

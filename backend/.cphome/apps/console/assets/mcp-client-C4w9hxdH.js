@@ -1,1 +1,0 @@
-var e={USER_DELEGATED:`userDelegated`,M2M:`m2m`};export{e as t};
