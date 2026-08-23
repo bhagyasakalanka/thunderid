@@ -217,6 +217,13 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 	ouService.SetOUGroupResolver(ouGroupResolver)
 	ouService.SetOURoleResolver(ouRoleResolver)
 
+	// Complete the two-phase initialization of the privilege-escalation guard. The resolver spans
+	// roles, groups, and entities, so it can only be built once all three are ready. Until it is
+	// injected the guard fails closed, so this must not be skipped: granting a permission is
+	// authoring, which this plane does, and without the resolver every such grant is refused.
+	ouAuthzService.SetPermissionResolver(
+		role.NewEffectivePermissionResolver(roleService, groupService, entityService))
+
 	idpService, err := idp.Initialize(cacheManager, entityTypeService)
 	fatalOnError(ctx, logger, err, "Failed to initialize IDPService")
 

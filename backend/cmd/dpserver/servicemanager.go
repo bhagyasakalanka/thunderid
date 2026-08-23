@@ -238,6 +238,13 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 	ouService.SetOUGroupResolver(ouGroupResolver)
 	ouService.SetOURoleResolver(ouRoleResolver)
 
+	// Complete the two-phase initialization of the privilege-escalation guard. The resolver spans
+	// roles, groups, and entities, so it can only be built once all three are ready. Until it is
+	// injected the guard fails closed, so this must not be skipped: a data plane still assigns roles
+	// and grants permissions to its own users, and without the resolver every such grant is refused.
+	ouAuthzService.SetPermissionResolver(
+		role.NewEffectivePermissionResolver(roleService, groupService, entityService))
+
 	authZService := authz.Initialize(roleService)
 
 	idpService, err := idp.Initialize(cacheManager, entityTypeService)
@@ -384,6 +391,14 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 			GoogleSvc:             googleAuthnService,
 			OpenID4VPVerifierSvc:  openid4vpSvc,
 			SessionService:        sessionService,
+			// The authorization executor evaluates a login's requested permission scopes against one
+			// resource server. Without this it can resolve none, drops every scope, and each token
+			// comes back with the OIDC scopes alone: enough to sign in, not enough to read anything.
+			ResourceService: resourceServerProvider,
+			// The user-deletion flow runs here, so the executors it is built from need their
+			// dependencies too. A nil one fails the same quiet way.
+			UserService:     userService,
+			CriteriaRevoker: revocationSvc,
 		},
 		interceptor.InterceptorDependencies{},
 		flowConfig,
