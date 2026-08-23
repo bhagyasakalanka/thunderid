@@ -122,12 +122,22 @@ type RedisConfig struct {
 
 // ServerConfig holds the server configuration details.
 type ServerConfig struct {
-	Hostname       string         `yaml:"hostname"   json:"hostname"`
-	Port           int            `yaml:"port"       json:"port"`
-	HTTPOnly       bool           `yaml:"http_only"  json:"http_only"`
-	PublicURL      string         `yaml:"public_url" json:"public_url"`
-	Identifier     string         `yaml:"identifier" json:"identifier"`
-	SecurityConfig SecurityConfig `yaml:"security"   json:"security"`
+	Hostname  string `yaml:"hostname"   json:"hostname"`
+	Port      int    `yaml:"port"       json:"port"`
+	HTTPOnly  bool   `yaml:"http_only"  json:"http_only"`
+	PublicURL string `yaml:"public_url" json:"public_url"`
+	// Identifier is the deployment id that scopes all persisted resources. For a server holding one
+	// deployment's data it is the only value stores partition by.
+	Identifier string `yaml:"identifier" json:"identifier"`
+	// DeploymentIDClaim names the token claim carrying the per-request deployment id. It is read by a
+	// server that holds many deployments' data and takes each request's from its token; a server
+	// holding one deployment's data ignores it.
+	//
+	// Which of the two a process is comes from the binary, not from here: a runtime serves exactly one
+	// deployment, and letting a configuration file say otherwise would let it scope requests by
+	// whatever an end user's token claimed.
+	DeploymentIDClaim string         `yaml:"deployment_id_claim" json:"deployment_id_claim"`
+	SecurityConfig    SecurityConfig `yaml:"security"            json:"security"`
 }
 
 // GateClientConfig holds the client configuration details.
