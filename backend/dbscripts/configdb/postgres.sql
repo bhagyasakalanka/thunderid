@@ -388,3 +388,35 @@ CREATE TABLE "SECRET" (
     CONSTRAINT unique_secret_name UNIQUE (DEPLOYMENT_ID, NAME)
 );
 CREATE INDEX idx_secret_deployment ON "SECRET" (DEPLOYMENT_ID);
+
+-- gateways, they are read as a set, and ordering and rank are resolved in the server.
+CREATE TABLE "GATEWAY" (
+    DEPLOYMENT_ID VARCHAR(255) NOT NULL,
+    ID            VARCHAR(36)  NOT NULL,
+    DATA          TEXT         NOT NULL,
+    CREATED_AT    TIMESTAMPTZ  DEFAULT NOW(),
+    UPDATED_AT    TIMESTAMPTZ  DEFAULT NOW(),
+    PRIMARY KEY (DEPLOYMENT_ID, ID)
+);
+
+-- of its own. SEQ rises by one within the organization and orders that stream.
+CREATE TABLE "VERSION" (
+    DEPLOYMENT_ID VARCHAR(255) NOT NULL,
+    SEQ           INTEGER      NOT NULL,
+    DATA          TEXT         NOT NULL,
+    CREATED_AT    TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (DEPLOYMENT_ID, SEQ)
+);
+
+-- ORDINAL rises by one per gateway, so the newest row is the version the gateway is running.
+CREATE TABLE "GATEWAY_APPLY" (
+    DEPLOYMENT_ID VARCHAR(255) NOT NULL,
+    GATEWAY_ID    VARCHAR(36)  NOT NULL,
+    ORDINAL       INTEGER      NOT NULL,
+    SEQ           INTEGER      NOT NULL,
+    APPLIED_AT    TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (DEPLOYMENT_ID, GATEWAY_ID, ORDINAL),
+    CONSTRAINT fk_gateway_apply_gateway
+        FOREIGN KEY (DEPLOYMENT_ID, GATEWAY_ID) REFERENCES "GATEWAY" (DEPLOYMENT_ID, ID)
+        ON DELETE CASCADE
+);
