@@ -62,10 +62,6 @@ func (d *fakeDB) GetRuntimePersistentDBClient() (provider.DBClientInterface, err
 	return nil, fmt.Errorf("not used")
 }
 
-func (d *fakeDB) GetEnvironmentDBClient() (provider.DBClientInterface, error) {
-	return nil, fmt.Errorf("not used")
-}
-
 func (d *fakeDB) GetConfigDBTransactioner() (providers.Transactioner, error) {
 	return nil, fmt.Errorf("not used")
 }
@@ -79,10 +75,6 @@ func (d *fakeDB) GetRuntimeTransientDBTransactioner() (providers.Transactioner, 
 }
 
 func (d *fakeDB) GetRuntimePersistentDBTransactioner() (providers.Transactioner, error) {
-	return nil, fmt.Errorf("not used")
-}
-
-func (d *fakeDB) GetEnvironmentDBTransactioner() (providers.Transactioner, error) {
 	return nil, fmt.Errorf("not used")
 }
 
