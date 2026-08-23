@@ -72,6 +72,7 @@ const ApplicationEditPage = lazy(() =>
 );
 const PromotionsListPage = lazy(() => import('./features/promotions/pages/PromotionsListPage'));
 const GatewayDetailPage = lazy(() => import('./features/promotions/pages/GatewayDetailPage'));
+const PromotePage = lazy(() => import('./features/promotions/pages/PromotePage'));
 const ApplicationsListPage = lazy(() => import('./features/applications/pages/ApplicationsListPage'));
 const ApplicationTemplateSelectPage = lazy(() => import('./features/applications/pages/ApplicationTemplateSelectPage'));
 const DesignPage = lazy(() => import('@thunderid/configure-design').then((m) => ({default: m.DesignPage})));
@@ -205,6 +206,7 @@ export default function App(): JSX.Element {
                 <Route path={ROUTE_SEGMENTS.applications} element={<ApplicationsListPage />} />
                 <Route path="promotions" element={<PromotionsListPage />} />
                 <Route path="promotions/:gatewayId" element={<GatewayDetailPage />} />
+                <Route path="promotions/:gatewayId/promote" element={<PromotePage />} />
                 <Route path={`${ROUTE_SEGMENTS.applications}/:applicationId`} element={<ApplicationEditPage />} />
                 <Route path={ROUTE_SEGMENTS.agents} element={<AgentsListPage />} />
                 <Route path={`${ROUTE_SEGMENTS.agents}/:agentId`} element={<AgentEditPage />} />
