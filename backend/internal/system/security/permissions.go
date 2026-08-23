@@ -67,7 +67,7 @@ const (
 	ResourceTypeAgentType ResourceType = "agenttype"
 	// ResourceTypeEnvironmentVariable identifies a non-secret environment variable resource.
 	ResourceTypeEnvironmentVariable ResourceType = "environmentvariable"
-	// ResourceTypeTenant identifies a tenant resource (platform "system" tenant management).
+	// ResourceTypeTenant identifies a tenant resource.
 	ResourceTypeTenant ResourceType = "tenant"
 )
 
@@ -145,14 +145,12 @@ const (
 	// ActionListEnvironmentVariables lists environment variables.
 	ActionListEnvironmentVariables Action = "environmentvariable:list"
 
-	// ActionCreateTenant provisions a new tenant.
+	// ActionCreateTenant provisions the caller's own workspace.
 	ActionCreateTenant Action = "tenant:create"
-	// ActionReadTenant reads a tenant.
+	// ActionReadTenant reads the caller's own workspace.
 	ActionReadTenant Action = "tenant:read"
 	// ActionDeleteTenant deprovisions a tenant.
 	ActionDeleteTenant Action = "tenant:delete"
-	// ActionListTenants lists tenants.
-	ActionListTenants Action = "tenant:list"
 )
 
 // ---- Permissions ----
@@ -259,11 +257,10 @@ func InitSystemPermissions(handle string) {
 		ActionDeleteEnvironmentVariable: p.EnvVar,
 		ActionListEnvironmentVariables:  p.EnvVarView,
 
-		// Tenant actions (platform "system" tenant management).
+		// Tenant actions. A caller acts on its own workspace, named by its token.
 		ActionCreateTenant: p.Tenant,
 		ActionReadTenant:   p.TenantView,
 		ActionDeleteTenant: p.Tenant,
-		ActionListTenants:  p.TenantView,
 	}
 
 	apiPermissionEntries = []apiPermissionEntry{
@@ -327,9 +324,9 @@ func InitSystemPermissions(handle string) {
 
 		// Tenant self-management APIs. These act on the caller's own workspace, named by the deployment
 		// claim in its token, so the scope is all there is to check.
-		{"GET /system/tenant", p.TenantView},
-		{"POST /system/tenant", p.Tenant},
-		{"DELETE /system/tenant", p.Tenant},
+		{"GET /tenant", p.TenantView},
+		{"POST /tenant", p.Tenant},
+		{"DELETE /tenant", p.Tenant},
 
 		// Import APIs.
 		{"POST /import", p.Root},

@@ -343,6 +343,11 @@ func TestGetRequiredPermissionForAPI(t *testing.T) {
 		{name: "GET /groups exact", method: http.MethodGet, path: "/groups", wantPerm: p.GroupView},
 		{name: "POST /groups exact", method: http.MethodPost, path: "/groups", wantPerm: p.Group},
 
+		// ---- Tenant self-management. The path names no tenant: the caller acts on its own. ----
+		{name: "GET /tenant exact", method: http.MethodGet, path: "/tenant", wantPerm: p.TenantView},
+		{name: "POST /tenant exact", method: http.MethodPost, path: "/tenant", wantPerm: p.Tenant},
+		{name: "DELETE /tenant exact", method: http.MethodDelete, path: "/tenant", wantPerm: p.Tenant},
+
 		// ---- Self-service paths (empty permission = any authenticated user) ----
 		{name: "GET /users/me self-service", method: http.MethodGet, path: "/users/me", wantPerm: ""},
 		{name: "PUT /users/me self-service", method: http.MethodPut, path: "/users/me", wantPerm: ""},

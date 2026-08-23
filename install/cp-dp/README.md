@@ -47,7 +47,7 @@ validated from `deployment.yaml` against the issuer's JWKS and reads no rows, an
 tokens of its own. Every tenant API acts on the organization named by the caller's own
 `deploymentId` claim, so there is no tenant that provisions, lists, or deletes the others.
 
-An organization provisions itself with `POST /system/tenant`, which applies the `bootstrap/` bundle
+An organization provisions itself with `POST /tenant`, which applies the `bootstrap/` bundle
 in the image into that organization's own partition. That is what the bundle is in the image for.
 Nothing is copied from another tenant: an organization has one workspace, and its gateways are
 resources inside it, registered with `POST /environments` using the same token.

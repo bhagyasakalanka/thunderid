@@ -33,7 +33,7 @@ type Config struct {
 	PublicURL string
 }
 
-// Initialize creates the tenant service and registers the /system/tenant routes.
+// Initialize creates the tenant service and registers the /tenant routes.
 func Initialize(mux *http.ServeMux, importSvc importer.ImportServiceInterface,
 	cfg Config) (TenantServiceInterface, error) {
 	store := newTenantStore()
@@ -43,12 +43,12 @@ func Initialize(mux *http.ServeMux, importSvc importer.ImportServiceInterface,
 	return service, nil
 }
 
-// registerTenantRoutes registers the tenant self-management routes under /system/tenant.
+// registerTenantRoutes registers the tenant self-management routes under /tenant.
 //
 // The path names no tenant because a caller can only ever act on its own: the organization comes from
 // the token, so there is nothing to address.
 func registerTenantRoutes(mux *http.ServeMux, h *tenantHandler) {
-	const basePath = "/system/tenant"
+	const basePath = "/tenant"
 
 	opts := middleware.CORSOptions{
 		AllowedMethods:   []string{"GET", "POST", "DELETE"},
