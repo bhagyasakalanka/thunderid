@@ -16,6 +16,9 @@
  * under the License.
  */
 
+// Package varname derives the template variable names that a declarative resource's placeholders
+// carry. It is a leaf so that both the exporter and whatever captures a credential can depend on it
+// and derive the same name.
 package varname
 
 import "strings"
@@ -67,9 +70,11 @@ func sanitizeVariableName(name string) string {
 	}
 
 	sanitized := strings.Trim(result.String(), "_")
-	// A name must not start with a digit, so a leading digit is prefixed.
+	// A name must not start with a digit, so a leading digit is prefixed with an underscore. The
+	// prefix matches the exporter's own sanitizer, because a placeholder and the variable captured for
+	// it have to spell the same name.
 	if sanitized != "" && sanitized[0] >= '0' && sanitized[0] <= '9' {
-		return "V_" + sanitized
+		return "_" + sanitized
 	}
 	return sanitized
 }

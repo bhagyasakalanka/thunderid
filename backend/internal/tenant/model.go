@@ -16,12 +16,14 @@
  * under the License.
  */
 
-// Package tenant provides the Control Plane platform ("system" tenant) APIs for provisioning,
-// listing, and deprovisioning other tenants. These APIs are usable only by the reserved system
-// tenant; a regular tenant's token cannot reach them.
+// Package tenant provides the Control Plane APIs a tenant provisions and deprovisions itself with.
+//
+// Every operation here acts on the caller's own organization, named by the deployment claim in its
+// token. There is no privileged tenant that manages the others: a token reaches its own workspace and
+// nothing else, which is the same guarantee every other resource on this plane gets.
 package tenant
 
-// Tenant is the API representation of a managed tenant recorded in the platform registry.
+// Tenant is the API representation of a tenant recorded in the registry.
 type Tenant struct {
 	ID           string `json:"id,omitempty"`
 	DeploymentID string `json:"deploymentId"`
@@ -30,87 +32,10 @@ type Tenant struct {
 	UpdatedAt    string `json:"updatedAt,omitempty"`
 }
 
-// TenantListResponse is the response for listing managed tenants.
-type TenantListResponse struct {
-	TotalResults int      `json:"totalResults"`
-	Count        int      `json:"count"`
-	Tenants      []Tenant `json:"tenants"`
-}
-
-// CreateTenantRequest is the request body for provisioning a new tenant.
+// CreateTenantRequest is the request body for provisioning the caller's own workspace.
+//
+// It names no organization: the organization is the one the caller's token is for. Accepting one
+// would let a token ask for a workspace it has no claim to.
 type CreateTenantRequest struct {
-	// Org and Env name the organization and which of its environments this tenant is. Together they
-	// form the deployment id, "<org>:<env>", so a tenant's place is readable from its id alone and no
-	// second record is needed to relate an organization's environments.
-	Org string `json:"org" native:"required,min=1,max=120"`
-	Env string `json:"env" native:"required,min=1,max=120"`
-
 	Name string `json:"name,omitempty" native:"max=255"`
-	// Rank orders the environment in its organization's promotion chain: configuration moves from a
-	// lower rank to the next one up. The first environment of an organization is always rank 1,
-	// whatever is asked for, because there is nothing below it. Omitted on a later environment, it
-	// goes to the end of the chain.
-	Rank *int `json:"rank,omitempty"`
-	// ControlPlane describes reaching this server, which the environment reads its configuration from
-	// when a version is captured. Only the parts this server cannot know for itself are settable.
-	ControlPlane *ControlPlane `json:"controlPlane,omitempty"`
-	// DataPlane is the deployment this environment's configuration is applied to. With one given, the
-	// environment is registered for promotion as the tenant is created; without one there is nowhere
-	// to apply to, so only the tenant is created and the environment is registered later.
-	DataPlane *DataPlane `json:"dataPlane,omitempty"`
-	// AdminUsername and AdminPassword seed the first environment of an organization. A later
-	// environment is a copy of the first and has whatever administrators that one has, so they are
-	// ignored there.
-	AdminUsername string `json:"adminUsername,omitempty"`
-	AdminPassword string `json:"adminPassword,omitempty"`
-}
-
-// ControlPlane is how an environment reaches the control plane it reads from.
-type ControlPlane struct {
-	// InsecureSkipVerify skips TLS verification when capturing a version. A control plane serving a
-	// certificate its own clients do not trust, which is every local deployment, is unreachable
-	// without it.
-	InsecureSkipVerify bool `json:"insecureSkipVerify,omitempty"`
-}
-
-// DataPlane is where an environment's configuration is applied, and the credentials for reaching that
-// deployment's management API.
-type DataPlane struct {
-	BaseURL      string `json:"baseUrl"`
-	ClientID     string `json:"clientId,omitempty"`
-	ClientSecret string `json:"clientSecret,omitempty"`
-	Scope        string `json:"scope,omitempty"`
-	// Resource is the resource indicator naming the resource server the token is issued for.
-	Resource           string `json:"resource,omitempty"`
-	InsecureSkipVerify bool   `json:"insecureSkipVerify,omitempty"`
-}
-
-// CreateTenantResponse is the created tenant, and for an environment seeded from an existing one, what
-// that copy did.
-type CreateTenantResponse struct {
-	Tenant
-	// Seeded is absent for the first environment of an organization, which is provisioned from the
-	// bootstrap baseline rather than copied.
-	Seeded *SeedSummary `json:"seeded,omitempty"`
-	// Environment is the promotion entry registered for this tenant, absent when no data plane was
-	// given to apply to.
-	Environment *EnvironmentSummary `json:"environment,omitempty"`
-}
-
-// EnvironmentSummary is the promotion entry a new tenant was registered as.
-type EnvironmentSummary struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Rank int    `json:"rank"`
-}
-
-// SeedSummary reports the copy that gave a new environment its configuration. A partial failure is
-// reported rather than hidden: the tenant exists either way, and one that is half-populated needs to be
-// seen, not discovered later by a promotion that behaves oddly.
-type SeedSummary struct {
-	// From is the deployment id the configuration was copied from.
-	From           string `json:"from"`
-	TotalDocuments int    `json:"totalDocuments"`
-	Imported       int    `json:"imported"`
-	Failed         int    `json:"failed"`
 }

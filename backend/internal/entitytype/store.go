@@ -101,7 +101,8 @@ func (s *entityTypeStore) GetEntityTypeListCount(ctx context.Context, category T
 		return 0, fmt.Errorf("failed to get database client: %w", err)
 	}
 
-	countResults, err := dbClient.QueryContext(ctx, queryGetEntityTypeCount, string(category), deployment.Resolve(ctx, s.deploymentID))
+	countResults, err := dbClient.QueryContext(ctx, queryGetEntityTypeCount, string(category), deployment.Resolve(ctx,
+		s.deploymentID))
 	if err != nil {
 		return 0, fmt.Errorf("failed to execute count query: %w", err)
 	}
@@ -128,7 +129,8 @@ func (s *entityTypeStore) GetEntityTypeList(ctx context.Context, category TypeCa
 		return nil, fmt.Errorf("failed to get database client: %w", err)
 	}
 
-	results, err := dbClient.QueryContext(ctx, queryGetEntityTypeList, limit, offset, deployment.Resolve(ctx, s.deploymentID), string(category))
+	results, err := dbClient.QueryContext(ctx, queryGetEntityTypeList, limit, offset, deployment.Resolve(ctx,
+		s.deploymentID), string(category))
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute query: %w", err)
 	}
@@ -260,7 +262,9 @@ func (s *entityTypeStore) GetEntityTypeByID(ctx context.Context, category TypeCa
 		return EntityType{}, fmt.Errorf("failed to get database client: %w", err)
 	}
 
-	results, err := dbClient.QueryContext(ctx, queryGetEntityTypeByID, schemaID, deployment.Resolve(ctx, s.deploymentID), string(category))
+	results, err := dbClient.QueryContext(ctx, queryGetEntityTypeByID, schemaID, deployment.Resolve(ctx,
+		s.deploymentID),
+		string(category))
 	if err != nil {
 		return EntityType{}, fmt.Errorf("failed to execute query: %w", err)
 	}
@@ -280,7 +284,8 @@ func (s *entityTypeStore) GetEntityTypeByName(ctx context.Context, category Type
 		return EntityType{}, fmt.Errorf("failed to get database client: %w", err)
 	}
 
-	results, err := dbClient.QueryContext(ctx, queryGetEntityTypeByName, name, deployment.Resolve(ctx, s.deploymentID), string(category))
+	results, err := dbClient.QueryContext(ctx, queryGetEntityTypeByName, name, deployment.Resolve(ctx, s.deploymentID),
+		string(category))
 	if err != nil {
 		return EntityType{}, fmt.Errorf("failed to execute query: %w", err)
 	}
@@ -334,7 +339,8 @@ func (s *entityTypeStore) DeleteEntityTypeByID(ctx context.Context, category Typ
 		return fmt.Errorf("failed to get database client: %w", err)
 	}
 
-	rowsAffected, err := dbClient.ExecuteContext(ctx, queryDeleteEntityTypeByID, schemaID, deployment.Resolve(ctx, s.deploymentID),
+	rowsAffected, err := dbClient.ExecuteContext(ctx, queryDeleteEntityTypeByID, schemaID, deployment.Resolve(ctx,
+		s.deploymentID),
 		string(category))
 	if err != nil {
 		return fmt.Errorf("failed to delete entity type: %w", err)

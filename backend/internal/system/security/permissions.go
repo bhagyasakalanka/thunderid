@@ -65,9 +65,9 @@ const (
 	ResourceTypeUserType ResourceType = "usertype"
 	// ResourceTypeAgentType identifies an agent-category entity type resource.
 	ResourceTypeAgentType ResourceType = "agenttype"
-	// ResourceTypeEnvironmentVariable identifies a non-secret environment variable resource.
-	ResourceTypeEnvironmentVariable ResourceType = "environmentvariable"
-	// ResourceTypeTenant identifies a tenant resource (platform "system" tenant management).
+	// ResourceTypeGatewayVariable identifies a non-secret gateway variable resource.
+	ResourceTypeGatewayVariable ResourceType = "gatewayvariable"
+	// ResourceTypeTenant identifies a tenant resource.
 	ResourceTypeTenant ResourceType = "tenant"
 )
 
@@ -134,25 +134,23 @@ const (
 	// ActionListAgentTypes lists agent types.
 	ActionListAgentTypes Action = "agenttype:list"
 
-	// ActionCreateEnvironmentVariable creates a new environment variable.
-	ActionCreateEnvironmentVariable Action = "environmentvariable:create"
-	// ActionReadEnvironmentVariable reads an environment variable.
-	ActionReadEnvironmentVariable Action = "environmentvariable:read"
-	// ActionUpdateEnvironmentVariable updates an environment variable.
-	ActionUpdateEnvironmentVariable Action = "environmentvariable:update"
-	// ActionDeleteEnvironmentVariable deletes an environment variable.
-	ActionDeleteEnvironmentVariable Action = "environmentvariable:delete"
-	// ActionListEnvironmentVariables lists environment variables.
-	ActionListEnvironmentVariables Action = "environmentvariable:list"
+	// ActionCreateGatewayVariable creates a new gateway variable.
+	ActionCreateGatewayVariable Action = "gatewayvariable:create"
+	// ActionReadGatewayVariable reads a gateway variable.
+	ActionReadGatewayVariable Action = "gatewayvariable:read"
+	// ActionUpdateGatewayVariable updates a gateway variable.
+	ActionUpdateGatewayVariable Action = "gatewayvariable:update"
+	// ActionDeleteGatewayVariable deletes a gateway variable.
+	ActionDeleteGatewayVariable Action = "gatewayvariable:delete"
+	// ActionListGatewayVariables lists gateway variables.
+	ActionListGatewayVariables Action = "gatewayvariable:list"
 
-	// ActionCreateTenant provisions a new tenant.
+	// ActionCreateTenant provisions the caller's own workspace.
 	ActionCreateTenant Action = "tenant:create"
-	// ActionReadTenant reads a tenant.
+	// ActionReadTenant reads the caller's own workspace.
 	ActionReadTenant Action = "tenant:read"
 	// ActionDeleteTenant deprovisions a tenant.
 	ActionDeleteTenant Action = "tenant:delete"
-	// ActionListTenants lists tenants.
-	ActionListTenants Action = "tenant:list"
 )
 
 // ---- Permissions ----
@@ -160,21 +158,21 @@ const (
 // SystemPermissions holds the runtime-resolved permission strings for the system resource server.
 // All values are set by InitSystemPermissions and must not be used before it is called.
 type SystemPermissions struct {
-	Root          string
-	OU            string
-	OUView        string
-	User          string
-	UserView      string
-	Group         string
-	GroupView     string
-	UserType      string
-	UserTypeView  string
-	AgentType     string
-	AgentTypeView string
-	EnvVar        string
-	EnvVarView    string
-	Tenant        string
-	TenantView    string
+	Root           string
+	OU             string
+	OUView         string
+	User           string
+	UserView       string
+	Group          string
+	GroupView      string
+	UserType       string
+	UserTypeView   string
+	AgentType      string
+	AgentTypeView  string
+	GatewayVar     string
+	GatewayVarView string
+	Tenant         string
+	TenantView     string
 }
 
 // sysPerms holds the active system permissions, initialized by InitSystemPermissions.
@@ -197,21 +195,21 @@ func buildPermission(parts ...string) string {
 // This function must be called once at startup before any service or middleware uses permissions.
 func InitSystemPermissions(handle string) {
 	p := &SystemPermissions{
-		Root:          buildPermission(handle, "system"),
-		OU:            buildPermission(handle, "system", "ou"),
-		OUView:        buildPermission(handle, "system", "ou", "view"),
-		User:          buildPermission(handle, "system", "user"),
-		UserView:      buildPermission(handle, "system", "user", "view"),
-		Group:         buildPermission(handle, "system", "group"),
-		GroupView:     buildPermission(handle, "system", "group", "view"),
-		UserType:      buildPermission(handle, "system", "usertype"),
-		UserTypeView:  buildPermission(handle, "system", "usertype", "view"),
-		AgentType:     buildPermission(handle, "system", "agenttype"),
-		AgentTypeView: buildPermission(handle, "system", "agenttype", "view"),
-		EnvVar:        buildPermission(handle, "system", "environmentvariable"),
-		EnvVarView:    buildPermission(handle, "system", "environmentvariable", "view"),
-		Tenant:        buildPermission(handle, "system", "tenant"),
-		TenantView:    buildPermission(handle, "system", "tenant", "view"),
+		Root:           buildPermission(handle, "system"),
+		OU:             buildPermission(handle, "system", "ou"),
+		OUView:         buildPermission(handle, "system", "ou", "view"),
+		User:           buildPermission(handle, "system", "user"),
+		UserView:       buildPermission(handle, "system", "user", "view"),
+		Group:          buildPermission(handle, "system", "group"),
+		GroupView:      buildPermission(handle, "system", "group", "view"),
+		UserType:       buildPermission(handle, "system", "usertype"),
+		UserTypeView:   buildPermission(handle, "system", "usertype", "view"),
+		AgentType:      buildPermission(handle, "system", "agenttype"),
+		AgentTypeView:  buildPermission(handle, "system", "agenttype", "view"),
+		GatewayVar:     buildPermission(handle, "system", "gatewayvariable"),
+		GatewayVarView: buildPermission(handle, "system", "gatewayvariable", "view"),
+		Tenant:         buildPermission(handle, "system", "tenant"),
+		TenantView:     buildPermission(handle, "system", "tenant", "view"),
 	}
 	sysPerms = p
 
@@ -252,18 +250,17 @@ func InitSystemPermissions(handle string) {
 		ActionDeleteAgentType: p.AgentType,
 		ActionListAgentTypes:  p.AgentTypeView,
 
-		// Environment variable actions.
-		ActionCreateEnvironmentVariable: p.EnvVar,
-		ActionReadEnvironmentVariable:   p.EnvVarView,
-		ActionUpdateEnvironmentVariable: p.EnvVar,
-		ActionDeleteEnvironmentVariable: p.EnvVar,
-		ActionListEnvironmentVariables:  p.EnvVarView,
+		// Gateway variable actions.
+		ActionCreateGatewayVariable: p.GatewayVar,
+		ActionReadGatewayVariable:   p.GatewayVarView,
+		ActionUpdateGatewayVariable: p.GatewayVar,
+		ActionDeleteGatewayVariable: p.GatewayVar,
+		ActionListGatewayVariables:  p.GatewayVarView,
 
-		// Tenant actions (platform "system" tenant management).
+		// Tenant actions. A caller acts on its own workspace, named by its token.
 		ActionCreateTenant: p.Tenant,
 		ActionReadTenant:   p.TenantView,
 		ActionDeleteTenant: p.Tenant,
-		ActionListTenants:  p.TenantView,
 	}
 
 	apiPermissionEntries = []apiPermissionEntry{
@@ -316,21 +313,39 @@ func InitSystemPermissions(handle string) {
 		{"PUT /agent-types/**", p.AgentType},
 		{"DELETE /agent-types/**", p.AgentType},
 
-		// Environment variable APIs. Resolve returns non-secret values that reads already expose, so
-		// the view permission is enough; it still precedes the /environment-variables/** rules.
-		{"GET /environment-variables/resolve", p.EnvVarView},
-		{"GET /environment-variables", p.EnvVarView},
-		{"POST /environment-variables", p.EnvVar},
-		{"GET /environment-variables/**", p.EnvVarView},
-		{"PUT /environment-variables/**", p.EnvVar},
-		{"DELETE /environment-variables/**", p.EnvVar},
+		// Gateway variable APIs. A variable belongs to one gateway and is served under it, so these
+		// name that path; a rule naming a path the server does not serve matches nothing and leaves
+		// the route on the root permission. They precede the gateway rules below, which would
+		// otherwise match the same requests first and demand more.
+		//
+		// Resolve returns non-secret values that reads already expose, so the view permission covers it.
+		{"GET /gateways/*/variables", p.GatewayVarView},
+		{"POST /gateways/*/variables", p.GatewayVar},
+		{"GET /gateways/*/variables/**", p.GatewayVarView},
+		{"PUT /gateways/*/variables/**", p.GatewayVar},
+		{"DELETE /gateways/*/variables/**", p.GatewayVar},
 
-		// System tenant-management APIs. The `system` root scope satisfies these; the service
-		// additionally requires the caller to belong to the system tenant.
-		{"GET /system/tenants", p.TenantView},
-		{"POST /system/tenants", p.Tenant},
-		{"GET /system/tenants/**", p.TenantView},
-		{"DELETE /system/tenants/**", p.Tenant},
+		// Versions belong to the organization. Capturing one reads the whole of its configuration, so
+		// it takes the root system permission, as does everything else about a gateway: registering
+		// one, issuing its data plane token, applying a version. Stated rather than left to the
+		// fallback, so the requirement is visible here and does not change with it. Promotion carries
+		// a second, separate scope check.
+		{"GET /versions", p.Root},
+		{"POST /versions", p.Root},
+		{"GET /versions/**", p.Root},
+		{"GET /gateways", p.Root},
+		{"POST /gateways", p.Root},
+		{"GET /gateways/**", p.Root},
+		{"POST /gateways/**", p.Root},
+		{"PATCH /gateways/**", p.Root},
+		{"PUT /gateways/**", p.Root},
+		{"DELETE /gateways/**", p.Root},
+
+		// Tenant self-management APIs. These act on the caller's own workspace, named by the deployment
+		// claim in its token, so the scope is all there is to check.
+		{"GET /tenant", p.TenantView},
+		{"POST /tenant", p.Tenant},
+		{"DELETE /tenant", p.Tenant},
 
 		// Import APIs.
 		{"POST /import", p.Root},

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {QueryErrorNotice, ResourceAvatar} from '@thunderid/components';
+import {useIsManagedResource} from '@thunderid/contexts';
 import {useDataGridLocaleText} from '@thunderid/hooks';
 import {useLogger} from '@thunderid/logger/react';
 import {Box, IconButton, Tooltip, Typography, ListingTable, DataGrid} from '@wso2/oxygen-ui';
@@ -11,7 +12,6 @@ import {useTranslation} from 'react-i18next';
 import {useNavigate} from 'react-router';
 import AgentDeleteDialog from './AgentDeleteDialog';
 import RouteConfig from '../../../configs/RouteConfig';
-import {useIsManagedResource} from '../../managed-resources';
 import useGetAgents from '../api/useGetAgents';
 import AgentConstants from '../constants/agent-constants';
 import type {BasicAgent} from '../models/agent';

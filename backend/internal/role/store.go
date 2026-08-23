@@ -132,7 +132,8 @@ func (s *roleStore) GetRoleListCountByOUID(ctx context.Context, ouID string) (in
 		return 0, err
 	}
 
-	countResults, err := dbClient.QueryContext(ctx, queryGetRoleListCountByOUID, ouID, deployment.Resolve(ctx, s.deploymentID))
+	countResults, err := dbClient.QueryContext(ctx, queryGetRoleListCountByOUID, ouID, deployment.Resolve(ctx,
+		s.deploymentID))
 	if err != nil {
 		return 0, fmt.Errorf("failed to execute count query: %w", err)
 	}
@@ -147,7 +148,8 @@ func (s *roleStore) GetRoleListByOUID(ctx context.Context, ouID string, limit, o
 		return nil, err
 	}
 
-	results, err := dbClient.QueryContext(ctx, queryGetRoleListByOUID, ouID, limit, offset, deployment.Resolve(ctx, s.deploymentID))
+	results, err := dbClient.QueryContext(ctx, queryGetRoleListByOUID, ouID, limit, offset, deployment.Resolve(ctx,
+		s.deploymentID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute role list query: %w", err)
 	}
@@ -183,11 +185,13 @@ func (s *roleStore) CreateRole(ctx context.Context, id string, role RoleCreation
 		return fmt.Errorf("failed to execute query: %w", err)
 	}
 
-	if err := addPermissionsToRole(ctx, dbClient, id, role.Permissions, deployment.Resolve(ctx, s.deploymentID)); err != nil {
+	if err := addPermissionsToRole(ctx, dbClient, id, role.Permissions, deployment.Resolve(ctx,
+		s.deploymentID)); err != nil {
 		return err
 	}
 
-	if err := addAssignmentsToRole(ctx, dbClient, id, role.Assignments, deployment.Resolve(ctx, s.deploymentID)); err != nil {
+	if err := addAssignmentsToRole(ctx, dbClient, id, role.Assignments, deployment.Resolve(ctx,
+		s.deploymentID)); err != nil {
 		return err
 	}
 
@@ -256,7 +260,8 @@ func (s *roleStore) GetRoleAssignments(ctx context.Context, id string, limit, of
 		return nil, err
 	}
 
-	results, err := dbClient.QueryContext(ctx, queryGetRoleAssignments, id, limit, offset, deployment.Resolve(ctx, s.deploymentID))
+	results, err := dbClient.QueryContext(ctx, queryGetRoleAssignments, id, limit, offset, deployment.Resolve(ctx,
+		s.deploymentID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get role assignments: %w", err)
 	}
@@ -310,7 +315,8 @@ func (s *roleStore) GetRoleAssignmentsCount(ctx context.Context, id string) (int
 		return 0, err
 	}
 
-	countResults, err := dbClient.QueryContext(ctx, queryGetRoleAssignmentsCount, id, deployment.Resolve(ctx, s.deploymentID))
+	countResults, err := dbClient.QueryContext(ctx, queryGetRoleAssignmentsCount, id, deployment.Resolve(ctx,
+		s.deploymentID))
 	if err != nil {
 		return 0, fmt.Errorf("failed to get role assignments count: %w", err)
 	}
@@ -357,7 +363,8 @@ func (s *roleStore) UpdateRole(ctx context.Context, id string, role RoleUpdateDe
 		return ErrRoleNotFound
 	}
 
-	if err := updateRolePermissions(ctx, dbClient, id, role.Permissions, deployment.Resolve(ctx, s.deploymentID)); err != nil {
+	if err := updateRolePermissions(ctx, dbClient, id, role.Permissions, deployment.Resolve(ctx,
+		s.deploymentID)); err != nil {
 		return err
 	}
 
@@ -480,7 +487,8 @@ func (s *roleStore) RemoveAssignments(ctx context.Context, id string, assignment
 
 	for _, assignment := range assignments {
 		_, err := dbClient.ExecuteContext(
-			ctx, queryDeleteRoleAssignmentsByIDs, id, assignment.Type, assignment.ID, deployment.Resolve(ctx, s.deploymentID))
+			ctx, queryDeleteRoleAssignmentsByIDs, id, assignment.Type, assignment.ID, deployment.Resolve(ctx,
+				s.deploymentID))
 		if err != nil {
 			return fmt.Errorf("failed to remove assignment from role: %w", err)
 		}
@@ -612,7 +620,8 @@ func (s *roleStore) CheckRoleNameExists(ctx context.Context, ouID, name string) 
 		return false, err
 	}
 
-	results, err := dbClient.QueryContext(ctx, queryCheckRoleNameExists, ouID, name, deployment.Resolve(ctx, s.deploymentID))
+	results, err := dbClient.QueryContext(ctx, queryCheckRoleNameExists, ouID, name, deployment.Resolve(ctx,
+		s.deploymentID))
 	if err != nil {
 		return false, fmt.Errorf("failed to check role name existence: %w", err)
 	}

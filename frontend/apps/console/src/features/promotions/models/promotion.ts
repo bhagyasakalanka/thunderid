@@ -1,66 +1,77 @@
-/**
- * Copyright (c) 2026, WSO2 LLC. (https://www.wso2.com).
- *
- * WSO2 LLC. licenses this file to you under the Apache License,
- * Version 2.0 (the "License"); you may not use this file except
- * in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied. See the License for the
- * specific language governing permissions and limitations
- * under the License.
- */
+// Copyright 2026 The ThunderID Authors
+// SPDX-License-Identifier: Apache-2.0
 
 /** How a configuration version came to exist. */
-export type VersionOrigin = 'captured' | 'promoted' | 'reverted' | 'uploaded';
+export type VersionOrigin = 'captured' | 'uploaded';
 
 /** How a resource differs between two configuration versions. */
 export type ChangeType = 'added' | 'updated' | 'deleted' | 'unchanged';
 
-/** An environment in the promotion chain. */
-export interface Environment {
+/** An gateway in the promotion chain. */
+export interface Gateway {
   id: string;
   name: string;
-  rank: number;
   appliedSeq: number;
   /**
-   * Resource keys a user chose not to promote into this environment. The choice is remembered, so a
+   * Resource keys a user chose not to promote into this gateway. The choice is remembered, so a
    * later promotion holds them back by default until they are deliberately selected again.
    */
   excluded?: string[];
   latestSeq: number;
   hasPendingChanges: boolean;
-  /** Outgoing promotion edges, with the rank fallback already applied by the service. */
-  promotesToResolved: string[];
-  /** Incoming edges: the environments that can promote into this one. */
-  promotedFrom: string[];
+  /**
+   * Whether the Control Plane administers this gateway directly rather than only promoting into
+   * it. Editing configuration in the organization's workspace is editing this gateway, and a
+   * credential created there is issued against it. Exactly one gateway holds this.
+   */
+  managedByControlPlane?: boolean;
+  /**
+   * Whether this gateway's Data Plane is currently connected. The Data Plane dials the Control
+   * Plane and holds that connection open, so nothing can be applied or promoted to one that is not
+   * connected.
+   */
+  dataPlane: DataPlaneStatus;
   createdAt: string;
   updatedAt: string;
 }
 
-export interface EnvironmentListResponse {
-  environments: Environment[];
+/** Whether an gateway's Data Plane is connected, and when it was last heard from. */
+export interface DataPlaneStatus {
+  connected: boolean;
+  lastSeen?: string;
 }
 
-/** A stored configuration snapshot for an environment. */
+export interface GatewayListResponse {
+  gateways: Gateway[];
+  /**
+   * Whether this caller holds the promotion scope. Promotion is a release decision, so it is gated
+   * where every other gateway action is not; the console leaves the action out rather than
+   * offering it and having the request refused.
+   */
+  canPromote?: boolean;
+}
+
+/** A stored configuration snapshot for an gateway. */
 export interface Version {
   seq: number;
-  envId: string;
   origin: VersionOrigin;
-  parentSeq?: number;
-  sourceEnvId?: string;
-  sourceSeq?: number;
   note?: string;
   createdAt: string;
 }
 
 export interface VersionListResponse {
   versions: Version[];
+}
+
+/** One entry in a gateway's history: an organization version it ran, and when. */
+export interface GatewayApply {
+  ordinal: number;
+  seq: number;
+  appliedAt: string;
+}
+
+export interface GatewayHistoryResponse {
+  history: GatewayApply[];
 }
 
 /** One line of a unified diff. Kind is ' ' (context), '+' (added) or '-' (removed). */
@@ -112,25 +123,52 @@ export interface ApplyResult {
   diff: Diff;
   dryRun: boolean;
   import?: ImportResponse;
+  /**
+   * Identifies the queued work. An apply is delivered by the Control Plane pod holding the data
+   * plane's connection, which is not always the one that took the request.
+   */
+  jobId: string;
+  /**
+   * "done" when the data plane has taken the configuration, in which case import is set. "pending"
+   * means it is queued for another pod and the outcome is read back with jobId.
+   */
+  status: DataPlaneJobStatus;
+}
+
+/** How far a piece of queued work has got. */
+export type DataPlaneJobStatus = 'pending' | 'claimed' | 'done' | 'failed';
+
+/** Work queued for a data plane, and what it answered once delivered. */
+export interface DataPlaneJob {
+  id: string;
+  dataPlaneId: string;
+  gatewayId?: string;
+  type: string;
+  status: DataPlaneJobStatus;
+  /** The data plane's answer, as JSON, once the status is "done". */
+  result?: string;
+  /** Why the delivery failed, when the status is "failed". */
+  error?: string;
+  attempts: number;
 }
 
 export interface PromoteResult {
   preview: Diff;
-  newVersion: Version;
+  /** The organization version the target was moved onto. Promoting creates no version. */
+  seq: number;
   applied?: ApplyResult;
 }
 
 export interface RevertResult {
   preview: Diff;
-  newVersion: Version;
+  /** The organization version the gateway was moved back onto. Reverting creates no version. */
+  seq: number;
   applied?: ApplyResult;
-  /** The outcome of restoring the environment's own Control Plane tenant. */
-  controlPlane?: ImportResponse;
 }
 
-/** How an environment's next apply would resolve its placeholders. */
+/** How an gateway's next apply would resolve its placeholders. */
 export interface VariableStatus {
-  envId: string;
+  gatewayId: string;
   seq: number;
   required: string[];
   missing: string[];
@@ -141,10 +179,10 @@ export interface VariableStatus {
   secretsChecked: boolean;
 }
 
-/** One environment's outcome from applying across every environment. */
+/** One gateway's outcome from applying across every gateway. */
 export interface ApplyAllResult {
-  envId: string;
-  envName: string;
+  gatewayId: string;
+  gatewayName: string;
   applied?: ApplyResult;
   error?: string;
 }
@@ -159,7 +197,7 @@ export interface ApplyAllResult {
  */
 export type SecretKind = 'hash' | 'value';
 
-/** One secret-backed placeholder of an environment. */
+/** One secret-backed placeholder of an gateway. */
 export interface SecretEntry {
   name: string;
   /** The resource field it fills, e.g. clientSecret. */
@@ -171,15 +209,21 @@ export interface SecretEntry {
   held: boolean;
 }
 
-/** Every credential an environment needs, with its status on the Data Plane. */
+/** Every credential an gateway needs, with its status on the Data Plane. */
 export interface SecretList {
-  envId: string;
+  gatewayId: string;
   seq: number;
   secrets: SecretEntry[];
   /** False when the secret service could not be reached, so held is not a judgement. */
   checked: boolean;
-  /** Why it could not be reached. Usually this environment's own credentials or endpoint. */
+  /** Why it could not be reached. Usually this gateway's own credentials or endpoint. */
   checkError?: string;
+  /**
+   * Set when the Control Plane pod serving this request holds no connection to the data plane and
+   * queued the question for one that does. Following it and asking again is what turns `checked`
+   * true; it means "not yet", not "unavailable".
+   */
+  pendingJobId?: string;
 }
 
 /** The result of regenerating a credential. The value is returned only here. */

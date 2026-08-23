@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {useIsMutating} from '@tanstack/react-query';
-import {PageLoadingAnimation, QueryErrorNotice, UnsavedChangesBar} from '@thunderid/components';
+import {ManagedResourceNotice, PageLoadingAnimation, QueryErrorNotice, UnsavedChangesBar} from '@thunderid/components';
 import {arePermissionsEqual, type ResourcePermissions} from '@thunderid/configure-resource-servers';
 import {useLogger} from '@thunderid/logger/react';
 import {getErrorMessage, isEqualIgnoringEmpty} from '@thunderid/utils';
@@ -24,7 +24,7 @@ import {useState, useCallback, useMemo} from 'react';
 import type {ReactNode, SyntheticEvent, JSX} from 'react';
 import {useTranslation} from 'react-i18next';
 import {Link, useNavigate, useParams} from 'react-router';
-import {useIsManagedResource, ManagedResourceNotice} from '@thunderid/contexts';
+import {useIsManagedResource} from '@thunderid/contexts';
 import useGetRole from '../api/useGetRole';
 import useUpdateRole, {ROLE_MUTATION_KEY} from '../api/useUpdateRole';
 import EditAdvancedSettings from '../components/edit-role/advanced-settings/EditAdvancedSettings';
@@ -251,7 +251,7 @@ export default function RoleEditPage(): JSX.Element {
             ) : (
               <>
                 <Typography variant="h3">{editedRole.name ?? role.name}</Typography>
-                {!((role.isReadOnly === true || isManaged) || isManaged) && (
+                {!(role.isReadOnly === true || isManaged || isManaged) && (
                   <IconButton
                     size="small"
                     aria-label={t('edit.page.editName', 'Edit role name')}
@@ -303,7 +303,7 @@ export default function RoleEditPage(): JSX.Element {
                 <Typography component="span" variant="body2" color="text.secondary">
                   {effectiveDescription || t('edit.page.description.empty', 'No description')}
                 </Typography>
-                {!((role.isReadOnly === true || isManaged) || isManaged) && (
+                {!(role.isReadOnly === true || isManaged || isManaged) && (
                   <IconButton
                     size="small"
                     aria-label={t('edit.page.editDescription', 'Edit role description')}
@@ -353,26 +353,25 @@ export default function RoleEditPage(): JSX.Element {
       {/* Tab Panels */}
       <>
         <TabPanel value={activeTab} index={0}>
-          <EditGeneralSettings
-            role={role}
-            onDeleteClick={(role.isReadOnly === true || isManaged) ? undefined : () => setDeleteDialogOpen(true)}
-          />
+          <EditGeneralSettings role={role} />
         </TabPanel>
 
         <TabPanel value={activeTab} index={1}>
           <EditPermissionsSettings
             permissions={editedRole.permissions ?? serverPermissions}
             onPermissionsChange={handlePermissionsChange}
-            isReadOnly={(role.isReadOnly === true || isManaged)}
+            isReadOnly={role.isReadOnly === true || isManaged}
           />
         </TabPanel>
 
         <TabPanel value={activeTab} index={2}>
-          <EditAssignmentsSettings roleId={role.id} isReadOnly={(role.isReadOnly === true || isManaged)} />
+          <EditAssignmentsSettings roleId={role.id} isReadOnly={role.isReadOnly === true || isManaged} />
         </TabPanel>
 
         <TabPanel value={activeTab} index={3}>
-          <EditAdvancedSettings onDeleteClick={role.isReadOnly ? undefined : () => setDeleteDialogOpen(true)} />
+          <EditAdvancedSettings
+            onDeleteClick={role.isReadOnly === true || isManaged ? undefined : () => setDeleteDialogOpen(true)}
+          />
         </TabPanel>
       </>
 

@@ -131,7 +131,8 @@ func (s *groupStore) GetGroupList(ctx context.Context, limit, offset int) ([]Gro
 	if err != nil {
 		return nil, fmt.Errorf("failed to get database client: %w", err)
 	}
-	results, err := dbClient.QueryContext(ctx, QueryGetGroupList, limit, offset, deployment.Resolve(ctx, s.deploymentID))
+	results, err := dbClient.QueryContext(ctx, QueryGetGroupList, limit, offset, deployment.Resolve(ctx,
+		s.deploymentID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute group list query: %w", err)
 	}
@@ -291,7 +292,8 @@ func (s *groupStore) GetGroupMembers(ctx context.Context, groupID string, limit,
 		return nil, fmt.Errorf("failed to get database client: %w", err)
 	}
 
-	results, err := dbClient.QueryContext(ctx, QueryGetGroupMembers, groupID, limit, offset, deployment.Resolve(ctx, s.deploymentID))
+	results, err := dbClient.QueryContext(ctx, QueryGetGroupMembers, groupID, limit, offset, deployment.Resolve(ctx,
+		s.deploymentID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get group members: %w", err)
 	}
@@ -318,7 +320,8 @@ func (s *groupStore) GetGroupMemberCount(ctx context.Context, groupID string) (i
 		return 0, fmt.Errorf("failed to get database client: %w", err)
 	}
 
-	countResults, err := dbClient.QueryContext(ctx, QueryGetGroupMemberCount, groupID, deployment.Resolve(ctx, s.deploymentID))
+	countResults, err := dbClient.QueryContext(ctx, QueryGetGroupMemberCount, groupID, deployment.Resolve(ctx,
+		s.deploymentID))
 	if err != nil {
 		return 0, fmt.Errorf("failed to get group member count: %w", err)
 	}
@@ -618,7 +621,8 @@ func (s *groupStore) GetTransitiveGroupsForEntity(
 		return nil, fmt.Errorf("failed to get database client: %w", err)
 	}
 
-	results, err := dbClient.QueryContext(ctx, QueryGetTransitiveGroupsForMember, entityID, deployment.Resolve(ctx, s.deploymentID))
+	results, err := dbClient.QueryContext(ctx, QueryGetTransitiveGroupsForMember, entityID, deployment.Resolve(ctx,
+		s.deploymentID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get transitive groups for entity: %w", err)
 	}

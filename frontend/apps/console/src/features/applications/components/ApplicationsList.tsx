@@ -4,7 +4,7 @@
 import {QueryErrorNotice, ResourceAvatar} from '@thunderid/components';
 import {useGetApplications} from '@thunderid/configure-applications';
 import type {BasicApplication} from '@thunderid/configure-applications';
-import {useConfig} from '@thunderid/contexts';
+import {useConfig, useIsManagedResource} from '@thunderid/contexts';
 import {useDataGridLocaleText} from '@thunderid/hooks';
 import {useLogger} from '@thunderid/logger/react';
 import {Box, Chip, IconButton, Tooltip, Typography, ListingTable, DataGrid} from '@wso2/oxygen-ui';
@@ -16,9 +16,6 @@ import ApplicationDeleteDialog from './ApplicationDeleteDialog';
 import RouteConfig from '../../../configs/RouteConfig';
 import ApplicationConstants from '../constants/application-constants';
 import getApplicationErrorMessage from '../utils/getApplicationErrorMessage';
-import {useIsManagedResource} from '../../managed-resources';
-import useGetApplications from '../api/useGetApplications';
-import type {BasicApplication} from '../models/application';
 import getTemplateMetadata from '../utils/getTemplateMetadata';
 
 export default function ApplicationsList(): JSX.Element {

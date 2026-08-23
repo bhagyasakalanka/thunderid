@@ -1,20 +1,5 @@
-/**
- * Copyright (c) 2026, WSO2 LLC. (https://www.wso2.com).
- *
- * WSO2 LLC. licenses this file to you under the Apache License,
- * Version 2.0 (the "License"); you may not use this file except
- * in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied. See the License for the
- * specific language governing permissions and limitations
- * under the License.
- */
+// Copyright 2026 The ThunderID Authors
+// SPDX-License-Identifier: Apache-2.0
 
 import {
   Alert,
@@ -34,14 +19,19 @@ import MissingVariablesNotice from './MissingVariablesNotice';
 import ResourceDiffList from './ResourceDiffList';
 import useApplyVersion from '../api/useApplyVersion';
 import useCheckVariables from '../api/useCheckVariables';
-import useGetEnvironmentDiff from '../api/useGetEnvironmentDiff';
+import useGetGatewayDiff from '../api/useGetGatewayDiff';
 
 export interface ApplyDialogProps {
   open: boolean;
-  envId: string;
-  envName: string;
+  gatewayId: string;
+  gatewayName: string;
   /** The version to apply, as a sequence number. */
   version: string;
+  /**
+   * Called with the job id when the data plane has not taken the configuration yet, so the caller
+   * can follow it. Not called when the apply completed in the same request.
+   */
+  onQueued?: (jobId: string) => void;
   onClose: () => void;
 }
 
@@ -52,14 +42,32 @@ export interface ApplyDialogProps {
  * result afterwards. The comparison is against what is currently applied there, not against the
  * previous version in the list, because those differ whenever versions were skipped.
  */
-export default function ApplyDialog({open, envId, envName, version, onClose}: ApplyDialogProps): JSX.Element {
+export default function ApplyDialog({
+  open,
+  gatewayId,
+  gatewayName,
+  version,
+  onQueued = undefined,
+  onClose,
+}: ApplyDialogProps): JSX.Element {
   const {t} = useTranslation();
-  const {data: diff, isLoading, error} = useGetEnvironmentDiff(open ? envId : '', 'applied', version);
-  const {data: variableStatus} = useCheckVariables(open ? envId : '', version);
+  const {data: diff, isLoading, error} = useGetGatewayDiff(open ? gatewayId : '', 'applied', version);
+  const {data: variableStatus} = useCheckVariables(open ? gatewayId : '', version);
   const applyVersion = useApplyVersion();
 
   const handleApply = (): void => {
-    applyVersion.mutate({envId, version}, {onSuccess: () => onClose()});
+    applyVersion.mutate(
+      {gatewayId, version},
+      {
+        onSuccess: (result): void => {
+          // Work the data plane has not taken yet is handed back to the page, which follows it.
+          if (result.status !== 'done') {
+            onQueued?.(result.jobId);
+          }
+          onClose();
+        },
+      },
+    );
   };
 
   return (
@@ -67,7 +75,7 @@ export default function ApplyDialog({open, envId, envName, version, onClose}: Ap
       <DialogTitle>{t('promotions:apply.title', 'Apply configuration')}</DialogTitle>
       <DialogContent dividers>
         <Typography variant="body2" sx={{mb: 2}}>
-          {t('promotions:apply.body', 'Version {{version}} will be applied to {{env}}.', {env: envName, version})}
+          {t('promotions:apply.body', 'Version {{version}} will be applied to {{env}}.', {env: gatewayName, version})}
         </Typography>
 
         <MissingVariablesNotice

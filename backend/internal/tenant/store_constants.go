@@ -25,30 +25,23 @@ import (
 )
 
 var (
-	// queryCreateTenant records a managed tenant in the platform registry (owned by the system tenant).
+	// queryCreateTenant records a tenant in the registry, owned by the organization it describes.
 	queryCreateTenant = dbmodel.DBQuery{
 		ID:    "TNQ-TENANT-001",
 		Query: `INSERT INTO "TENANT" (ID, TENANT_ID, NAME, DEPLOYMENT_ID) VALUES ($1, $2, $3, $4)`,
 	}
 
-	// queryGetTenantByDeploymentID retrieves a registry row by managed deployment id.
+	// queryGetTenantByDeploymentID retrieves a registry row by deployment id.
 	queryGetTenantByDeploymentID = dbmodel.DBQuery{
 		ID: "TNQ-TENANT-002",
 		Query: `SELECT ID, TENANT_ID, NAME, CREATED_AT, UPDATED_AT FROM "TENANT" ` +
-			`WHERE TENANT_ID = $1 AND DEPLOYMENT_ID = $2`,
+			`WHERE DEPLOYMENT_ID = $1`,
 	}
 
-	// queryListTenants lists all managed tenants for the system tenant.
-	queryListTenants = dbmodel.DBQuery{
-		ID: "TNQ-TENANT-003",
-		Query: `SELECT ID, TENANT_ID, NAME, CREATED_AT, UPDATED_AT FROM "TENANT" ` +
-			`WHERE DEPLOYMENT_ID = $1 ORDER BY TENANT_ID`,
-	}
-
-	// queryDeleteTenantRecord removes a managed tenant's registry row.
+	// queryDeleteTenantRecord removes a tenant's registry row.
 	queryDeleteTenantRecord = dbmodel.DBQuery{
 		ID:    "TNQ-TENANT-004",
-		Query: `DELETE FROM "TENANT" WHERE TENANT_ID = $1 AND DEPLOYMENT_ID = $2`,
+		Query: `DELETE FROM "TENANT" WHERE DEPLOYMENT_ID = $1`,
 	}
 
 	// queryCountInboundClientsForTenant counts inbound clients scoped to a deployment id, used to

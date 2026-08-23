@@ -5,6 +5,7 @@ package layoutmgt
 
 import (
 	"context"
+
 	serverconst "github.com/thunder-id/thunderid/internal/system/constants"
 	declarativeresource "github.com/thunder-id/thunderid/internal/system/declarative_resource"
 )
@@ -135,7 +136,8 @@ func (c *compositeLayoutStore) IsLayoutDeclarative(id string) bool {
 }
 
 // IsLayoutHandleConflict checks if a layout handle conflicts in either store.
-func (c *compositeLayoutStore) IsLayoutHandleConflict(ctx context.Context, handle string, excludeID string) (bool, error) {
+func (c *compositeLayoutStore) IsLayoutHandleConflict(ctx context.Context, handle string, excludeID string) (bool,
+	error) {
 	// Check file store first
 	conflict, err := c.fileStore.IsLayoutHandleConflict(ctx, handle, excludeID)
 	if err != nil {

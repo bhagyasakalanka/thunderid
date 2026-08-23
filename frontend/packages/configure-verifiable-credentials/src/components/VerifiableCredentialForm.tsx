@@ -448,7 +448,6 @@ export default function VerifiableCredentialForm({
         </TabPanel>
       )}
 
-      {dirty && (
       {dirty && !isReadOnly && (
         <UnsavedChangesBar
           message={t('form.unsavedChanges')}

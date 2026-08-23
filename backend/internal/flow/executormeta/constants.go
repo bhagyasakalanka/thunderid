@@ -24,8 +24,12 @@ package executormeta
 
 // Executor name constants.
 const (
-	ExecutorNameCredentialsAuth = "CredentialsAuthExecutor"
-	ExecutorNameMagicLink       = "MagicLinkExecutor"
+	ExecutorNameCriteriaRevocation = "CriteriaRevocationExecutor"
+	ExecutorNameSessionRevocation  = "SessionRevocationExecutor"
+	ExecutorNamePreDelete          = "PreDeleteExecutor"
+	ExecutorNameUserDelete         = "UserDeleteExecutor"
+	ExecutorNameCredentialsAuth    = "CredentialsAuthExecutor"
+	ExecutorNameMagicLink          = "MagicLinkExecutor"
 	// nolint:gosec // G101: This is an executor name, not a credential
 	ExecutorNamePasskeyAuth                  = "PasskeyAuthExecutor"
 	ExecutorNameOAuth                        = "OAuthExecutor"

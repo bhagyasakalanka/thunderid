@@ -132,7 +132,8 @@ func (suite *AttributeUniquenessValidatorTestSuite) TestExecute_AttributeConflic
 				Return([]string{tt.attribute}, nil).Once()
 
 			existingUserID := testExistingUserID
-			suite.mockEntityProvider.On("IdentifyEntity", mock.Anything, map[string]interface{}{tt.attribute: tt.value}).
+			suite.mockEntityProvider.On("IdentifyEntity", mock.Anything,
+				map[string]interface{}{tt.attribute: tt.value}).
 				Return(&existingUserID, nil).Once()
 
 			resp, err := suite.executor.Execute(ctx)
@@ -169,7 +170,8 @@ func (suite *AttributeUniquenessValidatorTestSuite) TestExecute_UniqueAttrNotInI
 	assert.NoError(suite.T(), err)
 	assert.Equal(suite.T(), providers.ExecComplete, resp.Status)
 	// email was NOT in UserInputs so IdentifyUser must not be called for it
-	suite.mockEntityProvider.AssertNotCalled(suite.T(), "IdentifyEntity", mock.Anything, map[string]interface{}{"email": ""})
+	suite.mockEntityProvider.AssertNotCalled(suite.T(), "IdentifyEntity", mock.Anything,
+		map[string]interface{}{"email": ""})
 }
 
 func (suite *AttributeUniquenessValidatorTestSuite) TestExecute_SchemaServiceError_ReturnsFailure() {

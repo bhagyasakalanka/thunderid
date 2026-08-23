@@ -1,20 +1,5 @@
-/**
- * Copyright (c) 2026, WSO2 LLC. (https://www.wso2.com).
- *
- * WSO2 LLC. licenses this file to you under the Apache License,
- * Version 2.0 (the "License"); you may not use this file except
- * in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied. See the License for the
- * specific language governing permissions and limitations
- * under the License.
- */
+// Copyright 2026 The ThunderID Authors
+// SPDX-License-Identifier: Apache-2.0
 
 import {Alert, AlertTitle, Box, Button, Chip, Stack, Typography} from '@wso2/oxygen-ui';
 import {type JSX} from 'react';
@@ -29,12 +14,12 @@ import {useNavigate} from 'react-router';
  * application ends up on a Data Plane with no redirect URIs and a broken login.
  */
 export default function MissingVariablesNotice({
-  envId,
+  gatewayId = undefined,
   missing,
   missingSecrets = [],
 }: {
-  /** The environment the secrets belong to, so the notice can lead to where they are set. */
-  envId?: string;
+  /** The gateway the secrets belong to, so the notice can lead to where they are set. */
+  gatewayId?: string;
   missing: string[];
   missingSecrets?: string[];
 }): JSX.Element | null {
@@ -52,11 +37,11 @@ export default function MissingVariablesNotice({
           severity="error"
           sx={{mb: 2}}
           action={
-            envId ? (
+            gatewayId ? (
               <Button
                 size="small"
                 onClick={() => {
-                  void navigate(`/promotions/${envId}/secrets`);
+                  void navigate(`/promotions/${gatewayId}/secrets`);
                 }}
               >
                 {t('promotions:variables.manageSecrets', 'Manage secrets')}
@@ -88,7 +73,7 @@ export default function MissingVariablesNotice({
         <MissingConfiguredVariables
           missing={missing}
           onManage={() => {
-            void navigate('/environment-variables');
+            void navigate(`/promotions/${gatewayId}/variables`);
           }}
         />
       )}
@@ -116,7 +101,7 @@ function MissingConfiguredVariables({missing, onManage}: {missing: string[]; onM
       <Typography variant="body2" sx={{mb: 1}}>
         {t(
           'promotions:variables.missingBody',
-          'Applying now leaves these fields empty on the Data Plane, which can break logins. Set them under Environment Variables first.',
+          'Applying now leaves these fields empty on the Data Plane, which can break logins. Set them under Gateway Variables first.',
         )}
       </Typography>
       <Box>

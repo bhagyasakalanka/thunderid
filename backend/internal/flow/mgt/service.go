@@ -16,7 +16,7 @@ import (
 	"github.com/thunder-id/thunderid/internal/flow/common"
 	flowconfig "github.com/thunder-id/thunderid/internal/flow/config"
 	"github.com/thunder-id/thunderid/internal/flow/core"
-	"github.com/thunder-id/thunderid/internal/flow/executor"
+	"github.com/thunder-id/thunderid/internal/flow/executormeta"
 	"github.com/thunder-id/thunderid/internal/flow/graphbuilder"
 	"github.com/thunder-id/thunderid/internal/flow/interceptor"
 	"github.com/thunder-id/thunderid/internal/system/config"
@@ -76,7 +76,7 @@ type flowMgtService struct {
 	store               flowStoreInterface
 	inferenceService    flowInferenceServiceInterface
 	graphBuilder        graphbuilder.GraphBuilderInterface
-	executorRegistry    executor.ExecutorRegistryInterface
+	executorRegistry    core.ExecutorMetadataProvider
 	interceptorRegistry interceptor.InterceptorRegistryInterface
 	flowValidator       FlowValidatorInterface
 	compositeStore      *compositeFlowStore
@@ -92,7 +92,7 @@ func newFlowMgtService(
 	store flowStoreInterface,
 	inferenceService flowInferenceServiceInterface,
 	graphBuilder graphbuilder.GraphBuilderInterface,
-	executorRegistry executor.ExecutorRegistryInterface,
+	executorRegistry core.ExecutorMetadataProvider,
 	interceptorRegistry interceptor.InterceptorRegistryInterface,
 	flowValidator FlowValidatorInterface,
 	compositeStore *compositeFlowStore,
@@ -871,7 +871,7 @@ func (s *flowMgtService) hasPasskeyRegistrationModes(flowDef *FlowDefinition) bo
 	hasRegFinish := false
 
 	for _, node := range flowDef.Nodes {
-		if node.Executor != nil && node.Executor.Name == executor.ExecutorNamePasskeyAuth {
+		if node.Executor != nil && node.Executor.Name == executormeta.ExecutorNamePasskeyAuth {
 			switch node.Executor.Mode {
 			case "register_start":
 				hasRegStart = true

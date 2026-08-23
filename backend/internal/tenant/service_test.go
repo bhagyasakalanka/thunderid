@@ -31,8 +31,6 @@ import (
 	"github.com/thunder-id/thunderid/internal/system/importer"
 )
 
-const systemID = "root"
-
 // fakeStore is an in-memory tenantStoreInterface.
 type fakeStore struct {
 	provisioned map[string]bool
@@ -58,14 +56,6 @@ func (s *fakeStore) GetTenant(_ context.Context, deploymentID string) (Tenant, e
 	return t, nil
 }
 
-func (s *fakeStore) ListTenants(_ context.Context) ([]Tenant, error) {
-	out := make([]Tenant, 0, len(s.registry))
-	for _, t := range s.registry {
-		out = append(out, t)
-	}
-	return out, nil
-}
-
 func (s *fakeStore) DeleteTenantRecord(_ context.Context, deploymentID string) error {
 	delete(s.registry, deploymentID)
 	return nil
@@ -84,296 +74,179 @@ func (s *fakeStore) PurgeTenantData(_ context.Context, deploymentID string) erro
 func newTestService(store tenantStoreInterface, run func(context.Context, importer.ImportServiceInterface,
 	bootstrap.Options) error) *tenantService {
 	return &tenantService{
-		store:              store,
-		publicURL:          "https://cp.example",
-		systemDeploymentID: systemID,
-		bootstrapRun:       run,
+		store:        store,
+		publicURL:    "https://cp.example",
+		bootstrapRun: run,
 	}
 }
 
-func systemCtx() context.Context {
-	return deployment.WithID(context.Background(), systemID)
-}
-
-func TestCreateTenant_Success(t *testing.T) {
-	store := newFakeStore()
-	var provisioned []string
-	svc := newTestService(store, func(_ context.Context, _ importer.ImportServiceInterface,
-		opts bootstrap.Options) error {
-		provisioned = append(provisioned, opts.DeploymentID)
-		return nil
-	})
-
-	created, svcErr := svc.CreateTenant(systemCtx(), CreateTenantRequest{Org: "acme", Env: "dev", Name: "X"})
-
-	require.Nil(t, svcErr)
-	require.NotNil(t, created)
-	assert.Equal(t, "acme:dev", created.DeploymentID)
-	assert.Equal(t, []string{"acme:dev"}, provisioned)
-	_, ok := store.registry["acme:dev"]
-	assert.True(t, ok)
-}
-
-// A deployment whose org and env spell the system tenant's own id is refused, whatever that id is
-// configured to be.
-func TestCreateTenant_ReservedSystemTenant(t *testing.T) {
-	svc := newTestService(newFakeStore(), noopRun)
-	svc.systemDeploymentID = "acme:dev"
-	ctx := deployment.WithID(context.Background(), "acme:dev")
-
-	_, svcErr := svc.CreateTenant(ctx, CreateTenantRequest{Org: "acme", Env: "dev"})
-
-	require.NotNil(t, svcErr)
-	assert.Equal(t, ErrorReservedSystemTenant.Code, svcErr.Code)
-}
-
-func TestCreateTenant_NotSystemCaller(t *testing.T) {
-	svc := newTestService(newFakeStore(), noopRun)
-	ctx := deployment.WithID(context.Background(), "tenant-a")
-
-	_, svcErr := svc.CreateTenant(ctx, CreateTenantRequest{Org: "acme", Env: "dev"})
-
-	require.NotNil(t, svcErr)
-	assert.Equal(t, ErrorNotSystemTenant.Code, svcErr.Code)
-}
-
-func TestCreateTenant_Conflict(t *testing.T) {
-	store := newFakeStore()
-	store.provisioned["acme:dev"] = true
-	svc := newTestService(store, noopRun)
-
-	_, svcErr := svc.CreateTenant(systemCtx(), CreateTenantRequest{Org: "acme", Env: "dev"})
-
-	require.NotNil(t, svcErr)
-	assert.Equal(t, ErrorTenantConflict.Code, svcErr.Code)
-}
-
-func TestCreateTenant_InvalidDeploymentID(t *testing.T) {
-	svc := newTestService(newFakeStore(), noopRun)
-
-	_, svcErr := svc.CreateTenant(systemCtx(), CreateTenantRequest{Org: "bad org!", Env: "dev"})
-
-	require.NotNil(t, svcErr)
-	assert.Equal(t, ErrorInvalidDeploymentID.Code, svcErr.Code)
-}
-
-func TestDeleteTenant_Success(t *testing.T) {
-	store := newFakeStore()
-	store.provisioned["tenant-x"] = true
-	store.registry["tenant-x"] = Tenant{ID: "1", DeploymentID: "tenant-x"}
-	svc := newTestService(store, noopRun)
-
-	svcErr := svc.DeleteTenant(systemCtx(), "tenant-x")
-
-	require.Nil(t, svcErr)
-	assert.Equal(t, []string{"tenant-x"}, store.purged)
-	_, ok := store.registry["tenant-x"]
-	assert.False(t, ok)
-}
-
-func TestDeleteTenant_ReservedSystemTenant(t *testing.T) {
-	svc := newTestService(newFakeStore(), noopRun)
-
-	svcErr := svc.DeleteTenant(systemCtx(), systemID)
-
-	require.NotNil(t, svcErr)
-	assert.Equal(t, ErrorReservedSystemTenant.Code, svcErr.Code)
-}
-
-func TestDeleteTenant_NotFound(t *testing.T) {
-	svc := newTestService(newFakeStore(), noopRun)
-
-	svcErr := svc.DeleteTenant(systemCtx(), "ghost")
-
-	require.NotNil(t, svcErr)
-	assert.Equal(t, ErrorTenantNotFound.Code, svcErr.Code)
-}
-
-func TestListTenants_RequiresSystemCaller(t *testing.T) {
-	svc := newTestService(newFakeStore(), noopRun)
-	ctx := deployment.WithID(context.Background(), "tenant-a")
-
-	_, svcErr := svc.ListTenants(ctx)
-
-	require.NotNil(t, svcErr)
-	assert.Equal(t, ErrorNotSystemTenant.Code, svcErr.Code)
-}
-
-func TestListTenants_Success(t *testing.T) {
-	store := newFakeStore()
-	store.registry["tenant-x"] = Tenant{ID: "1", DeploymentID: "tenant-x"}
-	store.registry["tenant-y"] = Tenant{ID: "2", DeploymentID: "tenant-y"}
-	svc := newTestService(store, noopRun)
-
-	resp, svcErr := svc.ListTenants(systemCtx())
-
-	require.Nil(t, svcErr)
-	assert.Equal(t, 2, resp.TotalResults)
-	assert.Len(t, resp.Tenants, 2)
+// callerCtx is a request from a token naming the given deployment.
+func callerCtx(id string) context.Context {
+	return deployment.WithID(context.Background(), id)
 }
 
 func noopRun(_ context.Context, _ importer.ImportServiceInterface, _ bootstrap.Options) error {
 	return nil
 }
 
-// stubSeeder records what a later environment was copied from.
-type stubSeeder struct {
-	from       string
-	to         string
-	err        error
-	registered *RegisterEnvironmentInput
-}
-
-func (s *stubSeeder) RegisterEnvironment(_ context.Context,
-	in RegisterEnvironmentInput) (*EnvironmentSummary, error) {
-	s.registered = &in
-	return &EnvironmentSummary{ID: "env-1", Name: in.Name, Rank: in.Rank}, nil
-}
-
-func (s *stubSeeder) SeedTenant(_ context.Context, sourceDeploymentID,
-	targetDeploymentID string) (*SeedSummary, error) {
-	s.from, s.to = sourceDeploymentID, targetDeploymentID
-	if s.err != nil {
-		return nil, s.err
-	}
-	return &SeedSummary{From: sourceDeploymentID, TotalDocuments: 3, Imported: 3}, nil
-}
-
-// The second environment of an organization is a copy of the first, not a second baseline. Building it
-// from the baseline bundle would give it its own organization unit, user types and themes under
-// different ids, and nothing could then be promoted into it.
-func TestCreateTenant_LaterEnvironmentIsSeededFromTheOrganizationsFirst(t *testing.T) {
+func TestCreateTenantProvisionsTheCallersOwnWorkspace(t *testing.T) {
 	store := newFakeStore()
-	store.registry["acme:dev"] = Tenant{ID: "1", DeploymentID: "acme:dev", CreatedAt: "2026-01-01T00:00:00Z"}
 	var provisioned []string
 	svc := newTestService(store, func(_ context.Context, _ importer.ImportServiceInterface,
 		opts bootstrap.Options) error {
 		provisioned = append(provisioned, opts.DeploymentID)
 		return nil
 	})
-	seeder := &stubSeeder{}
-	svc.SetBaselineSeeder(seeder)
 
-	created, svcErr := svc.CreateTenant(systemCtx(), CreateTenantRequest{Org: "acme", Env: "stage"})
+	created, svcErr := svc.CreateTenant(callerCtx("acme"), CreateTenantRequest{Name: "Acme"})
 
 	require.Nil(t, svcErr)
-	assert.Empty(t, provisioned, "a seeded environment must not be provisioned from the baseline")
-	assert.Equal(t, "acme:dev", seeder.from)
-	assert.Equal(t, "acme:stage", seeder.to)
-	require.NotNil(t, created.Seeded)
-	assert.Equal(t, 3, created.Seeded.Imported)
+	assert.Equal(t, "acme", created.DeploymentID)
+	assert.Equal(t, "Acme", created.Name)
+	assert.NotEmpty(t, created.ID)
+	assert.Equal(t, []string{"acme"}, provisioned, "the baseline is provisioned into the caller's deployment")
+	assert.Equal(t, "acme", store.registry["acme"].DeploymentID)
 }
 
-// Another organization's environments say nothing about this one, so its first environment is still
-// provisioned from the baseline.
-func TestCreateTenant_FirstEnvironmentOfAnOrganizationIsProvisioned(t *testing.T) {
+// The organization owns the workspace, so a token naming one of its gateways still provisions
+// (and later reads and deletes) the organization's single workspace rather than a per-gateway one.
+func TestCreateTenantUsesTheOrganizationWhenTheTokenNamesAGateway(t *testing.T) {
 	store := newFakeStore()
-	store.registry["other:dev"] = Tenant{ID: "1", DeploymentID: "other:dev", CreatedAt: "2026-01-01T00:00:00Z"}
 	var provisioned []string
 	svc := newTestService(store, func(_ context.Context, _ importer.ImportServiceInterface,
 		opts bootstrap.Options) error {
 		provisioned = append(provisioned, opts.DeploymentID)
 		return nil
 	})
-	seeder := &stubSeeder{}
-	svc.SetBaselineSeeder(seeder)
 
-	created, svcErr := svc.CreateTenant(systemCtx(), CreateTenantRequest{Org: "acme", Env: "dev"})
+	created, svcErr := svc.CreateTenant(callerCtx("acme:dev"), CreateTenantRequest{})
 
 	require.Nil(t, svcErr)
-	assert.Equal(t, []string{"acme:dev"}, provisioned)
-	assert.Empty(t, seeder.to)
-	assert.Nil(t, created.Seeded)
+	assert.Equal(t, "acme", created.DeploymentID)
+	assert.Equal(t, []string{"acme"}, provisioned)
 }
 
-// The oldest environment is the source, because it is the only one whose resources are not themselves
-// a copy.
-func TestCreateTenant_SeedsFromTheOldestEnvironment(t *testing.T) {
+// A caller cannot name the organization it provisions, so the only way to reach another one is a
+// token for it. This is what replaces the former system-tenant gate.
+func TestCreateTenantCannotReachAnotherOrganization(t *testing.T) {
 	store := newFakeStore()
-	store.registry["acme:stage"] = Tenant{ID: "2", DeploymentID: "acme:stage", CreatedAt: "2026-03-01T00:00:00Z"}
-	store.registry["acme:dev"] = Tenant{ID: "1", DeploymentID: "acme:dev", CreatedAt: "2026-01-01T00:00:00Z"}
+	store.provisioned["other"] = true
 	svc := newTestService(store, noopRun)
-	seeder := &stubSeeder{}
-	svc.SetBaselineSeeder(seeder)
 
-	_, svcErr := svc.CreateTenant(systemCtx(), CreateTenantRequest{Org: "acme", Env: "prod"})
+	created, svcErr := svc.CreateTenant(callerCtx("acme"), CreateTenantRequest{})
 
 	require.Nil(t, svcErr)
-	assert.Equal(t, "acme:dev", seeder.from)
+	assert.Equal(t, "acme", created.DeploymentID)
+	assert.NotContains(t, store.registry, "other", "the other organization is untouched")
 }
 
-// A seed that cannot be done is the caller's problem to act on, not this server's fault, so it is
-// reported as such rather than as an internal error with nothing to go on.
-func TestCreateTenant_SeedFailureIsReportedToTheCaller(t *testing.T) {
-	store := newFakeStore()
-	store.registry["acme:dev"] = Tenant{ID: "1", DeploymentID: "acme:dev", CreatedAt: "2026-01-01T00:00:00Z"}
-	svc := newTestService(store, noopRun)
-	svc.SetBaselineSeeder(&stubSeeder{err: errors.New("tenant acme:dev holds no configuration to copy")})
+func TestCreateTenantRefusesATokenNamingNoDeployment(t *testing.T) {
+	svc := newTestService(newFakeStore(), noopRun)
 
-	_, svcErr := svc.CreateTenant(systemCtx(), CreateTenantRequest{Org: "acme", Env: "stage"})
+	_, svcErr := svc.CreateTenant(context.Background(), CreateTenantRequest{})
 
 	require.NotNil(t, svcErr)
-	assert.Equal(t, ErrorSeedFailed.Code, svcErr.Code)
-	assert.Contains(t, svcErr.ErrorDescription.DefaultValue, "no configuration to copy")
-	_, recorded := store.registry["acme:stage"]
-	assert.False(t, recorded, "a tenant that could not be seeded must not be recorded")
+	assert.Equal(t, ErrorNoTenantInToken.Code, svcErr.Code)
 }
 
-// A tenant that names a data plane is registered for promotion as it is created, so an environment
-// does not have to be set up in a second step that is easy to forget.
-func TestCreateTenant_RegistersTheEnvironmentWithItsRank(t *testing.T) {
+func TestCreateTenantRefusesAnUnsafeDeploymentID(t *testing.T) {
+	svc := newTestService(newFakeStore(), noopRun)
+
+	_, svcErr := svc.CreateTenant(callerCtx("bad/id"), CreateTenantRequest{})
+
+	require.NotNil(t, svcErr)
+	assert.Equal(t, ErrorInvalidDeploymentID.Code, svcErr.Code)
+}
+
+func TestCreateTenantIsRefusedWhenAlreadyProvisioned(t *testing.T) {
 	store := newFakeStore()
-	store.registry["acme:dev"] = Tenant{ID: "1", DeploymentID: "acme:dev", CreatedAt: "2026-01-01T00:00:00Z"}
+	store.provisioned["acme"] = true
 	svc := newTestService(store, noopRun)
-	seeder := &stubSeeder{}
-	svc.SetBaselineSeeder(seeder)
-	rank := 2
 
-	created, svcErr := svc.CreateTenant(systemCtx(), CreateTenantRequest{
-		Org: "acme", Env: "stage", Rank: &rank,
-		DataPlane:    &DataPlane{BaseURL: "https://dp-stage", ClientID: "envmgr"},
-		ControlPlane: &ControlPlane{InsecureSkipVerify: true},
-	})
+	_, svcErr := svc.CreateTenant(callerCtx("acme"), CreateTenantRequest{})
 
-	require.Nil(t, svcErr)
-	require.NotNil(t, seeder.registered)
-	assert.Equal(t, "stage", seeder.registered.Name)
-	assert.Equal(t, "acme:stage", seeder.registered.DeploymentID)
-	assert.Equal(t, 2, seeder.registered.Rank)
-	assert.Equal(t, "https://dp-stage", seeder.registered.DataPlane.BaseURL)
-	// Without this a capture cannot read back from a control plane serving its own certificate.
-	assert.True(t, seeder.registered.ControlPlaneInsecureSkipVerify)
-	require.NotNil(t, created.Environment)
-	assert.Equal(t, 2, created.Environment.Rank)
+	require.NotNil(t, svcErr)
+	assert.Equal(t, ErrorTenantConflict.Code, svcErr.Code)
 }
 
-// The organization's first environment is the bottom of the promotion chain, so its rank is 1 whatever
-// the caller asks for.
-func TestCreateTenant_FirstEnvironmentIsAlwaysRankOne(t *testing.T) {
-	svc := newTestService(newFakeStore(), noopRun)
-	seeder := &stubSeeder{}
-	svc.SetBaselineSeeder(seeder)
-	rank := 7
-
-	_, svcErr := svc.CreateTenant(systemCtx(), CreateTenantRequest{
-		Org: "acme", Env: "dev", Rank: &rank,
-		DataPlane: &DataPlane{BaseURL: "https://dp-dev"},
+// Nothing is recorded when the baseline could not be imported, so a failed attempt can be retried
+// rather than leaving a registry row for a workspace that has no resources.
+func TestCreateTenantRecordsNothingWhenProvisioningFails(t *testing.T) {
+	store := newFakeStore()
+	svc := newTestService(store, func(_ context.Context, _ importer.ImportServiceInterface,
+		_ bootstrap.Options) error {
+		return errors.New("bundle is unreadable")
 	})
 
-	require.Nil(t, svcErr)
-	require.NotNil(t, seeder.registered)
-	assert.Equal(t, 1, seeder.registered.Rank)
+	_, svcErr := svc.CreateTenant(callerCtx("acme"), CreateTenantRequest{})
+
+	require.NotNil(t, svcErr)
+	assert.Equal(t, ErrorInternalServer.Code, svcErr.Code)
+	assert.NotContains(t, store.registry, "acme")
 }
 
-// Without a data plane there is nowhere to apply to, so only the tenant is created.
-func TestCreateTenant_WithoutADataPlaneRegistersNoEnvironment(t *testing.T) {
-	svc := newTestService(newFakeStore(), noopRun)
-	seeder := &stubSeeder{}
-	svc.SetBaselineSeeder(seeder)
+func TestGetTenantReturnsTheCallersOwnTenant(t *testing.T) {
+	store := newFakeStore()
+	store.registry["acme"] = Tenant{ID: "t-1", DeploymentID: "acme", Name: "Acme"}
+	svc := newTestService(store, noopRun)
 
-	created, svcErr := svc.CreateTenant(systemCtx(), CreateTenantRequest{Org: "acme", Env: "dev"})
+	tenant, svcErr := svc.GetTenant(callerCtx("acme"))
 
 	require.Nil(t, svcErr)
-	assert.Nil(t, seeder.registered)
-	assert.Nil(t, created.Environment)
+	assert.Equal(t, "t-1", tenant.ID)
+	assert.Equal(t, "acme", tenant.DeploymentID)
+}
+
+func TestGetTenantIsNotFoundBeforeProvisioning(t *testing.T) {
+	svc := newTestService(newFakeStore(), noopRun)
+
+	_, svcErr := svc.GetTenant(callerCtx("acme"))
+
+	require.NotNil(t, svcErr)
+	assert.Equal(t, ErrorTenantNotFound.Code, svcErr.Code)
+}
+
+func TestDeleteTenantPurgesTheCallersOwnData(t *testing.T) {
+	store := newFakeStore()
+	store.provisioned["acme"] = true
+	store.registry["acme"] = Tenant{ID: "t-1", DeploymentID: "acme"}
+	svc := newTestService(store, noopRun)
+
+	svcErr := svc.DeleteTenant(callerCtx("acme"))
+
+	require.Nil(t, svcErr)
+	assert.Equal(t, []string{"acme"}, store.purged)
+	assert.NotContains(t, store.registry, "acme")
+}
+
+func TestDeleteTenantIsNotFoundWhenNothingWasProvisioned(t *testing.T) {
+	svc := newTestService(newFakeStore(), noopRun)
+
+	svcErr := svc.DeleteTenant(callerCtx("acme"))
+
+	require.NotNil(t, svcErr)
+	assert.Equal(t, ErrorTenantNotFound.Code, svcErr.Code)
+}
+
+// A deprovision that left a registry row behind is completed rather than reported as missing, so the
+// purge is idempotent and a partial previous run can be finished.
+func TestDeleteTenantFinishesAPartialPreviousRun(t *testing.T) {
+	store := newFakeStore()
+	store.registry["acme"] = Tenant{ID: "t-1", DeploymentID: "acme"}
+	svc := newTestService(store, noopRun)
+
+	svcErr := svc.DeleteTenant(callerCtx("acme"))
+
+	require.Nil(t, svcErr)
+	assert.Equal(t, []string{"acme"}, store.purged)
+	assert.NotContains(t, store.registry, "acme")
+}
+
+func TestDeleteTenantRefusesATokenNamingNoDeployment(t *testing.T) {
+	svc := newTestService(newFakeStore(), noopRun)
+
+	svcErr := svc.DeleteTenant(context.Background())
+
+	require.NotNil(t, svcErr)
+	assert.Equal(t, ErrorNoTenantInToken.Code, svcErr.Code)
 }

@@ -1,30 +1,17 @@
-/**
- * Copyright (c) 2026, WSO2 LLC. (https://www.wso2.com).
- *
- * WSO2 LLC. licenses this file to you under the Apache License,
- * Version 2.0 (the "License"); you may not use this file except
- * in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied. See the License for the
- * specific language governing permissions and limitations
- * under the License.
- */
+// Copyright 2026 The ThunderID Authors
+// SPDX-License-Identifier: Apache-2.0
 
 import {Button, PageContent, PageTitle} from '@wso2/oxygen-ui';
 import {Plus} from '@wso2/oxygen-ui-icons-react';
 import {useState, type JSX} from 'react';
 import {useTranslation} from 'react-i18next';
-import CreateEnvironmentDialog from '../components/CreateEnvironmentDialog';
-import EnvironmentChain from '../components/EnvironmentChain';
+import CaptureOrganizationVersion from '../components/CaptureOrganizationVersion';
+import CreateGatewayDialog from '../components/CreateGatewayDialog';
+import GatewayChain from '../components/GatewayChain';
+import OrganizationVersions from '../components/OrganizationVersions';
 
 /**
- * Page showing the environment promotion chain.
+ * Page showing the gateway promotion chain.
  */
 export default function PromotionsListPage(): JSX.Element {
   const {t} = useTranslation();
@@ -35,9 +22,12 @@ export default function PromotionsListPage(): JSX.Element {
       <PageTitle>
         <PageTitle.Header>{t('promotions:listing.title', 'Promotions')}</PageTitle.Header>
         <PageTitle.SubHeader>
-          {t('promotions:listing.subtitle', 'Promote configuration through your environments and review every change')}
+          {t('promotions:listing.subtitle', 'Promote configuration through your gateways and review every change')}
         </PageTitle.SubHeader>
         <PageTitle.Actions>
+          {/* Capturing reads the workspace rather than any one gateway, so it sits here with the set
+              of them rather than on a gateway's own page. */}
+          <CaptureOrganizationVersion />
           <Button
             variant="contained"
             startIcon={<Plus size={18} />}
@@ -45,12 +35,14 @@ export default function PromotionsListPage(): JSX.Element {
               setCreateOpen(true);
             }}
           >
-            {t('promotions:environment.add', 'Add Environment')}
+            {t('promotions:gateway.add', 'Add Gateway')}
           </Button>
         </PageTitle.Actions>
       </PageTitle>
-      <EnvironmentChain />
-      <CreateEnvironmentDialog
+      {/* Versions belong to the organization, so they are listed here rather than under a gateway. */}
+      <OrganizationVersions />
+      <GatewayChain />
+      <CreateGatewayDialog
         open={createOpen}
         onClose={() => {
           setCreateOpen(false);

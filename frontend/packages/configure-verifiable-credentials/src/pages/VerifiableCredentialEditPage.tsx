@@ -1,7 +1,7 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {PageLoadingAnimation, QueryErrorNotice} from '@thunderid/components';
+import {ManagedResourceNotice, PageLoadingAnimation, QueryErrorNotice} from '@thunderid/components';
 import {getErrorMessage} from '@thunderid/utils';
 import {Alert, Button, IconButton, PageContent, PageTitle, Stack, TextField, Typography} from '@wso2/oxygen-ui';
 import {ArrowLeft, Edit} from '@wso2/oxygen-ui-icons-react';
@@ -12,7 +12,7 @@ import useGetVerifiableCredential from '../api/useGetVerifiableCredential';
 import useUpdateVerifiableCredential from '../api/useUpdateVerifiableCredential';
 import VerifiableCredentialDeleteDialog from '../components/VerifiableCredentialDeleteDialog';
 import VerifiableCredentialForm from '../components/VerifiableCredentialForm';
-import {useIsManagedResource, ManagedResourceNotice} from '@thunderid/contexts';
+import {useIsManagedResource} from '@thunderid/contexts';
 import useVerifiableCredentialRoutes from '../hooks/useVerifiableCredentialRoutes';
 import type {UpdateVerifiableCredentialRequest} from '../models/credential-requests';
 

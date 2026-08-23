@@ -377,22 +377,6 @@ CREATE TABLE "SERVER_CONFIG" (
     PRIMARY KEY (DEPLOYMENT_ID, NAME)
 );
 
--- Table to store deployment-scoped non-secret environment variables (Control Plane). KEY is the
--- declarative placeholder the value resolves (e.g. MY_APP_REDIRECT_URL); VALUE is stored in
--- plaintext because it carries no confidential material.
-CREATE TABLE "ENVIRONMENT_VARIABLE" (
-    DEPLOYMENT_ID VARCHAR(255) NOT NULL,
-    ID            VARCHAR(36)  PRIMARY KEY,
-    KEY           VARCHAR(255) NOT NULL,
-    VALUE         TEXT         NOT NULL,
-    DESCRIPTION   VARCHAR(255),
-    CREATED_AT    TEXT         DEFAULT (datetime('now')),
-    UPDATED_AT    TEXT         DEFAULT (datetime('now')),
-    CONSTRAINT unique_environment_variable_key UNIQUE (DEPLOYMENT_ID, KEY)
-);
--- Environment variables are always listed and looked up within a deployment.
-CREATE INDEX idx_environment_variable_deployment ON "ENVIRONMENT_VARIABLE" (DEPLOYMENT_ID);
-
 -- Registry of resources this deployment does not own. A Data Plane records here everything the
 -- Control Plane wrote to it through the import API, so its own management APIs can refuse to change
 -- them: a resource edited on both planes is silently overwritten by the next promotion. Only the
@@ -419,3 +403,163 @@ CREATE TABLE "TENANT" (
     CONSTRAINT unique_tenant_id UNIQUE (DEPLOYMENT_ID, TENANT_ID)
 );
 CREATE INDEX idx_tenant_deployment ON "TENANT" (DEPLOYMENT_ID);
+
+-- The credential a data plane presents when it dials this control plane's channel.
+--
+-- Keyed by DATA_PLANE_ID alone, not by (DEPLOYMENT_ID, DATA_PLANE_ID) like the tenant-scoped tables:
+-- the handshake is authenticated before any tenant context exists, so the lookup cannot be scoped by
+-- one. A data plane id is already unique across a control plane, because the connection registry
+-- keys by it. DEPLOYMENT_ID records which tenant the gateway belongs to.
+--
+-- TOKEN holds the ciphertext. It is encrypted with the configuration crypto service, the same one
+-- that protects connection secrets, so it is unreadable from a database dump alone.
+CREATE TABLE "DATA_PLANE_TOKEN" (
+    DATA_PLANE_ID VARCHAR(255) PRIMARY KEY,
+    DEPLOYMENT_ID VARCHAR(255) NOT NULL,
+    TOKEN         TEXT         NOT NULL,
+    CREATED_AT    TEXT         DEFAULT (datetime('now')),
+    UPDATED_AT    TEXT         DEFAULT (datetime('now'))
+);
+CREATE INDEX idx_data_plane_token_deployment ON "DATA_PLANE_TOKEN" (DEPLOYMENT_ID);
+
+
+-- Credentials this deployment holds, backing the "kv:NAME" references configuration carries.
+--
+-- A credential never travels with configuration: it is promoted as a placeholder and the value is set
+-- against the deployment that needs it. This is where it lands. Names are unique per deployment,
+-- because a reference names a credential by name alone.
+--
+-- VALUE holds the ciphertext, encrypted with the configuration crypto service, so a database dump
+-- reveals no credential. KIND records whether the plaintext is the credential itself or a one-way
+-- hash of it, and ALGORITHM and PARAMETERS carry what verifying a hash needs.
+CREATE TABLE "SECRET" (
+    DEPLOYMENT_ID VARCHAR(255) NOT NULL,
+    ID            VARCHAR(36)  PRIMARY KEY,
+    NAME          VARCHAR(255) NOT NULL,
+    KIND          VARCHAR(10)  NOT NULL CHECK (KIND IN ('hash', 'value')),
+    VALUE         TEXT         NOT NULL,
+    ALGORITHM     VARCHAR(50),
+    PARAMETERS    TEXT,
+    DESCRIPTION   VARCHAR(255),
+    CREATED_AT    TEXT         DEFAULT (datetime('now')),
+    UPDATED_AT    TEXT         DEFAULT (datetime('now')),
+    CONSTRAINT unique_secret_name UNIQUE (DEPLOYMENT_ID, NAME)
+);
+CREATE INDEX idx_secret_deployment ON "SECRET" (DEPLOYMENT_ID);
+
+-- ----------------------------------------------------------------------------
+-- Gateways an organization's configuration is applied to, and the work queued for them.
+--
+-- A gateway is a resource of the organization, so these live here with the rest of its configuration
+-- rather than in a database of their own. DEPLOYMENT_ID is the organization.
+-- ----------------------------------------------------------------------------
+-- Gateways configuration is promoted through, one row per gateway.
+--
+-- DATA is the gateway document. Nothing queries inside it: an organization has a handful of
+-- gateways, they are read as a set, and ordering and rank are resolved in the server.
+CREATE TABLE "GATEWAY" (
+    DEPLOYMENT_ID VARCHAR(255) NOT NULL,
+    ID            VARCHAR(36)  NOT NULL,
+    DATA          TEXT         NOT NULL,
+    CREATED_AT    TEXT         DEFAULT (datetime('now')),
+    UPDATED_AT    TEXT         DEFAULT (datetime('now')),
+    PRIMARY KEY (DEPLOYMENT_ID, ID)
+);
+
+-- Configuration versions captured from the organization, which an apply writes onto a gateway.
+--
+-- A version belongs to the organization, not to a gateway. What a capture reads is the
+-- organization's configuration as authored on the control plane, which is the same whichever
+-- gateway it is later applied to, so there is one stream per organization and a gateway holds none
+-- of its own. SEQ rises by one within the organization and orders that stream.
+CREATE TABLE "VERSION" (
+    DEPLOYMENT_ID VARCHAR(255) NOT NULL,
+    SEQ           INTEGER      NOT NULL,
+    DATA          TEXT         NOT NULL,
+    CREATED_AT    TEXT         DEFAULT (datetime('now')),
+    PRIMARY KEY (DEPLOYMENT_ID, SEQ)
+);
+
+-- What each gateway has run, one row per apply.
+--
+-- A gateway's own history is this: the organization versions that have been applied to it, in the
+-- order they were. It is what "go back to what this gateway was running before" reads, and what
+-- keeps a version from being pruned while some gateway can still return to it.
+--
+-- ORDINAL rises by one per gateway, so the newest row is the version the gateway is running.
+CREATE TABLE "GATEWAY_APPLY" (
+    DEPLOYMENT_ID VARCHAR(255) NOT NULL,
+    GATEWAY_ID    VARCHAR(36)  NOT NULL,
+    ORDINAL       INTEGER      NOT NULL,
+    SEQ           INTEGER      NOT NULL,
+    APPLIED_AT    TEXT         DEFAULT (datetime('now')),
+    PRIMARY KEY (DEPLOYMENT_ID, GATEWAY_ID, ORDINAL),
+    CONSTRAINT fk_gateway_apply_gateway
+        FOREIGN KEY (DEPLOYMENT_ID, GATEWAY_ID) REFERENCES "GATEWAY" (DEPLOYMENT_ID, ID)
+        ON DELETE CASCADE
+);
+
+CREATE INDEX idx_gateway_apply_gateway ON "GATEWAY_APPLY" (DEPLOYMENT_ID, GATEWAY_ID);
+
+-- Non-secret gateway variables, held per gateway. KEY is the declarative placeholder the
+-- value resolves (e.g. MY_APP_REDIRECT_URL); VALUE is stored in plaintext because it carries no
+-- confidential material.
+--
+-- A variable belongs to one gateway of the organization, because its value is a property of the
+-- deployment it is applied to: a redirect URL differs between dev and prod even though the
+-- configuration referring to it is the same. Deleting a gateway takes its variables with it.
+CREATE TABLE "GATEWAY_VARIABLE" (
+    DEPLOYMENT_ID VARCHAR(255) NOT NULL,
+    ID            VARCHAR(36)  PRIMARY KEY,
+    GATEWAY_ID        VARCHAR(36)  NOT NULL,
+    KEY           VARCHAR(255) NOT NULL,
+    VALUE         TEXT         NOT NULL,
+    DESCRIPTION   VARCHAR(255),
+    CREATED_AT    TEXT         DEFAULT (datetime('now')),
+    UPDATED_AT    TEXT         DEFAULT (datetime('now')),
+    CONSTRAINT unique_gateway_variable_key UNIQUE (DEPLOYMENT_ID, GATEWAY_ID, KEY),
+    CONSTRAINT fk_gateway_variable_gateway
+        FOREIGN KEY (DEPLOYMENT_ID, GATEWAY_ID) REFERENCES "GATEWAY" (DEPLOYMENT_ID, ID)
+        ON DELETE CASCADE
+);
+
+CREATE INDEX idx_gateway_variable_gateway ON "GATEWAY_VARIABLE" (DEPLOYMENT_ID, GATEWAY_ID);
+
+-- Work queued for a Data Plane, and what it answered.
+--
+-- A Control Plane pod can only speak to the Data Planes that dialled it, so a request arriving at a
+-- pod holding no link would otherwise fail. Every request is written here first and then delivered:
+-- by this pod when it holds a link, or by whichever pod does. The caller is handed the id and reads
+-- the answer back from this table, from any pod.
+--
+-- Rows are never deleted here. Pruning is a separate concern.
+CREATE TABLE "DATA_PLANE_JOB" (
+    DEPLOYMENT_ID VARCHAR(255) NOT NULL,
+    ID            VARCHAR(64)  NOT NULL,
+    -- The deployment this is for, as "<org>:<env>". DEPLOYMENT_ID above is the organization, so that
+    -- an organization's queue sits in one partition with its gateways.
+    DATA_PLANE_ID VARCHAR(255) NOT NULL,
+    GATEWAY_ID        VARCHAR(64),
+    -- What to do: "import" applies configuration, "secret_put" stores one credential.
+    TYPE          VARCHAR(32)  NOT NULL,
+    -- The request, as JSON. Encrypted when it carries a credential, which is what ENCRYPTED records:
+    -- a secret is held here only until it is delivered, and never in the clear.
+    PAYLOAD       TEXT         NOT NULL,
+    ENCRYPTED     CHAR(1)      DEFAULT '0' NOT NULL,
+    -- pending -> claimed -> done | failed.
+    STATUS        VARCHAR(16)  NOT NULL,
+    -- Which pod is delivering it, for diagnosing a job stuck in claimed.
+    CLAIMED_BY    VARCHAR(255),
+    -- What the Data Plane answered, as JSON, or why it could not be delivered.
+    RESULT        TEXT,
+    ERROR         TEXT,
+    ATTEMPTS      INTEGER      DEFAULT 0 NOT NULL,
+    CREATED_AT    TEXT         DEFAULT (datetime('now')),
+    UPDATED_AT    TEXT         DEFAULT (datetime('now')),
+    COMPLETED_AT  TEXT,
+    PRIMARY KEY (DEPLOYMENT_ID, ID)
+);
+
+-- Claiming reads the oldest pending row for one Data Plane, and checks whether that Data Plane
+-- already has one in flight.
+CREATE INDEX idx_data_plane_job_queue ON "DATA_PLANE_JOB" (DATA_PLANE_ID, STATUS, CREATED_AT);

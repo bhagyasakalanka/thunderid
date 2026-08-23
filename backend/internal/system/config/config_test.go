@@ -1499,10 +1499,11 @@ func (suite *ConfigTestSuite) TestChannelServerConfigValidate() {
 	}{
 		{name: "DisabledEmptyAuthToken", cfg: ChannelServerConfig{Enabled: false}, expectError: false},
 		{
+			// A control plane that issues a token per data plane keeps them in its own database, so
+			// an empty auth_token is a deliberate configuration rather than a missing one.
 			name:        "EnabledEmptyAuthToken",
 			cfg:         ChannelServerConfig{Enabled: true},
-			expectError: true,
-			errSubstr:   "channel.server.auth_token",
+			expectError: false,
 		},
 		{
 			name:        "EnabledWithAuthToken",
@@ -1598,18 +1599,17 @@ func (suite *ConfigTestSuite) TestChannelClientConfigValidate() {
 }
 
 func (suite *ConfigTestSuite) TestChannelConfigValidate_DelegatesToServerAndClient() {
-	// A misconfigured server section must surface through ChannelConfig.Validate.
+	// A server section with no shared token is valid: a control plane that issues a token per data
+	// plane keeps them in its own database, and auth_token is only the fallback for one that does not.
 	cfg := ChannelConfig{Server: ChannelServerConfig{Enabled: true}}
-	err := cfg.Validate()
-	assert.Error(suite.T(), err)
-	assert.Contains(suite.T(), err.Error(), "channel.server.auth_token")
+	assert.NoError(suite.T(), cfg.Validate())
 
-	// A valid server paired with a misconfigured client must also surface through Validate.
+	// A misconfigured client section must surface through ChannelConfig.Validate.
 	cfg = ChannelConfig{
 		Server: ChannelServerConfig{Enabled: true, AuthToken: "tok"},
 		Client: ChannelClientConfig{Enabled: true},
 	}
-	err = cfg.Validate()
+	err := cfg.Validate()
 	assert.Error(suite.T(), err)
 	assert.Contains(suite.T(), err.Error(), "channel.client.id")
 
@@ -1627,7 +1627,9 @@ func (suite *ConfigTestSuite) TestLoadConfig_ChannelValidation() {
 		errSubstr   string
 	}{
 		{
-			name: "ServerEnabledMissingAuthToken",
+			// A control plane that issues a token per data plane keeps them in its own database, so an
+			// enabled server with no shared token loads rather than being rejected as incomplete.
+			name: "ServerEnabledWithoutASharedToken",
 			content: `
 channel:
   server:
@@ -1638,8 +1640,7 @@ notification:
     use_numeric_only: true
     validity_period_seconds: 120
 `,
-			expectError: true,
-			errSubstr:   "channel.server.auth_token",
+			expectError: false,
 		},
 		{
 			name: "ClientEnabledMissingID",
@@ -1893,4 +1894,34 @@ func (suite *ConfigTestSuite) TestNotificationConfig_Validate_DelegatesToOTP() {
 	err := cfg.Validate()
 	assert.Error(suite.T(), err)
 	assert.Contains(suite.T(), err.Error(), "notification.otp.length")
+}
+
+// A control plane that issues a token per data plane keeps them in its own database, so an empty
+// auth_token is a valid configuration rather than a missing one.
+func TestChannelServerNeedsNoSharedTokenWhenItIssuesItsOwn(t *testing.T) {
+	cfg := ChannelServerConfig{Enabled: true}
+
+	assert.NoError(t, cfg.Validate())
+}
+
+// The scope is configurable because the authorization server issuing these tokens is not always this
+// one, and its scope naming is its own. Unset, it falls back to the documented default.
+func TestPromotionScopeFallsBackToTheDefault(t *testing.T) {
+	tests := []struct {
+		name      string
+		configure PromotionConfig
+		want      string
+	}{
+		{name: "unset", configure: PromotionConfig{}, want: DefaultPromotionScope},
+		{name: "blank", configure: PromotionConfig{Scope: "   "}, want: DefaultPromotionScope},
+		{name: "configured", configure: PromotionConfig{Scope: "release:promote"}, want: "release:promote"},
+		{name: "trimmed", configure: PromotionConfig{Scope: "  release:promote  "}, want: "release:promote"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := test.configure.PromotionScope(); got != test.want {
+				t.Fatalf("expected %q, got %q", test.want, got)
+			}
+		})
+	}
 }

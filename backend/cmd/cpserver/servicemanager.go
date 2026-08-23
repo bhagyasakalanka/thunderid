@@ -35,28 +35,27 @@ import (
 
 	"github.com/thunder-id/thunderid/internal/agent"
 	"github.com/thunder-id/thunderid/internal/application"
-	"github.com/thunder-id/thunderid/internal/authn/github"
-	"github.com/thunder-id/thunderid/internal/authn/google"
-	authnOAuth "github.com/thunder-id/thunderid/internal/authn/oauth"
-	authnOIDC "github.com/thunder-id/thunderid/internal/authn/oidc"
 	"github.com/thunder-id/thunderid/internal/cert"
 	"github.com/thunder-id/thunderid/internal/connection"
+	"github.com/thunder-id/thunderid/internal/dataplanetoken"
 	layoutmgt "github.com/thunder-id/thunderid/internal/design/layout/mgt"
 	thememgt "github.com/thunder-id/thunderid/internal/design/theme/mgt"
 	"github.com/thunder-id/thunderid/internal/entity"
 	"github.com/thunder-id/thunderid/internal/entityprovider"
 	"github.com/thunder-id/thunderid/internal/entitytype"
-	"github.com/thunder-id/thunderid/internal/environmentvariable"
-	"github.com/thunder-id/thunderid/internal/envmgr"
-	"github.com/thunder-id/thunderid/internal/envmgr/model"
-	envmgrservice "github.com/thunder-id/thunderid/internal/envmgr/service"
-	"github.com/thunder-id/thunderid/internal/envmgr/thunder"
 	flowconfig "github.com/thunder-id/thunderid/internal/flow/config"
 	flowcore "github.com/thunder-id/thunderid/internal/flow/core"
-	"github.com/thunder-id/thunderid/internal/flow/executor"
+	"github.com/thunder-id/thunderid/internal/flow/executormeta"
 	"github.com/thunder-id/thunderid/internal/flow/graphbuilder"
 	"github.com/thunder-id/thunderid/internal/flow/interceptor"
 	flowmgt "github.com/thunder-id/thunderid/internal/flow/mgt"
+	"github.com/thunder-id/thunderid/internal/gateway"
+	"github.com/thunder-id/thunderid/internal/gateway/dataplane"
+	"github.com/thunder-id/thunderid/internal/gateway/jobrunner"
+	"github.com/thunder-id/thunderid/internal/gateway/secretcapture"
+	gatewayservice "github.com/thunder-id/thunderid/internal/gateway/service"
+	"github.com/thunder-id/thunderid/internal/gateway/thunder"
+	"github.com/thunder-id/thunderid/internal/gatewayvariable"
 	"github.com/thunder-id/thunderid/internal/group"
 	"github.com/thunder-id/thunderid/internal/idp"
 	"github.com/thunder-id/thunderid/internal/inboundclient"
@@ -100,13 +99,16 @@ var observabilitySvc observability.ObservabilityServiceInterface
 // close it during shutdown. Nil when the channel is disabled.
 var channelServer *channel.Server
 
+// dataPlaneTokens issues and holds the credential each data plane presents when it connects.
+var dataPlaneTokens *dataplanetoken.Service
+
 // registerServices registers the Control Plane management services with the provided HTTP
 // multiplexer. It also returns the import and export services so the bootstrap and export
 // subcommands can create or read resources in-process through the same service instances.
 func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterface) (
 	jwt.JWTServiceInterface, kmprovider.RuntimeCryptoProvider,
-	importer.ImportServiceInterface, export.ExportServiceInterface, envmgrRegistry,
-	environmentvariable.EnvironmentVariableServiceInterface) {
+	importer.ImportServiceInterface, export.ExportServiceInterface, gatewayRegistry,
+	gatewayvariable.GatewayVariableServiceInterface) {
 	logger := log.GetLogger()
 
 	// Service registration runs during application startup, outside any request.
@@ -118,23 +120,23 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 	pkiService, err := pki.Initialize()
 	fatalOnError(ctx, logger, err, "Failed to initialize certificate service")
 
-	runtimeCryptoSvc, _, err := kmprovider.Initialize(pkiService)
+	runtimeCryptoSvc, configCryptoSvc, err := kmprovider.Initialize(pkiService)
 	fatalOnError(ctx, logger, err, "Failed to initialize key manager provider")
 
-	envVarService, err := environmentvariable.Initialize(mux)
-	fatalOnError(ctx, logger, err, "Failed to initialize EnvironmentVariableService")
+	envVarService, err := gatewayvariable.Initialize(mux)
+	fatalOnError(ctx, logger, err, "Failed to initialize GatewayVariableService")
 
-	// Promotion between deployments is a control plane concern, so the environment manager is wired
+	// Promotion between deployments is a control plane concern, so the gateway manager is wired
 	// only here. It stays disabled unless a data directory is configured, which leaves a deployment
 	// using the standalone service untouched.
 	//
 	// It is initialized before the capturer because it is where a captured credential goes when this
 	// server hosts it.
-	envManager := initEnvironmentManager(ctx, logger, mux, config.GetServerRuntime().Config)
+	gatewayManager := initGatewayManager(ctx, logger, mux, config.GetServerRuntime().Config)
 
 	// A captured credential is handed to the Data Plane's secret service, so the Control Plane holds no
 	// secret at rest and the credential is usable immediately rather than at the next promotion.
-	secretCapturer := selectSecretCapturer(ctx, logger, config.GetServerRuntime().Config, envManager)
+	secretCapturer := secretcapture.Select(ctx, logger, config.GetServerRuntime().Config, gatewayManager)
 
 	runtime := config.GetServerRuntime()
 	joseCfg := joseconfig.Config{
@@ -215,6 +217,13 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 	ouService.SetOUGroupResolver(ouGroupResolver)
 	ouService.SetOURoleResolver(ouRoleResolver)
 
+	// Complete the two-phase initialization of the privilege-escalation guard. The resolver spans
+	// roles, groups, and entities, so it can only be built once all three are ready. Until it is
+	// injected the guard fails closed, so this must not be skipped: granting a permission is
+	// authoring, which this plane does, and without the resolver every such grant is refused.
+	ouAuthzService.SetPermissionResolver(
+		role.NewEffectivePermissionResolver(roleService, groupService, entityService))
+
 	idpService, err := idp.Initialize(cacheManager, entityTypeService)
 	fatalOnError(ctx, logger, err, "Failed to initialize IDPService")
 
@@ -261,40 +270,9 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 
 	// Flow MANAGEMENT (CRUD + definition validation).
 	//
-	// TEMPORARY COUPLING: flow validation needs an executor/interceptor registry and a graph
-	// builder to check that flow nodes reference known executors and that the graph is well-formed.
-	// Building that registry links the flow/executor package, which transitively imports the Data
-	// Plane authn/oauth/idp-runtime/notification-otp packages. Validation only reads static executor
-	// metadata (GetMeta / IsRegistered) and never executes a node, so runtime dependencies are left
-	// nil where the executor constructor merely stores them. The federated-auth services below are
-	// the exception: three executor constructors (github/google/oidc) type-assert their auth service
-	// at construction, so the CP builds these lightweight services (never executed here) to satisfy
-	// them. Splitting executor metadata/registration from executor execution wiring (the follow-up
-	// flow refactor) removes both this link and the need for these services entirely.
-	oauthAuthnService := authnOAuth.Initialize(idpService, entityProvider)
-	oidcAuthnService := authnOIDC.Initialize(oauthAuthnService, jwtService)
-	googleAuthnService := google.Initialize(oidcAuthnService, jwtService)
-	githubAuthnService := github.Initialize(oauthAuthnService)
-
 	flowConfig := flowconfig.FromServerRuntime()
-	flowFactory, execRegistry, interceptorRegistry, graphBuilder := initializeFlowCoreAndExecutor(ctx, logger,
-		cacheManager, executor.ExecutorDependencies{
-			OUService:             ouService,
-			IDPService:            idpService,
-			JWTService:            jwtService,
-			EntityTypeService:     entityTypeService,
-			GroupService:          groupService,
-			RoleService:           roleService,
-			RoleAssignmentService: roleAssignmentService,
-			EntityProvider:        entityProvider,
-			OAuthSvc:              oauthAuthnService,
-			OIDCSvc:               oidcAuthnService,
-			GoogleSvc:             googleAuthnService,
-			GithubSvc:             githubAuthnService,
-		},
-		interceptor.InterceptorDependencies{},
-		flowConfig,
-	)
+	flowFactory, execRegistry, interceptorRegistry, graphBuilder := initializeFlowValidation(ctx, logger,
+		cacheManager, interceptor.InterceptorDependencies{}, flowConfig)
 
 	flowMgtService, flowMgtExporter, err := flowmgt.Initialize(
 		mux, mcpServer, cacheManager, flowFactory, execRegistry, interceptorRegistry, graphBuilder,
@@ -373,14 +351,19 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 		serverConfigService,
 	)
 
-	// A promotion writes the promoted configuration into the destination environment's own tenant. That
-	// tenant is generally not the caller's, so the write is handed to the import service directly rather
-	// than sent over HTTP with the caller's token, which would land it back in the tenant it came from.
-	if envManager != nil {
-		envManager.SetLocalControlPlane(&localControlPlane{
-			importService: importService,
-			baseURL:       localControlPlaneURL(config.GetServerRuntime().Config),
-		})
+	// A capture reads the organization's workspace, which is this very server, so the gateway
+	// manager is told where that answers and which certificate it presents. The certificate is this
+	// server's own, and is trusted explicitly because on-premise it is commonly signed by a private
+	// CA that the system roots do not carry.
+	if gatewayManager != nil {
+		runtime := config.GetServerRuntime()
+		gatewayManager.SetWorkspaceURL(gateway.WorkspaceURL(runtime.Config))
+		workspaceCA := gateway.WorkspaceCA(runtime.Config, runtime.ServerHome)
+		if err := thunder.CheckCA(workspaceCA); err != nil {
+			logger.Error(ctx, "The workspace certificate cannot be trusted, so a capture will fail",
+				log.Error(err))
+		}
+		gatewayManager.SetWorkspaceCA(workspaceCA)
 	}
 
 	// Register the health service.
@@ -389,15 +372,34 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 
 	// Initialize the CP-DP channel server (phone-home WebSocket). No-op when disabled.
 	chCfg := config.GetServerRuntime().Config.Channel.Server
+	// Tokens are issued per data plane when a gateway is registered and held encrypted here, so
+	// the handshake knows which data plane connected instead of believing the id it claims.
+	dataPlaneTokens = dataplanetoken.New()
+	// A credential queued for a data plane is encrypted at rest with the server's configuration key.
+	if gatewayManager != nil && configCryptoSvc != nil {
+		gatewayManager.SetSecretSealer(jobrunner.NewConfigSealer(configCryptoSvc))
+	}
+
 	channelServer = channel.InitializeServer(mux, channel.ServerConfig{
 		Enabled:    chCfg.Enabled,
 		Path:       chCfg.Path,
 		AuthToken:  chCfg.AuthToken,
 		ReadLimit:  chCfg.ReadLimitBytes,
 		RPCTimeout: time.Duration(chCfg.RPCTimeoutSeconds) * time.Second,
-	})
+	}, dataPlaneTokens)
 
-	return jwtService, runtimeCryptoSvc, importService, exportService, envManager, envVarService
+	// Data planes are reached over the connections they hold open to this server, so the gateway
+	// manager is given those rather than a client for each one's management API. Without a channel
+	// there is no way to reach a data plane at all, and an apply says so rather than failing obscurely.
+	if gatewayManager != nil {
+		gatewayManager.SetDataPlanes(dataplane.New(channelServer))
+		gatewayManager.SetDataPlaneTokenIssuer(dataPlaneTokens)
+		// Work queued by a pod that held no connection to its data plane waits in the database. This
+		// is what picks up the share of it this pod can deliver.
+		jobrunner.Start(ctx, gatewayManager, channelServer)
+	}
+
+	return jwtService, runtimeCryptoSvc, importService, exportService, gatewayManager, envVarService
 }
 
 // dependencyConsumers groups the services that check the dependency registry before deleting their
@@ -451,21 +453,25 @@ func fatalOnError(ctx context.Context, logger *log.Logger, err error, msg string
 // initializeFlowCoreAndExecutor initializes the flow core and executor registries used for flow
 // definition validation. On the CP the executor dependencies carry only management services; the
 // runtime dependencies are left nil because validation reads static executor metadata only.
-func initializeFlowCoreAndExecutor(
+// initializeFlowValidation initializes what flow definition validation and graph building need.
+//
+// The executor side is the static metadata catalog rather than the real registry: this plane
+// validates flows and never runs one, and constructing the executors would link the data-plane
+// services they are built with. The catalog honors the same configured subset, so a flow accepted
+// here is one the plane that runs it has registered.
+func initializeFlowValidation(
 	ctx context.Context,
 	logger *log.Logger,
 	cacheManager cache.CacheManagerInterface,
-	execDeps executor.ExecutorDependencies,
 	interceptorDeps interceptor.InterceptorDependencies,
 	flowConfig flowconfig.Config,
-) (flowcore.FlowFactoryInterface, executor.ExecutorRegistryInterface,
+) (flowcore.FlowFactoryInterface, flowcore.ExecutorMetadataProvider,
 	interceptor.InterceptorRegistryInterface, graphbuilder.GraphBuilderInterface) {
 	flowFactory, graphCache := flowcore.Initialize(cacheManager)
-	execDeps.FlowFactory = flowFactory
 	interceptorDeps.FlowFactory = flowFactory
 
-	execRegistry, err := executor.Initialize(execDeps, flowConfig.Flow)
-	fatalOnError(ctx, logger, err, "Failed to register flow executors")
+	execRegistry, err := executormeta.NewRegistry(flowConfig.Flow.Executors)
+	fatalOnError(ctx, logger, err, "Failed to build the flow executor metadata registry")
 	interceptorRegistry, err := interceptor.Initialize(interceptorDeps, flowConfig.Flow)
 	fatalOnError(ctx, logger, err, "Failed to initialize Interceptor registry")
 
@@ -493,31 +499,36 @@ func buildHashConfig() (cryptolib.HashConfig, error) {
 	}
 }
 
-// initEnvironmentManager mounts the in-process environment manager. A failure is logged rather than
+// initGatewayManager mounts the in-process gateway manager. A failure is logged rather than
 // fatal: promotion is one capability of the control plane, and losing it should not stop the
 // management APIs from serving.
 // It returns the manager when one is mounted, so captured credentials can be routed through it instead
-// of over HTTP; a nil result means promotion is not hosted here.
-func initEnvironmentManager(ctx context.Context, logger *log.Logger, mux *http.ServeMux,
-	cfg config.Config) envmgrRegistry {
-	dataDir := cfg.Server.SecurityConfig.EnvironmentManager.DataDir
-	reg, err := envmgr.Initialize(mux, dataDir, hashSecretForEnvManager)
+// of over HTTP; a nil result means it could not be started.
+//
+// A Control Plane always hosts it: attaching gateways is what a Control Plane is for, and a gateway is
+// a resource of the organization held in the configuration database alongside the rest of it, so there
+// is nothing to configure and nothing to turn off.
+func initGatewayManager(ctx context.Context, logger *log.Logger, mux *http.ServeMux,
+	_ config.Config) gatewayRegistry {
+	reg, err := gateway.Initialize(mux)
 	if err != nil {
-		logger.Error(ctx, "Failed to start the in-process environment manager", log.Error(err))
+		logger.Error(ctx, "Failed to start the in-process gateway manager", log.Error(err))
 		return nil
 	}
-	if reg == nil {
-		return nil
-	}
-	logger.Info(ctx, "Serving the environment manager from this server", log.String("dataDir", dataDir))
+	logger.Info(ctx, "Serving the gateway manager from this server")
 	return reg
 }
 
-// envmgrRegistry is what the in-process environment manager exposes to this server: where a captured
+// gatewayRegistry is what the in-process gateway manager exposes to this server: where a captured
 // credential goes, and which control plane a promotion writes into.
-type envmgrRegistry interface {
-	localCaptureRouter
-	SetLocalControlPlane(cp envmgrservice.LocalControlPlane)
-	SeedTenant(ctx context.Context, sourceDeploymentID, targetDeploymentID string) (*thunder.ImportResponse, error)
-	CreateEnvironment(deploymentID string, in envmgrservice.CreateEnvironmentInput) (model.Environment, error)
+type gatewayRegistry interface {
+	secretcapture.LocalCaptureRouter
+	SetWorkspaceURL(baseURL string)
+	SetWorkspaceCA(caFile string)
+	SetDataPlanes(planes gatewayservice.DataPlanes)
+	SetDataPlaneTokenIssuer(issuer gatewayservice.DataPlaneTokenIssuer)
+	SetSecretSealer(sealer gatewayservice.SecretSealer)
+	SetGatewayVariables(envVars gatewayvariable.GatewayVariableServiceInterface)
+	// DeliverPending carries out work queued for a data plane this pod holds a connection to.
+	DeliverPending(ctx context.Context, dataPlaneID string) error
 }

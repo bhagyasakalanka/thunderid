@@ -252,7 +252,7 @@ func (e *applicationExporter) GetResourceRulesForResource(resource interface{}) 
 		variables = append(variables, "InboundAuthConfig[].OAuthConfig.ClientSecret")
 	}
 	// The home URL names the deployment the application is served from, so it belongs to the
-	// environment rather than to the configuration and would otherwise carry one deployment's host
+	// gateway rather than to the configuration and would otherwise carry one deployment's host
 	// into the next. It is parameterized only when set, because a field named in the rules survives
 	// omitempty, which would make every application without a URL demand a value on import.
 	if strings.TrimSpace(app.URL) != "" {

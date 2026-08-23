@@ -138,13 +138,16 @@ func (suite *ServiceTestSuite) setupTestService() (
 		entityprovider.ErrorCodeEntityNotFound, "not found", "")
 	var noEPErr *entityprovider.EntityProviderError
 	mockEntityProvider.On("IdentifyEntity", mock.Anything, mock.Anything).Maybe().Return((*string)(nil), epNotFound)
-	mockEntityProvider.On("GetEntity", mock.Anything, mock.Anything).Maybe().Return((*providers.Entity)(nil), epNotFound)
-	mockEntityProvider.On("GetEntitiesByIDs", mock.Anything, mock.Anything).Maybe().Return([]providers.Entity{}, noEPErr)
+	mockEntityProvider.On("GetEntity", mock.Anything, mock.Anything).Maybe().
+		Return((*providers.Entity)(nil), epNotFound)
+	mockEntityProvider.On("GetEntitiesByIDs", mock.Anything, mock.Anything).Maybe().
+		Return([]providers.Entity{}, noEPErr)
 	mockEntityProvider.On("CreateEntity", mock.Anything, mock.Anything, mock.Anything).
 		Maybe().Return(&providers.Entity{}, noEPErr)
 	mockEntityProvider.On("DeleteEntity", mock.Anything, mock.Anything).Maybe().Return(noEPErr)
 	mockEntityProvider.On("UpdateSystemAttributes", mock.Anything, mock.Anything, mock.Anything).Maybe().Return(noEPErr)
-	mockEntityProvider.On("UpdateSystemCredentials", mock.Anything, mock.Anything, mock.Anything).Maybe().Return(noEPErr)
+	mockEntityProvider.On("UpdateSystemCredentials", mock.Anything, mock.Anything, mock.Anything).Maybe().
+		Return(noEPErr)
 	mockStore.On("Validate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Maybe().Return(nil)
 	mockStore.On("ResolveInboundAuthProfileHandles", mock.Anything, mock.Anything).Maybe().Return(nil)
 	mockOUService := oumock.NewOrganizationUnitServiceInterfaceMock(suite.T())

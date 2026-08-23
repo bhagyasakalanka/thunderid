@@ -38,6 +38,26 @@ var resourceTypePattern = regexp.MustCompile(`(?m)^resource_type:\s*(\w+)`)
 // mechanism remains for any future resource whose store is intentionally not tenant-partitioned.
 var globalResourceTypes = map[string]bool{}
 
+// localAdministratorTypes are the resources that exist only to make the built-in administrator work:
+// the user itself, the group it belongs to, and the role granted to that group.
+var localAdministratorTypes = map[string]bool{"user": true, "group": true, "role": true}
+
+// omitLocalAdministrator drops the built-in administrator from a bundle, with the group and role that
+// exist only to authorize it. They reference each other and nothing else references them, so they
+// come out together or not at all.
+func omitLocalAdministrator(content string) string {
+	docs := strings.Split(content, "\n---")
+	kept := make([]string, 0, len(docs))
+	for _, doc := range docs {
+		m := resourceTypePattern.FindStringSubmatch(doc)
+		if len(m) > 1 && localAdministratorTypes[m[1]] {
+			continue
+		}
+		kept = append(kept, doc)
+	}
+	return strings.Join(kept, "\n---")
+}
+
 // globalBaselineIDs returns the set of baseline ids that belong to global (shared) resource
 // documents, so remapping can leave them - and any reference to them from tenant-scoped documents -
 // pointing at the single shared row.
@@ -45,7 +65,7 @@ func globalBaselineIDs(content string) map[string]bool {
 	ids := make(map[string]bool)
 	for _, doc := range strings.Split(content, "\n---") {
 		m := resourceTypePattern.FindStringSubmatch(doc)
-		if m == nil || !globalResourceTypes[m[1]] {
+		if len(m) < 2 || !globalResourceTypes[m[1]] {
 			continue
 		}
 		for _, id := range baselineIDPattern.FindAllString(doc, -1) {
@@ -136,8 +156,18 @@ func Run(ctx context.Context, importSvc importer.ImportServiceInterface, opts Op
 		return nil
 	}
 
-	// Resolve `{{ .ENV_VAR }}` placeholders (e.g. ADMIN_USERNAME, ADMIN_PASSWORD,
-	// PUBLIC_URL) from the environment before importing.
+	// A tenant gets no local administrator. Whoever administers one signs in against the trusted
+	// issuer, which names the tenant in a token claim, so a local user with a password is an
+	// unusable credential that would nonetheless be a real way in. A deployment provisioned without
+	// a tenant is standalone, where that user is the only way in and is kept.
+	//
+	// This runs before the placeholders are resolved, so the credentials those documents reference
+	// are no longer asked for at all.
+	if opts.DeploymentID != "" {
+		content = omitLocalAdministrator(content)
+	}
+
+	// Resolve `{{ .ENV_VAR }}` placeholders (e.g. PUBLIC_URL) from the environment before importing.
 	resolved, err := utils.SubstituteEnvironmentVariables([]byte(content))
 	if err != nil {
 		return fmt.Errorf("failed to resolve bootstrap template variables: %w", err)

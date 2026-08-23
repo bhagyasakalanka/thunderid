@@ -8,8 +8,8 @@ export type {
   TrustedIssuerConfig,
   BrandConfig,
   SdkConfig,
-  EnvManagerConfig,
   Plane,
+  EnvManagerConfig,
 } from './Config/types';
 export type {ToastContextType, ToastSeverity} from './Toast/ToastContext';
 export type {RoutePaths} from './Routes/RoutesContext';
@@ -27,5 +27,5 @@ export {default as useRoutes} from './Routes/useRoutes';
 
 // Managed resources: which resources this deployment does not own, because a control plane applied
 // them. Lives here so every configure-* package can ask, rather than only the console.
-export {useManagedResources, useIsManagedResource, ManagedResourceNotice} from './ManagedResources';
+export {useManagedResources, useIsManagedResource} from './ManagedResources';
 export type {ManagedResourceType, ManagedResourcesResponse} from './ManagedResources';

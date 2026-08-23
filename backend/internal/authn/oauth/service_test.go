@@ -612,7 +612,8 @@ func (suite *OAuthAuthnServiceTestSuite) TestGetInternalUserWithServiceError() {
 		{
 			name: "IdentifyNilUserID",
 			mockSetup: func(m *entityprovidermock.EntityProviderInterfaceMock) {
-				m.On("IdentifyEntity", mock.Anything, mock.Anything).Return(nil, (*entityprovider.EntityProviderError)(nil))
+				m.On("IdentifyEntity", mock.Anything, mock.Anything).
+					Return(nil, (*entityprovider.EntityProviderError)(nil))
 			},
 			expectedErrCode: common.ErrorUserNotFound.Code,
 		},
@@ -1104,7 +1105,8 @@ func (suite *OAuthAuthnServiceTestSuite) TestBuildFederatedAuthResultPrefersSubW
 		context.Background(), testIDPID, testSub, map[string]interface{}{"email": "user@example.com"})
 	suite.Nil(svcErr)
 	suite.Equal(testUserID, result.Token[common.UserAttributeUserID])
-	suite.mockEntityProvider.AssertNotCalled(suite.T(), "IdentifyEntity", mock.Anything, map[string]interface{}{"email": "user@example.com"})
+	suite.mockEntityProvider.AssertNotCalled(suite.T(), "IdentifyEntity", mock.Anything,
+		map[string]interface{}{"email": "user@example.com"})
 }
 
 func (suite *OAuthAuthnServiceTestSuite) TestBuildFederatedAuthResultCombinesLinkedAttributes() {
@@ -1198,7 +1200,8 @@ func (suite *OAuthAuthnServiceTestSuite) TestBuildFederatedAuthResultSurfacesSer
 	}
 	suite.mockIDPService.On("GetIdentityProvider", mock.Anything, testIDPID).Return(idpDTO, nil)
 	serverErr := &entityprovider.EntityProviderError{Code: entityprovider.ErrorCodeSystemError}
-	suite.mockEntityProvider.On("IdentifyEntity", mock.Anything, map[string]interface{}{"sub": testSub}).Return(nil, serverErr)
+	suite.mockEntityProvider.On("IdentifyEntity", mock.Anything, map[string]interface{}{"sub": testSub}).Return(nil,
+		serverErr)
 
 	result, svcErr := suite.service.BuildFederatedAuthResult(
 		context.Background(), testIDPID, testSub, map[string]interface{}{"email": "user@example.com"})

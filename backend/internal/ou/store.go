@@ -210,7 +210,8 @@ func (s *organizationUnitStore) GetOrganizationUnit(
 		return providers.OrganizationUnit{}, fmt.Errorf("failed to get database client: %w", err)
 	}
 
-	results, err := dbClient.QueryContext(ctx, queryGetOrganizationUnitByID, id, deployment.Resolve(ctx, s.deploymentID))
+	results, err := dbClient.QueryContext(ctx, queryGetOrganizationUnitByID, id, deployment.Resolve(ctx,
+		s.deploymentID))
 	if err != nil {
 		return providers.OrganizationUnit{}, fmt.Errorf("failed to execute query: %w", err)
 	}
@@ -239,9 +240,12 @@ func (s *organizationUnitStore) GetOrganizationUnitByHandle(
 
 	var results []map[string]interface{}
 	if parent == nil {
-		results, err = dbClient.QueryContext(ctx, queryGetRootOrganizationUnitByHandle, handle, deployment.Resolve(ctx, s.deploymentID))
+		results, err = dbClient.QueryContext(ctx, queryGetRootOrganizationUnitByHandle, handle, deployment.Resolve(ctx,
+			s.deploymentID))
 	} else {
-		results, err = dbClient.QueryContext(ctx, queryGetOrganizationUnitByHandle, handle, *parent, deployment.Resolve(ctx, s.deploymentID))
+		results, err = dbClient.QueryContext(ctx, queryGetOrganizationUnitByHandle, handle, *parent,
+			deployment.Resolve(ctx,
+				s.deploymentID))
 	}
 	if err != nil {
 		return providers.OrganizationUnit{}, fmt.Errorf("failed to execute query for handle %s: %w", handle, err)
@@ -309,9 +313,12 @@ func (s *organizationUnitStore) getOrganizationUnitByHandleWithClient(
 	var err error
 
 	if parent == nil {
-		results, err = dbClient.QueryContext(ctx, queryGetRootOrganizationUnitByHandle, handle, deployment.Resolve(ctx, s.deploymentID))
+		results, err = dbClient.QueryContext(ctx, queryGetRootOrganizationUnitByHandle, handle, deployment.Resolve(ctx,
+			s.deploymentID))
 	} else {
-		results, err = dbClient.QueryContext(ctx, queryGetOrganizationUnitByHandle, handle, *parent, deployment.Resolve(ctx, s.deploymentID))
+		results, err = dbClient.QueryContext(ctx, queryGetOrganizationUnitByHandle, handle, *parent,
+			deployment.Resolve(ctx,
+				s.deploymentID))
 	}
 	if err != nil {
 		return providers.OrganizationUnit{}, fmt.Errorf("failed to execute query for handle %s: %w", handle, err)
@@ -340,7 +347,8 @@ func (s *organizationUnitStore) IsOrganizationUnitExists(ctx context.Context, id
 		return false, fmt.Errorf("failed to get database client: %w", err)
 	}
 
-	results, err := dbClient.QueryContext(ctx, queryCheckOrganizationUnitExists, id, deployment.Resolve(ctx, s.deploymentID))
+	results, err := dbClient.QueryContext(ctx, queryCheckOrganizationUnitExists, id, deployment.Resolve(ctx,
+		s.deploymentID))
 	if err != nil {
 		return false, fmt.Errorf("failed to execute existence check query: %w", err)
 	}

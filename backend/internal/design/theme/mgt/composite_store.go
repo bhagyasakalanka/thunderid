@@ -5,6 +5,7 @@ package thememgt
 
 import (
 	"context"
+
 	serverconst "github.com/thunder-id/thunderid/internal/system/constants"
 	declarativeresource "github.com/thunder-id/thunderid/internal/system/declarative_resource"
 )
@@ -135,7 +136,8 @@ func (c *compositeThemeStore) IsThemeDeclarative(id string) bool {
 }
 
 // IsThemeHandleConflict checks if a theme handle conflicts in either store.
-func (c *compositeThemeStore) IsThemeHandleConflict(ctx context.Context, handle string, excludeID string) (bool, error) {
+func (c *compositeThemeStore) IsThemeHandleConflict(ctx context.Context, handle string, excludeID string) (bool,
+	error) {
 	// Check file store first
 	conflict, err := c.fileStore.IsThemeHandleConflict(ctx, handle, excludeID)
 	if err != nil {

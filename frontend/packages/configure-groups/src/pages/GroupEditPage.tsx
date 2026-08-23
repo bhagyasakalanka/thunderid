@@ -1,7 +1,7 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {PageLoadingAnimation, QueryErrorNotice, UnsavedChangesBar} from '@thunderid/components';
+import {ManagedResourceNotice, PageLoadingAnimation, QueryErrorNotice, UnsavedChangesBar} from '@thunderid/components';
 import {useLogger} from '@thunderid/logger/react';
 import {getErrorMessage, isEqualIgnoringEmpty} from '@thunderid/utils';
 import {
@@ -22,7 +22,7 @@ import {useState, useCallback, useMemo} from 'react';
 import type {ReactNode, SyntheticEvent, JSX} from 'react';
 import {useTranslation} from 'react-i18next';
 import {Link, useNavigate, useParams} from 'react-router';
-import {useIsManagedResource, ManagedResourceNotice} from '@thunderid/contexts';
+import {useIsManagedResource} from '@thunderid/contexts';
 import useGetGroup from '../api/useGetGroup';
 import useUpdateGroup from '../api/useUpdateGroup';
 import EditAdvancedSettings from '../components/edit-group/advanced-settings/EditAdvancedSettings';
@@ -240,7 +240,7 @@ export default function GroupEditPage(): JSX.Element {
             ) : (
               <>
                 <Typography variant="h3">{editedGroup.name ?? group.name}</Typography>
-                {!((group.isReadOnly === true || isManaged) || isManaged) && (
+                {!(group.isReadOnly === true || isManaged || isManaged) && (
                   <IconButton
                     size="small"
                     aria-label="Edit group name"
@@ -302,7 +302,7 @@ export default function GroupEditPage(): JSX.Element {
                 <Typography variant="body2" color="text.secondary">
                   {effectiveDescription || t('edit.page.description.empty', 'No description')}
                 </Typography>
-                {!((group.isReadOnly === true || isManaged) || isManaged) && (
+                {!(group.isReadOnly === true || isManaged || isManaged) && (
                   <IconButton
                     size="small"
                     aria-label="Edit group description"
@@ -350,10 +350,7 @@ export default function GroupEditPage(): JSX.Element {
       {/* Tab Panels */}
       <>
         <TabPanel value={activeTab} index={0}>
-          <EditGeneralSettings
-            group={group}
-            onDeleteClick={(group.isReadOnly === true || isManaged) ? undefined : () => setDeleteDialogOpen(true)}
-          />
+          <EditGeneralSettings group={group} />
         </TabPanel>
 
         <TabPanel value={activeTab} index={1}>
@@ -361,7 +358,9 @@ export default function GroupEditPage(): JSX.Element {
         </TabPanel>
 
         <TabPanel value={activeTab} index={2}>
-          <EditAdvancedSettings onDeleteClick={group.isReadOnly ? undefined : () => setDeleteDialogOpen(true)} />
+          <EditAdvancedSettings
+            onDeleteClick={group.isReadOnly === true || isManaged ? undefined : () => setDeleteDialogOpen(true)}
+          />
         </TabPanel>
       </>
 

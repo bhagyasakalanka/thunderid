@@ -1,20 +1,5 @@
-/**
- * Copyright (c) 2026, WSO2 LLC. (https://www.wso2.com).
- *
- * WSO2 LLC. licenses this file to you under the Apache License,
- * Version 2.0 (the "License"); you may not use this file except
- * in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied. See the License for the
- * specific language governing permissions and limitations
- * under the License.
- */
+// Copyright 2026 The ThunderID Authors
+// SPDX-License-Identifier: Apache-2.0
 
 import {
   Alert,
@@ -31,14 +16,14 @@ import {
   Typography,
 } from '@wso2/oxygen-ui';
 import {Copy} from '@wso2/oxygen-ui-icons-react';
-import {useEffect, useState, type JSX} from 'react';
+import {useState, type JSX} from 'react';
 import {useTranslation} from 'react-i18next';
-import useRegenerateEnvironmentSecret from '../api/useRegenerateEnvironmentSecret';
+import useRegenerateGatewaySecret from '../api/useRegenerateGatewaySecret';
 import type {RegeneratedSecret, SecretEntry} from '../models/promotion';
 
 interface RegenerateSecretDialogProps {
   open: boolean;
-  envId: string;
+  gatewayId: string;
   secret: SecretEntry | null;
   onClose: () => void;
 }
@@ -52,28 +37,32 @@ interface RegenerateSecretDialogProps {
  */
 export default function RegenerateSecretDialog({
   open,
-  envId,
+  gatewayId,
   secret,
   onClose,
 }: RegenerateSecretDialogProps): JSX.Element {
   const {t} = useTranslation();
-  const regenerate = useRegenerateEnvironmentSecret();
+  const regenerate = useRegenerateGatewaySecret();
   const [issued, setIssued] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
 
-  useEffect(() => {
+  // Reset as the dialog opens, during render rather than in an effect: an effect would render the
+  // previous secret once before clearing it.
+  const [wasOpen, setWasOpen] = useState<boolean>(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
     if (open) {
       setIssued('');
       setCopied(false);
     }
-  }, [open]);
+  }
 
   const handleRegenerate = (): void => {
     if (!secret) {
       return;
     }
     regenerate.mutate(
-      {envId, name: secret.name},
+      {gatewayId, name: secret.name},
       {
         onSuccess: (data: RegeneratedSecret) => {
           setIssued(data.value);

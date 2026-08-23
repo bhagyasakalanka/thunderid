@@ -1,9 +1,16 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {PageLoadingAnimation, QueryErrorNotice, ResourceAvatar, UnsavedChangesBar} from '@thunderid/components';
+import {
+  ManagedResourceNotice,
+  PageLoadingAnimation,
+  QueryErrorNotice,
+  ResourceAvatar,
+  UnsavedChangesBar,
+} from '@thunderid/components';
 import {useGetAgentType, useGetAgentTypes} from '@thunderid/configure-agent-types';
 import {dropNonConformingOptionalAttributes} from '@thunderid/configure-users';
+import {useIsManagedResource} from '@thunderid/contexts';
 import {useLogger} from '@thunderid/logger/react';
 import {getErrorMessage, isEqualIgnoringEmpty} from '@thunderid/utils';
 import {
@@ -26,7 +33,6 @@ import {useState, useCallback, useMemo, type SyntheticEvent, type JSX, type Reac
 import {useTranslation} from 'react-i18next';
 import {Link, useLocation, useNavigate, useParams} from 'react-router';
 import RouteConfig from '../../../configs/RouteConfig';
-import {useIsManagedResource, ManagedResourceNotice} from '../../managed-resources';
 import useGetAgent from '../api/useGetAgent';
 import useUpdateAgent from '../api/useUpdateAgent';
 import ShowClientSecret from '../components/create-agent/ShowClientSecret';
@@ -77,7 +83,7 @@ export default function AgentEditPage(): JSX.Element {
   const isManagedAgent = useIsManagedResource('agent');
   const isManaged: boolean = isManagedAgent(agentId ?? '');
 
-  const {data: fetchedAgent, isLoading, error, isError, refetch} = useGetAgent(agentId ?? '');
+  const {data: fetchedAgent, isLoading, error, refetch} = useGetAgent(agentId ?? '');
   // A resource the control plane owns is read only here, and saying so on the object
   // itself is what makes every section of this page and its children treat it that way,
   // rather than each one having to learn about ownership separately.
@@ -429,7 +435,7 @@ export default function AgentEditPage(): JSX.Element {
             ) : (
               <>
                 <Typography variant="h3">{editedAgent.name ?? agent.name}</Typography>
-                {!((agent.isReadOnly === true || isManaged) || isManaged) && (
+                {!(agent.isReadOnly === true || isManaged || isManaged) && (
                   <IconButton
                     size="small"
                     onClick={() => {
@@ -476,7 +482,7 @@ export default function AgentEditPage(): JSX.Element {
                     agent.description ??
                     t('agents:edit.page.description.empty', 'No description')}
                 </Typography>
-                {!((agent.isReadOnly === true || isManaged) || isManaged) && (
+                {!(agent.isReadOnly === true || isManaged || isManaged) && (
                   <IconButton
                     size="small"
                     onClick={() => {
@@ -519,7 +525,6 @@ export default function AgentEditPage(): JSX.Element {
           saveLabel={t('agents:edit.page.save', 'Save')}
           savingLabel={t('agents:edit.page.saving', 'Saving…')}
           isSaving={updateAgent.isPending}
-          saveDisabled={hasAnyValidationError || agent.isReadOnly === true}
           error={
             updateAgent.error
               ? getErrorMessage(
@@ -530,7 +535,7 @@ export default function AgentEditPage(): JSX.Element {
                 )
               : undefined
           }
-          saveDisabled={hasAnyValidationError || (agent.isReadOnly === true || isManaged)}
+          saveDisabled={hasAnyValidationError || agent.isReadOnly === true || isManaged}
           onReset={() => {
             if (updateAgent.isError) {
               updateAgent.reset(); // a save error is stale once the form resets

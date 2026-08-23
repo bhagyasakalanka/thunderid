@@ -38,7 +38,7 @@ var (
 			DefaultValue: "The request body is malformed or contains invalid data",
 		},
 	}
-	// ErrorTenantNotFound is returned when a managed tenant does not exist.
+	// ErrorTenantNotFound is returned when the caller's workspace has not been provisioned.
 	ErrorTenantNotFound = tidcommon.ServiceError{
 		Type: tidcommon.ClientErrorType,
 		Code: "TNT-1002",
@@ -48,10 +48,10 @@ var (
 		},
 		ErrorDescription: tidcommon.I18nMessage{
 			Key:          "error.tenantservice.tenant_not_found_description",
-			DefaultValue: "The tenant with the specified deployment id does not exist",
+			DefaultValue: "This organization has no provisioned workspace",
 		},
 	}
-	// ErrorTenantConflict is returned when a tenant with the same deployment id already exists.
+	// ErrorTenantConflict is returned when the caller's workspace is already provisioned.
 	ErrorTenantConflict = tidcommon.ServiceError{
 		Type: tidcommon.ClientErrorType,
 		Code: "TNT-1003",
@@ -61,7 +61,7 @@ var (
 		},
 		ErrorDescription: tidcommon.I18nMessage{
 			Key:          "error.tenantservice.tenant_conflict_description",
-			DefaultValue: "A tenant with the same deployment id is already provisioned",
+			DefaultValue: "This organization already has a provisioned workspace",
 		},
 	}
 	// ErrorInvalidDeploymentID is returned when the requested deployment id is invalid.
@@ -74,64 +74,23 @@ var (
 		},
 		ErrorDescription: tidcommon.I18nMessage{
 			Key: "error.tenantservice.invalid_deployment_id_description",
-			DefaultValue: "The deployment id must contain only letters, digits, '-', '_', ':', or '.' " +
-				"and must not be the reserved system tenant id",
+			DefaultValue: "The deployment named by the access token must contain only letters, digits, " +
+				"'-', '_', or '.'",
 		},
 	}
-	// ErrorReservedSystemTenant is returned when an operation targets the reserved system tenant.
-	ErrorReservedSystemTenant = tidcommon.ServiceError{
-		Type: tidcommon.ClientErrorType,
-		Code: "TNT-1005",
-		Error: tidcommon.I18nMessage{
-			Key:          "error.tenantservice.reserved_system_tenant",
-			DefaultValue: "Reserved system tenant",
-		},
-		ErrorDescription: tidcommon.I18nMessage{
-			Key: "error.tenantservice.reserved_system_tenant_description",
-			DefaultValue: "The system tenant is provisioned only at Control Plane start-up and cannot be " +
-				"created or deleted through this API",
-		},
-	}
-	// ErrorNotSystemTenant is returned when the caller is not the system tenant.
-	ErrorNotSystemTenant = tidcommon.ServiceError{
+	// ErrorNoTenantInToken is returned when the caller's token names no deployment, so there is no
+	// organization to act on. Every operation here acts on the caller's own workspace, which the token
+	// is the only thing that names.
+	ErrorNoTenantInToken = tidcommon.ServiceError{
 		Type: tidcommon.ClientErrorType,
 		Code: "TNT-1006",
 		Error: tidcommon.I18nMessage{
-			Key:          "error.tenantservice.not_system_tenant",
+			Key:          "error.tenantservice.no_tenant_in_token",
 			DefaultValue: "Not authorized",
 		},
 		ErrorDescription: tidcommon.I18nMessage{
-			Key:          "error.tenantservice.not_system_tenant_description",
-			DefaultValue: "Only the system tenant may manage tenants",
-		},
-	}
-	// ErrorSeedFailed is returned when a later environment of an organization could not be copied from
-	// its first. The reason names what went wrong, because it is almost always something about the
-	// source tenant that the caller can act on rather than a fault in this server.
-	ErrorSeedFailed = tidcommon.ServiceError{
-		Type: tidcommon.ClientErrorType,
-		Code: "TNT-1007",
-		Error: tidcommon.I18nMessage{
-			Key:          "error.tenantservice.seed_failed",
-			DefaultValue: "Could not copy the organization's configuration",
-		},
-		ErrorDescription: tidcommon.I18nMessage{
-			Key:          "error.tenantservice.seed_failed_description",
-			DefaultValue: "The new environment could not be seeded from the organization's first environment",
-		},
-	}
-	// ErrorEnvironmentRegistrationFailed is returned when the tenant was created but could not be
-	// recorded as an environment of its organization, so it would not take part in promotion.
-	ErrorEnvironmentRegistrationFailed = tidcommon.ServiceError{
-		Type: tidcommon.ClientErrorType,
-		Code: "TNT-1008",
-		Error: tidcommon.I18nMessage{
-			Key:          "error.tenantservice.environment_registration_failed",
-			DefaultValue: "Could not register the environment",
-		},
-		ErrorDescription: tidcommon.I18nMessage{
-			Key:          "error.tenantservice.environment_registration_failed_description",
-			DefaultValue: "The tenant could not be registered as an environment of its organization",
+			Key:          "error.tenantservice.no_tenant_in_token_description",
+			DefaultValue: "The access token names no deployment, so there is no workspace to act on",
 		},
 	}
 	// ErrorInternalServer is returned for unexpected server-side errors.

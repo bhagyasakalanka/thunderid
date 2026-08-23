@@ -160,7 +160,7 @@ func TestAuthorizationExecutor_Execute_ScopesEvaluationToResourceServer(t *testi
 
 	mockAuthnProvider.On("GetEntityReference", mock.Anything, mock.Anything).
 		Return(authUser, &providers.EntityReference{EntityID: "user123"}, nil)
-	mockEntityProvider.On("GetTransitiveEntityGroups", "user123").Return(
+	mockEntityProvider.On("GetTransitiveEntityGroups", mock.Anything, "user123").Return(
 		[]providers.EntityGroup{}, nil)
 
 	// The evaluation must be scoped to the requested resource server.
@@ -278,7 +278,7 @@ func TestAuthorizationExecutor_Execute_ResourceServerFromUserInputFallback(t *te
 
 	mockAuthnProvider.On("GetEntityReference", mock.Anything, mock.Anything).
 		Return(authUser, &providers.EntityReference{EntityID: "user123"}, nil)
-	mockEntityProvider.On("GetTransitiveEntityGroups", "user123").Return([]providers.EntityGroup{}, nil)
+	mockEntityProvider.On("GetTransitiveEntityGroups", mock.Anything, "user123").Return([]providers.EntityGroup{}, nil)
 	mockAuthzService.On("EvaluateAccessBatch", mock.Anything,
 		mock.MatchedBy(func(req providers.AccessEvaluationsRequest) bool {
 			return len(req.Evaluations) == 1 && req.Evaluations[0].ResourceServer.ID == "rs-input"
@@ -318,7 +318,7 @@ func TestAuthorizationExecutor_Execute_DefaultResourceServerFallback(t *testing.
 
 	mockAuthnProvider.On("GetEntityReference", mock.Anything, mock.Anything).
 		Return(authUser, &providers.EntityReference{EntityID: "user123"}, nil)
-	mockEntityProvider.On("GetTransitiveEntityGroups", "user123").Return([]providers.EntityGroup{}, nil)
+	mockEntityProvider.On("GetTransitiveEntityGroups", mock.Anything, "user123").Return([]providers.EntityGroup{}, nil)
 	mockAuthzService.On("EvaluateAccessBatch", mock.Anything,
 		mock.MatchedBy(func(req providers.AccessEvaluationsRequest) bool {
 			return len(req.Evaluations) == 1 && req.Evaluations[0].ResourceServer.ID == "rs-default"

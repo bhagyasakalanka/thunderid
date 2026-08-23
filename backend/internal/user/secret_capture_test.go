@@ -41,7 +41,8 @@ func (r *recordingCapturer) CaptureSecret(_ context.Context, _, resourceName, fi
 func TestCaptureUserCredentials(t *testing.T) {
 	t.Run("captures each schema credential under <username>_<credential>", func(t *testing.T) {
 		etMock := entitytypemock.NewEntityTypeServiceInterfaceMock(t)
-		etMock.On("GetAttributes", mock.Anything, entitytype.TypeCategoryUser, "customer", true, false, false).
+		etMock.On("GetAttributes", mock.Anything, entitytype.TypeCategoryUser, "customer",
+			entitytype.AttributeFilter{AllowCredential: true}).
 			Return([]entitytype.AttributeInfo{{Attribute: "password"}}, nil)
 
 		rec := &recordingCapturer{}
