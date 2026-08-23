@@ -105,7 +105,7 @@ func (s *Service) ListSecrets(ctx context.Context, envID string) (SecretList, er
 	if seq == 0 {
 		return SecretList{}, ErrNoVersions
 	}
-	version, err := s.store.GetVersion(ctx, envID, seq)
+	version, err := s.store.GetVersion(ctx, seq)
 	if err != nil {
 		return SecretList{}, err
 	}
@@ -203,7 +203,7 @@ func secretBody(value, description string) map[string]interface{} {
 func (s *Service) describeSecret(ctx context.Context, envID, name string) SecretEntry {
 	if env, err := s.store.GetGateway(ctx, envID); err == nil {
 		if seq, err := s.resolveSeq(ctx, env, "latest"); err == nil && seq > 0 {
-			if version, err := s.store.GetVersion(ctx, envID, seq); err == nil {
+			if version, err := s.store.GetVersion(ctx, seq); err == nil {
 				for _, entry := range secretEntriesOf(version) {
 					if entry.Name == name {
 						return entry

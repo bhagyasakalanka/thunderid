@@ -61,37 +61,60 @@ var (
 
 	// queryInsertVersion stores one captured version at an already-assigned sequence.
 	queryInsertVersion = dbmodel.DBQuery{
-		ID: "EMQ-ENV-005",
-		Query: `INSERT INTO "GATEWAY_VERSION" (DEPLOYMENT_ID, GATEWAY_ID, SEQ, DATA) ` +
-			`VALUES ($1, $2, $3, $4)`,
+		ID:    "EMQ-ENV-005",
+		Query: `INSERT INTO "VERSION" (DEPLOYMENT_ID, SEQ, DATA) VALUES ($1, $2, $3)`,
 	}
 
 	// queryGetVersion retrieves one version document.
 	queryGetVersion = dbmodel.DBQuery{
-		ID: "EMQ-ENV-006",
-		Query: `SELECT DATA FROM "GATEWAY_VERSION" ` +
-			`WHERE DEPLOYMENT_ID = $1 AND GATEWAY_ID = $2 AND SEQ = $3`,
+		ID:    "EMQ-ENV-006",
+		Query: `SELECT DATA FROM "VERSION" WHERE DEPLOYMENT_ID = $1 AND SEQ = $2`,
 	}
 
-	// queryListVersions retrieves an gateway's versions, newest first.
+	// queryListVersions retrieves the organization's versions, newest first.
 	queryListVersions = dbmodel.DBQuery{
-		ID: "EMQ-ENV-007",
-		Query: `SELECT SEQ, DATA FROM "GATEWAY_VERSION" ` +
-			`WHERE DEPLOYMENT_ID = $1 AND GATEWAY_ID = $2 ORDER BY SEQ DESC`,
+		ID:    "EMQ-ENV-007",
+		Query: `SELECT SEQ, DATA FROM "VERSION" WHERE DEPLOYMENT_ID = $1 ORDER BY SEQ DESC`,
 	}
 
-	// queryVersionSeqs retrieves an gateway's version sequences, oldest first. Used to assign the
-	// next sequence and to decide what pruning removes.
+	// queryVersionSeqs retrieves the organization's version sequences, oldest first. Used to assign
+	// the next sequence and to decide what pruning removes.
 	queryVersionSeqs = dbmodel.DBQuery{
-		ID: "EMQ-ENV-008",
-		Query: `SELECT SEQ FROM "GATEWAY_VERSION" ` +
-			`WHERE DEPLOYMENT_ID = $1 AND GATEWAY_ID = $2 ORDER BY SEQ ASC`,
+		ID:    "EMQ-ENV-008",
+		Query: `SELECT SEQ FROM "VERSION" WHERE DEPLOYMENT_ID = $1 ORDER BY SEQ ASC`,
 	}
 
 	// queryDeleteVersion removes a single pruned version.
 	queryDeleteVersion = dbmodel.DBQuery{
-		ID: "EMQ-ENV-009",
-		Query: `DELETE FROM "GATEWAY_VERSION" ` +
-			`WHERE DEPLOYMENT_ID = $1 AND GATEWAY_ID = $2 AND SEQ = $3`,
+		ID:    "EMQ-ENV-009",
+		Query: `DELETE FROM "VERSION" WHERE DEPLOYMENT_ID = $1 AND SEQ = $2`,
+	}
+
+	// queryInsertApply records that a gateway was moved onto a version.
+	queryInsertApply = dbmodel.DBQuery{
+		ID: "EMQ-ENV-010",
+		Query: `INSERT INTO "GATEWAY_APPLY" (DEPLOYMENT_ID, GATEWAY_ID, ORDINAL, SEQ) ` +
+			`VALUES ($1, $2, $3, $4)`,
+	}
+
+	// queryListApplies retrieves a gateway's history, newest first.
+	queryListApplies = dbmodel.DBQuery{
+		ID: "EMQ-ENV-011",
+		Query: `SELECT ORDINAL, SEQ, APPLIED_AT FROM "GATEWAY_APPLY" ` +
+			`WHERE DEPLOYMENT_ID = $1 AND GATEWAY_ID = $2 ORDER BY ORDINAL DESC`,
+	}
+
+	// queryTrimApplies drops a gateway's history entries older than the retained window.
+	queryTrimApplies = dbmodel.DBQuery{
+		ID: "EMQ-ENV-013",
+		Query: `DELETE FROM "GATEWAY_APPLY" ` +
+			`WHERE DEPLOYMENT_ID = $1 AND GATEWAY_ID = $2 AND ORDINAL <= $3`,
+	}
+
+	// queryAppliedSeqs retrieves every version any gateway of the organization has run, so pruning
+	// keeps what some gateway can still be returned to.
+	queryAppliedSeqs = dbmodel.DBQuery{
+		ID:    "EMQ-ENV-012",
+		Query: `SELECT DISTINCT SEQ FROM "GATEWAY_APPLY" WHERE DEPLOYMENT_ID = $1`,
 	}
 )

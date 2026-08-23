@@ -198,7 +198,12 @@ type importPayload struct {
 	DryRun    bool                  `json:"dryRun"`
 }
 
-// recordApplied marks an gateway as holding a version, once its data plane has taken it.
+// recordApplied marks a gateway as running a version, once its data plane has taken it, and appends
+// that to the gateway's history.
+//
+// Both happen here rather than where the apply was requested, because only a delivered apply is one
+// the gateway actually ran: a history that recorded intent would offer a caller a state to go back
+// to that never existed.
 func (s *Service) recordApplied(ctx context.Context, envID string, seq int) error {
 	env, err := s.store.GetGateway(ctx, envID)
 	if err != nil {
@@ -206,7 +211,11 @@ func (s *Service) recordApplied(ctx context.Context, envID string, seq int) erro
 	}
 	env.AppliedSeq = seq
 	env.UpdatedAt = s.now().UTC()
-	return s.store.SaveGateway(ctx, env)
+	if err := s.store.SaveGateway(ctx, env); err != nil {
+		return err
+	}
+	_, err = s.store.RecordApply(ctx, envID, seq)
+	return err
 }
 
 // queueSecret records a credential for an gateway's data plane, encrypted, and delivers it here

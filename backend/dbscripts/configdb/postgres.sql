@@ -466,21 +466,40 @@ CREATE TABLE "GATEWAY" (
     PRIMARY KEY (DEPLOYMENT_ID, ID)
 );
 
--- Configuration versions captured from a gateway, which promotion compares and applies.
+-- Configuration versions captured from the organization, which an apply writes onto a gateway.
 --
--- SEQ is assigned per gateway and rises by one, so (DEPLOYMENT_ID, GATEWAY_ID, SEQ) both identifies
--- a version and orders the history. Deleting a gateway takes its versions with it.
-CREATE TABLE "GATEWAY_VERSION" (
+-- A version belongs to the organization, not to a gateway. What a capture reads is the
+-- organization's configuration as authored on the control plane, which is the same whichever
+-- gateway it is later applied to, so there is one stream per organization and a gateway holds none
+-- of its own. SEQ rises by one within the organization and orders that stream.
+CREATE TABLE "VERSION" (
     DEPLOYMENT_ID VARCHAR(255) NOT NULL,
-    GATEWAY_ID        VARCHAR(36)  NOT NULL,
     SEQ           INTEGER      NOT NULL,
     DATA          TEXT         NOT NULL,
-    CREATED_AT    TIMESTAMPTZ  DEFAULT NOW(),
-    PRIMARY KEY (DEPLOYMENT_ID, GATEWAY_ID, SEQ),
-    CONSTRAINT fk_gateway_version_gateway
+    CREATED_AT    TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (DEPLOYMENT_ID, SEQ)
+);
+
+-- What each gateway has run, one row per apply.
+--
+-- A gateway's own history is this: the organization versions that have been applied to it, in the
+-- order they were. It is what "go back to what this gateway was running before" reads, and what
+-- keeps a version from being pruned while some gateway can still return to it.
+--
+-- ORDINAL rises by one per gateway, so the newest row is the version the gateway is running.
+CREATE TABLE "GATEWAY_APPLY" (
+    DEPLOYMENT_ID VARCHAR(255) NOT NULL,
+    GATEWAY_ID    VARCHAR(36)  NOT NULL,
+    ORDINAL       INTEGER      NOT NULL,
+    SEQ           INTEGER      NOT NULL,
+    APPLIED_AT    TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (DEPLOYMENT_ID, GATEWAY_ID, ORDINAL),
+    CONSTRAINT fk_gateway_apply_gateway
         FOREIGN KEY (DEPLOYMENT_ID, GATEWAY_ID) REFERENCES "GATEWAY" (DEPLOYMENT_ID, ID)
         ON DELETE CASCADE
 );
+
+CREATE INDEX idx_gateway_apply_gateway ON "GATEWAY_APPLY" (DEPLOYMENT_ID, GATEWAY_ID);
 
 -- Non-secret gateway variables, held per gateway. KEY is the declarative placeholder the
 -- value resolves (e.g. MY_APP_REDIRECT_URL); VALUE is stored in plaintext because it carries no

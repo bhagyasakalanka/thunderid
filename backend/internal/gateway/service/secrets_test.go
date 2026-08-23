@@ -49,7 +49,7 @@ func secretsFixture(t *testing.T) (*Service, *fakeClient, model.Gateway) {
 	if err != nil {
 		t.Fatalf("create gateway: %v", err)
 	}
-	if _, err := svc.CaptureVersion(context.Background(), env.ID, ""); err != nil {
+	if _, err := svc.CaptureVersion(context.Background(), ""); err != nil {
 		t.Fatalf("capture: %v", err)
 	}
 	return svc, fake, env.Gateway
@@ -189,7 +189,7 @@ func TestListSecretsFallsBackToWhatTheDataPlaneLastReported(t *testing.T) {
 		Name: "dev", Target: model.Target{DataPlaneID: "dev-dp"},
 	})
 	_, _ = svc.store.AddVersion(context.Background(), model.Version{
-		GatewayID: env.ID, Origin: model.OriginUploaded, CreatedAt: svc.now().UTC(),
+		Origin: model.OriginUploaded, CreatedAt: svc.now().UTC(),
 		Resources: "resource_type: application\nid: app-a\nname: app-a\n" +
 			"clientSecret: {{.APPLICATION_APP_A_CLIENT_SECRET}}",
 		SecretKeys: []string{"APPLICATION_APP_A_CLIENT_SECRET"},
@@ -224,7 +224,7 @@ func TestListSecretsQueuesTheQuestionWhenThisPodCannotAsk(t *testing.T) {
 		Name: "dev", Target: model.Target{DataPlaneID: "dev-dp"},
 	})
 	_, _ = svc.store.AddVersion(context.Background(), model.Version{
-		GatewayID: env.ID, Origin: model.OriginUploaded, CreatedAt: svc.now().UTC(),
+		Origin: model.OriginUploaded, CreatedAt: svc.now().UTC(),
 		Resources: "resource_type: application\nid: app-a\nname: app-a\n" +
 			"clientSecret: {{.APPLICATION_APP_A_CLIENT_SECRET}}",
 		SecretKeys: []string{"APPLICATION_APP_A_CLIENT_SECRET"},

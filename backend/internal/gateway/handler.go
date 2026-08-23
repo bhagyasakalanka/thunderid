@@ -128,7 +128,7 @@ func (s *Server) createGateway(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	if err := s.setConsoleURLs(r.Context(), env.Gateway.ID, req.Target.BaseURL); err != nil {
+	if err := s.setConsoleVariables(r.Context(), env.Gateway.ID, req.Target.BaseURL); err != nil {
 		writeError(w, err)
 		return
 	}
@@ -220,8 +220,9 @@ type createVersionRequest struct {
 	Variables map[string]string `json:"variables,omitempty"`
 }
 
+// createVersion captures the organization's configuration, or stores a bundle the caller supplies.
+// It names no gateway: a version belongs to the organization.
 func (s *Server) createVersion(w http.ResponseWriter, r *http.Request) {
-	envID := r.PathValue("id")
 	var req createVersionRequest
 	if !decode(w, r, &req) {
 		return
@@ -240,9 +241,9 @@ func (s *Server) createVersion(w http.ResponseWriter, r *http.Request) {
 	)
 	switch mode {
 	case "capture":
-		version, err = s.svc.CaptureVersion(r.Context(), envID, req.Note)
+		version, err = s.svc.CaptureVersion(r.Context(), req.Note)
 	case "upload":
-		version, err = s.svc.UploadVersion(r.Context(), envID, req.Resources, req.Variables, req.Note)
+		version, err = s.svc.UploadVersion(r.Context(), req.Resources, req.Variables, req.Note)
 	default:
 		writeErrorStatus(w, http.StatusBadRequest, "mode must be 'capture' or 'upload'")
 		return
@@ -255,7 +256,7 @@ func (s *Server) createVersion(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listVersions(w http.ResponseWriter, r *http.Request) {
-	versions, err := s.svc.ListVersions(r.Context(), r.PathValue("id"))
+	versions, err := s.svc.ListVersions(r.Context())
 	if err != nil {
 		writeError(w, err)
 		return
@@ -268,12 +269,22 @@ func (s *Server) getVersion(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	version, err := s.svc.GetVersion(r.Context(), r.PathValue("id"), seq)
+	version, err := s.svc.GetVersion(r.Context(), seq)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, version)
+}
+
+// gatewayHistory lists what a gateway has run, newest first.
+func (s *Server) gatewayHistory(w http.ResponseWriter, r *http.Request) {
+	history, err := s.svc.GatewayHistory(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"history": history})
 }
 
 // checkVariables reports whether a version's placeholders would all resolve.
@@ -392,7 +403,8 @@ func (s *Server) captureSecret(w http.ResponseWriter, r *http.Request) {
 }
 
 type revertRequest struct {
-	// ToVersion is a version number, or "previous" for the version immediately before the head.
+	// ToVersion is an organization version number, or "previous" for what this gateway ran before its
+	// current version.
 	ToVersion string `json:"toVersion"`
 	Apply     bool   `json:"apply,omitempty"`
 	DryRun    bool   `json:"dryRun,omitempty"`

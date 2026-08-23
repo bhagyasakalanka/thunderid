@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+
 	"strings"
 	"testing"
 
@@ -121,7 +122,7 @@ func (f *fakeDataPlanes) Status(string) model.DataPlaneStatus {
 
 func newTestService(t *testing.T, fake *fakeClient) *Service {
 	t.Helper()
-	svc := New(newMemStore(), func(string, thunder.Credentials, bool) ThunderClient { return fake })
+	svc := New(newMemStore(), func(string, thunder.Credentials, string) ThunderClient { return fake })
 	svc.SetWorkspaceURL("https://cp")
 	svc.SetOrganization("org1")
 	svc.SetDataPlanes(&fakeDataPlanes{plane: fake, connected: true})
@@ -152,7 +153,7 @@ func TestApplyTracksDeletions(t *testing.T) {
 		t.Fatalf("create env: %v", err)
 	}
 
-	if _, err := svc.UploadVersion(context.Background(), env.ID, bundleOf("app-a", testAppB), nil, "v1"); err != nil {
+	if _, err := svc.UploadVersion(context.Background(), bundleOf("app-a", testAppB), nil, "v1"); err != nil {
 		t.Fatalf("upload v1: %v", err)
 	}
 	res, err := svc.Apply(context.Background(), env.ID, "latest", false)
@@ -167,7 +168,7 @@ func TestApplyTracksDeletions(t *testing.T) {
 	}
 
 	// v2 removes app-b -> apply must request its deletion.
-	if _, err := svc.UploadVersion(context.Background(), env.ID, bundleOf("app-a"), nil, "v2"); err != nil {
+	if _, err := svc.UploadVersion(context.Background(), bundleOf("app-a"), nil, "v2"); err != nil {
 		t.Fatalf("upload v2: %v", err)
 	}
 	if _, err := svc.Apply(context.Background(), env.ID, "latest", false); err != nil {
@@ -190,7 +191,7 @@ func TestApplyDryRunDoesNotRecord(t *testing.T) {
 	svc := newTestService(t, fake)
 	env, _ := svc.CreateGateway(context.Background(), CreateGatewayInput{Name: "dev",
 		Target: model.Target{DataPlaneID: "dp"}})
-	_, _ = svc.UploadVersion(context.Background(), env.ID, bundleOf("app-a"), nil, "v1")
+	_, _ = svc.UploadVersion(context.Background(), bundleOf("app-a"), nil, "v1")
 
 	if _, err := svc.Apply(context.Background(), env.ID, "latest", true); err != nil {
 		t.Fatalf("dry run apply: %v", err)
@@ -211,16 +212,16 @@ func TestCaptureRecordsSecretKeysWithoutValues(t *testing.T) {
 		secrets:         map[string]string{"APP_A_CLIENT_SECRET": "never-read"},
 	}
 	svc := newTestService(t, fake)
-	env, _ := svc.CreateGateway(context.Background(), CreateGatewayInput{
+	_, _ = svc.CreateGateway(context.Background(), CreateGatewayInput{
 		Name:   "dev",
 		Target: model.Target{DataPlaneID: "dp"},
 	})
 
-	v, err := svc.CaptureVersion(context.Background(), env.ID, "captured")
+	v, err := svc.CaptureVersion(context.Background(), "captured")
 	if err != nil {
 		t.Fatalf("capture: %v", err)
 	}
-	full, _ := svc.GetVersion(context.Background(), env.ID, v.Seq)
+	full, _ := svc.GetVersion(context.Background(), v.Seq)
 
 	if full.Variables["APP_A_CLIENT_ID"] != "abc" {
 		t.Fatalf("expected the non-secret variable to be carried over")
@@ -234,7 +235,10 @@ func TestCaptureRecordsSecretKeysWithoutValues(t *testing.T) {
 	}
 }
 
-func TestCaptureLetsControlPlaneVariablesOverrideTheExport(t *testing.T) {
+// A gateway's own variables are not folded into a capture: the version belongs to the organization,
+// and the value that should reach a data plane is the one configured against the gateway being
+// applied to. So the configured value wins at apply time, over whatever the export happened to carry.
+func TestApplyLetsAGatewaysVariablesOverrideTheExport(t *testing.T) {
 	fake := &fakeClient{
 		exportResources: bundleOf("app-a"),
 		exportEnv:       "APP_A_REDIRECT_URIS=[\"https://stale\"]",
@@ -246,10 +250,17 @@ func TestCaptureLetsControlPlaneVariablesOverrideTheExport(t *testing.T) {
 		Target: model.Target{DataPlaneID: "dp"},
 	})
 
-	v, _ := svc.CaptureVersion(context.Background(), env.ID, "")
-	full, _ := svc.GetVersion(context.Background(), env.ID, v.Seq)
-	if full.Variables["APP_A_REDIRECT_URIS"] != `["https://configured"]` {
-		t.Fatalf("control plane value should win, got %q", full.Variables["APP_A_REDIRECT_URIS"])
+	v, _ := svc.CaptureVersion(context.Background(), "")
+	// The capture carries only what the export gave it.
+	full, _ := svc.GetVersion(context.Background(), v.Seq)
+	if full.Variables["APP_A_REDIRECT_URIS"] != `["https://stale"]` {
+		t.Fatalf("capture should carry the export's own value, got %q", full.Variables["APP_A_REDIRECT_URIS"])
+	}
+
+	// Resolving for the gateway being applied to is where its own value takes precedence.
+	values := svc.resolveVariables(context.Background(), env.Gateway, full)
+	if values["APP_A_REDIRECT_URIS"] != `["https://configured"]` {
+		t.Fatalf("the gateway's configured value should win at apply, got %q", values["APP_A_REDIRECT_URIS"])
 	}
 }
 
@@ -261,7 +272,6 @@ func TestApplyOmitsSecretsSoTheDataPlaneFillsThem(t *testing.T) {
 
 	resources := "resource_type: application\nid: app-a\nname: app-a\nclientSecret: {{.APP_A_CLIENT_SECRET}}"
 	stored, err := svc.store.AddVersion(context.Background(), model.Version{
-		GatewayID:  env.ID,
 		Origin:     model.OriginUploaded,
 		CreatedAt:  svc.now().UTC(),
 		Resources:  resources,
@@ -290,9 +300,9 @@ func TestApplyOmitsSecretsSoTheDataPlaneFillsThem(t *testing.T) {
 func TestCaptureRequiresAWorkspace(t *testing.T) {
 	svc := newTestService(t, &fakeClient{})
 	svc.SetWorkspaceURL("")
-	env, _ := svc.CreateGateway(context.Background(), CreateGatewayInput{Name: "dev",
+	_, _ = svc.CreateGateway(context.Background(), CreateGatewayInput{Name: "dev",
 		Target: model.Target{DataPlaneID: "dp"}})
-	if _, err := svc.CaptureVersion(context.Background(), env.ID, ""); !errors.Is(err, ErrNoWorkspace) {
+	if _, err := svc.CaptureVersion(context.Background(), ""); !errors.Is(err, ErrNoWorkspace) {
 		t.Fatalf("expected ErrNoWorkspace, got %v", err)
 	}
 }
@@ -308,7 +318,7 @@ func TestApplyPicksUpVariablesAddedAfterCapture(t *testing.T) {
 		Name:   "dev",
 		Target: model.Target{DataPlaneID: "dp"},
 	})
-	if _, err := svc.CaptureVersion(context.Background(), env.ID, ""); err != nil {
+	if _, err := svc.CaptureVersion(context.Background(), ""); err != nil {
 		t.Fatalf("capture: %v", err)
 	}
 
@@ -340,16 +350,17 @@ func TestApplyPicksUpVariablesAddedAfterCapture(t *testing.T) {
 	}
 }
 
-func TestPromoteSelective(t *testing.T) {
+// A selection is remembered as the target's exclusions rather than becoming a version of its own:
+// the version belongs to the organization, and what differs per gateway is what it holds back.
+func TestPromoteSelectiveHoldsTheRestBackOnTheTarget(t *testing.T) {
 	svc := newTestService(t, &fakeClient{})
 	dev, _ := svc.CreateGateway(context.Background(), CreateGatewayInput{Name: "dev",
 		Target: model.Target{DataPlaneID: "dev"}})
 	prod, _ := svc.CreateGateway(context.Background(), CreateGatewayInput{Name: "prod",
 		Target: model.Target{DataPlaneID: "prod"}})
 
-	_, _ = svc.UploadVersion(context.Background(), dev.ID, bundleOf("app-a", testAppB), nil, "dev-v1")
+	captured, _ := svc.UploadVersion(context.Background(), bundleOf("app-a", testAppB), nil, "v1")
 
-	// Promote only app-a to prod.
 	result, err := svc.Promote(context.Background(), PromoteInput{
 		FromGatewayID: dev.ID, ToGatewayID: prod.ID, Selection: []string{"application/id:app-a"},
 		SelectionProvided: true,
@@ -360,15 +371,17 @@ func TestPromoteSelective(t *testing.T) {
 	if result.Preview.Summary.Added != 2 {
 		t.Fatalf("preview should show 2 additions, got %+v", result.Preview.Summary)
 	}
-	full, _ := svc.GetVersion(context.Background(), prod.ID, result.NewVersion.Seq)
-	if strings.Contains(full.Resources, testAppB) {
-		t.Fatalf("app-b should not have been promoted:\n%s", full.Resources)
+	// The organization's version is what the target moves onto; promoting created none.
+	if result.Seq != captured.Seq {
+		t.Fatalf("promote should move onto version %d, got %d", captured.Seq, result.Seq)
 	}
-	if !strings.Contains(full.Resources, "app-a") {
-		t.Fatalf("app-a should have been promoted:\n%s", full.Resources)
+	versions, _ := svc.ListVersions(context.Background())
+	if len(versions) != 1 {
+		t.Fatalf("promotion must not create a version, got %d", len(versions))
 	}
-	if full.Origin != model.OriginPromoted || full.SourceGatewayID != dev.ID {
-		t.Fatalf("promotion metadata wrong: %+v", full)
+	got, _ := svc.GetGateway(context.Background(), prod.ID)
+	if len(got.Excluded) != 1 || !strings.Contains(got.Excluded[0], "app-b") {
+		t.Fatalf("app-b should be held back on the target, got %+v", got.Excluded)
 	}
 }
 
@@ -379,7 +392,7 @@ func TestPromoteAllAndApply(t *testing.T) {
 		Target: model.Target{DataPlaneID: "dev"}})
 	prod, _ := svc.CreateGateway(context.Background(), CreateGatewayInput{Name: "prod",
 		Target: model.Target{DataPlaneID: "prod"}})
-	_, _ = svc.UploadVersion(context.Background(), dev.ID, bundleOf("app-a", testAppB), nil, "dev-v1")
+	_, _ = svc.UploadVersion(context.Background(), bundleOf("app-a", testAppB), nil, "v1")
 
 	result, err := svc.Promote(context.Background(),
 		PromoteInput{FromGatewayID: dev.ID, ToGatewayID: prod.ID, Apply: true})
@@ -390,62 +403,80 @@ func TestPromoteAllAndApply(t *testing.T) {
 		t.Fatalf("expected apply result")
 	}
 	got, _ := svc.GetGateway(context.Background(), prod.ID)
-	if got.AppliedSeq != result.NewVersion.Seq {
-		t.Fatalf("prod applied seq %d != new version %d", got.AppliedSeq, result.NewVersion.Seq)
+	if got.AppliedSeq != result.Seq {
+		t.Fatalf("prod applied seq %d != promoted version %d", got.AppliedSeq, result.Seq)
+	}
+	// Applying is what puts an entry in the gateway's own history.
+	history, _ := svc.GatewayHistory(context.Background(), prod.ID)
+	if len(history) != 1 || history[0].Seq != result.Seq {
+		t.Fatalf("expected one history entry for version %d, got %+v", result.Seq, history)
 	}
 }
 
-func TestRevertRestoresAndAdvancesHead(t *testing.T) {
+// Reverting moves the gateway back onto a version rather than creating one: the stream belongs to
+// the organization, and going back is a change of which version this gateway runs.
+func TestRevertMovesTheGatewayBackWithoutCreatingAVersion(t *testing.T) {
 	svc := newTestService(t, &fakeClient{})
 	env, _ := svc.CreateGateway(context.Background(), CreateGatewayInput{Name: "dev",
 		Target: model.Target{DataPlaneID: "dp"}})
-	_, _ = svc.UploadVersion(context.Background(), env.ID, bundleOf("app-a"), nil, "v1")
-	_, _ = svc.UploadVersion(context.Background(), env.ID, bundleOf("app-a", testAppB), nil, "v2")
+	_, _ = svc.UploadVersion(context.Background(), bundleOf("app-a"), nil, "v1")
+	_, _ = svc.UploadVersion(context.Background(), bundleOf("app-a", testAppB), nil, "v2")
+	if _, err := svc.Apply(context.Background(), env.ID, "2", false); err != nil {
+		t.Fatalf("apply v2: %v", err)
+	}
 
 	result, err := svc.Revert(context.Background(), RevertInput{GatewayID: env.ID, ToRef: "1"})
 	if err != nil {
 		t.Fatalf("revert: %v", err)
 	}
-	if result.NewVersion.Seq != 3 || result.NewVersion.Origin != model.OriginReverted {
-		t.Fatalf("revert should add a new head v3: %+v", result.NewVersion)
+	if result.Seq != 1 {
+		t.Fatalf("revert should target version 1, got %d", result.Seq)
 	}
-	full, _ := svc.GetVersion(context.Background(), env.ID, 3)
-	if strings.Contains(full.Resources, testAppB) {
-		t.Fatalf("reverted head should match v1 (no app-b):\n%s", full.Resources)
+	versions, _ := svc.ListVersions(context.Background())
+	if len(versions) != 2 {
+		t.Fatalf("revert must not create a version, got %d", len(versions))
 	}
-	// Preview reflects removing app-b (current v2 -> target v1).
+	// Preview reflects removing app-b (running v2 -> target v1).
 	if result.Preview.Summary.Deleted != 1 {
 		t.Fatalf("expected one deletion in revert preview, got %+v", result.Preview.Summary)
 	}
 }
 
-func TestRevertToPreviousResolvesSecondNewest(t *testing.T) {
+// "previous" is what this gateway ran before its current version, read from its own history rather
+// than from the organization's stream: a version captured in between was never on this gateway.
+func TestRevertToPreviousReadsTheGatewaysOwnHistory(t *testing.T) {
 	svc := newTestService(t, &fakeClient{})
 	env, _ := svc.CreateGateway(context.Background(), CreateGatewayInput{Name: "dev",
 		Target: model.Target{DataPlaneID: "dp"}})
-	_, _ = svc.UploadVersion(context.Background(), env.ID, bundleOf("app-a"), nil, "v1")
-	_, _ = svc.UploadVersion(context.Background(), env.ID, bundleOf("app-a", testAppB), nil, "v2")
-	_, _ = svc.UploadVersion(context.Background(), env.ID, bundleOf("app-a", testAppB, "app-c"), nil, "v3")
+	_, _ = svc.UploadVersion(context.Background(), bundleOf("app-a"), nil, "v1")
+	_, _ = svc.UploadVersion(context.Background(), bundleOf("app-a", testAppB), nil, "v2")
+	_, _ = svc.UploadVersion(context.Background(), bundleOf("app-a", testAppB, "app-c"), nil, "v3")
+
+	// This gateway ran v1 and then v3; v2 never reached it, so going back means v1.
+	if _, err := svc.Apply(context.Background(), env.ID, "1", false); err != nil {
+		t.Fatalf("apply v1: %v", err)
+	}
+	if _, err := svc.Apply(context.Background(), env.ID, "3", false); err != nil {
+		t.Fatalf("apply v3: %v", err)
+	}
 
 	result, err := svc.Revert(context.Background(), RevertInput{GatewayID: env.ID, ToRef: "previous"})
 	if err != nil {
 		t.Fatalf("revert to previous: %v", err)
 	}
-	// v3 is the head, so "previous" is v2: the new head must match v2's content.
-	full, _ := svc.GetVersion(context.Background(), env.ID, result.NewVersion.Seq)
-	if !strings.Contains(full.Resources, testAppB) || strings.Contains(full.Resources, "app-c") {
-		t.Fatalf("expected v2 content restored, got:\n%s", full.Resources)
-	}
-	if full.SourceSeq != 2 {
-		t.Fatalf("expected sourceSeq 2, got %d", full.SourceSeq)
+	if result.Seq != 1 {
+		t.Fatalf("previous should be version 1, the last one this gateway ran, got %d", result.Seq)
 	}
 }
 
-func TestRevertToPreviousRequiresTwoVersions(t *testing.T) {
+func TestRevertToPreviousRequiresSomethingEarlierInTheHistory(t *testing.T) {
 	svc := newTestService(t, &fakeClient{})
 	env, _ := svc.CreateGateway(context.Background(), CreateGatewayInput{Name: "dev",
 		Target: model.Target{DataPlaneID: "dp"}})
-	_, _ = svc.UploadVersion(context.Background(), env.ID, bundleOf("app-a"), nil, "v1")
+	_, _ = svc.UploadVersion(context.Background(), bundleOf("app-a"), nil, "v1")
+	if _, err := svc.Apply(context.Background(), env.ID, "1", false); err != nil {
+		t.Fatalf("apply v1: %v", err)
+	}
 
 	if _, err := svc.Revert(context.Background(),
 		RevertInput{GatewayID: env.ID, ToRef: "previous"}); !errors.Is(err, ErrNoPreviousVersion) {
@@ -456,14 +487,14 @@ func TestRevertToPreviousRequiresTwoVersions(t *testing.T) {
 func TestApplyAllPushesEveryGateway(t *testing.T) {
 	fake := &fakeClient{}
 	svc := newTestService(t, fake)
-	dev, _ := svc.CreateGateway(context.Background(), CreateGatewayInput{
+	_, _ = svc.CreateGateway(context.Background(), CreateGatewayInput{
 		Name: "dev", Target: model.Target{DataPlaneID: "dev"},
 	})
-	prod, _ := svc.CreateGateway(context.Background(), CreateGatewayInput{
+	_, _ = svc.CreateGateway(context.Background(), CreateGatewayInput{
 		Name: "prod", Target: model.Target{DataPlaneID: "prod"},
 	})
-	_, _ = svc.UploadVersion(context.Background(), dev.ID, bundleOf("app-a"), nil, "v1")
-	_, _ = svc.UploadVersion(context.Background(), prod.ID, bundleOf("app-a"), nil, "v1")
+	_, _ = svc.UploadVersion(context.Background(), bundleOf("app-a"), nil, "v1")
+	_, _ = svc.UploadVersion(context.Background(), bundleOf("app-a"), nil, "v1")
 
 	results := svc.ApplyAll(context.Background(), false)
 
@@ -480,29 +511,37 @@ func TestApplyAllPushesEveryGateway(t *testing.T) {
 	}
 }
 
-func TestApplyAllSkipsGatewaysWithoutAVersionAndKeepsGoing(t *testing.T) {
+// With versions owned by the organization there is no gateway "without a version": every gateway can
+// be applied to as soon as the organization has captured one. What is still worth reporting is an
+// organization that has captured nothing at all.
+func TestApplyAllReportsWhenTheOrganizationHasNoVersion(t *testing.T) {
 	fake := &fakeClient{}
 	svc := newTestService(t, fake)
-	empty, _ := svc.CreateGateway(context.Background(), CreateGatewayInput{
-		Name: "empty", Target: model.Target{DataPlaneID: "empty"},
+	one, _ := svc.CreateGateway(context.Background(), CreateGatewayInput{
+		Name: "one", Target: model.Target{DataPlaneID: "one"},
 	})
-	ready, _ := svc.CreateGateway(context.Background(), CreateGatewayInput{
-		Name: "ready", Target: model.Target{DataPlaneID: "ready"},
+	two, _ := svc.CreateGateway(context.Background(), CreateGatewayInput{
+		Name: "two", Target: model.Target{DataPlaneID: "two"},
 	})
-	_, _ = svc.UploadVersion(context.Background(), ready.ID, bundleOf("app-a"), nil, "v1")
 
 	results := svc.ApplyAll(context.Background(), false)
-
 	byID := map[string]ApplyAllResult{}
 	for _, r := range results {
 		byID[r.GatewayID] = r
 	}
-	// The gateway with nothing to apply is reported, not fatal, and the other still goes through.
-	if byID[empty.ID].Error == "" {
-		t.Fatalf("expected the empty gateway to report why it was skipped")
+	for _, id := range []string{one.ID, two.ID} {
+		if byID[id].Error == "" {
+			t.Fatalf("a gateway with nothing to apply should say so, got %+v", byID[id])
+		}
 	}
-	if byID[ready.ID].Applied == nil {
-		t.Fatalf("a skipped gateway must not stop the others")
+
+	// Once the organization has a version, every gateway takes it.
+	_, _ = svc.UploadVersion(context.Background(), bundleOf("app-a"), nil, "v1")
+	results = svc.ApplyAll(context.Background(), false)
+	for _, r := range results {
+		if r.Applied == nil {
+			t.Fatalf("every gateway should apply the organization's version, got %+v", r)
+		}
 	}
 }
 
@@ -521,7 +560,7 @@ func TestCheckVariablesReportsSecretsTheDataPlaneLacks(t *testing.T) {
 			DataPlaneID: "dp",
 		},
 	})
-	if _, err := svc.CaptureVersion(context.Background(), env.ID, ""); err != nil {
+	if _, err := svc.CaptureVersion(context.Background(), ""); err != nil {
 		t.Fatalf("capture: %v", err)
 	}
 
@@ -549,7 +588,7 @@ func TestCheckVariablesUsesTheDataPlanesOwnSecretStore(t *testing.T) {
 		Name:   "dev",
 		Target: model.Target{DataPlaneID: "dp"},
 	})
-	_, _ = svc.CaptureVersion(context.Background(), env.ID, "")
+	_, _ = svc.CaptureVersion(context.Background(), "")
 
 	status, _ := svc.CheckVariables(context.Background(), env.ID, "latest")
 	// With no separate service named, the data plane's own store answers, so the check is real.
@@ -576,7 +615,7 @@ func TestPromoteLeavesTheDestinationsCredentialsAlone(t *testing.T) {
 
 	// A version whose configuration needs one secret.
 	if _, err := svc.store.AddVersion(context.Background(), model.Version{
-		GatewayID: dev.ID, Origin: model.OriginUploaded, CreatedAt: svc.now().UTC(),
+		Origin: model.OriginUploaded, CreatedAt: svc.now().UTC(),
 		Resources:  "resource_type: application\nid: app-a\nname: app-a",
 		Variables:  map[string]string{},
 		SecretKeys: []string{"APP_A_CLIENT_SECRET"},
@@ -623,7 +662,7 @@ func TestPromoteNeverReadsTheDestinationsSecretStore(t *testing.T) {
 		},
 	})
 	_, _ = svc.store.AddVersion(context.Background(), model.Version{
-		GatewayID: dev.ID, Origin: model.OriginUploaded, CreatedAt: svc.now().UTC(),
+		Origin: model.OriginUploaded, CreatedAt: svc.now().UTC(),
 		Resources: "resource_type: application\nid: app-a\nname: app-a",
 		Variables: map[string]string{}, SecretKeys: []string{"APP_A_CLIENT_SECRET"},
 	})
@@ -725,22 +764,60 @@ func TestCaptureSecretWithNoGatewaysDeliversNothing(t *testing.T) {
 	}
 }
 
-func TestVersionHistoryPruned(t *testing.T) {
+// A gateway keeps only its most recent applies, and a version one of them still names survives
+// pruning however old it is: otherwise going back would land on a version that is gone.
+func TestGatewayHistoryIsBoundedAndKeepsWhatItNames(t *testing.T) {
 	svc := newTestService(t, &fakeClient{})
 	env, _ := svc.CreateGateway(context.Background(), CreateGatewayInput{Name: "dev",
 		Target: model.Target{DataPlaneID: "dp"}})
+
+	for i := 1; i <= 6; i++ {
+		if _, err := svc.UploadVersion(context.Background(), bundleOf("app-"+strconv.Itoa(i)), nil, "v"); err != nil {
+			t.Fatalf("upload: %v", err)
+		}
+		if _, err := svc.Apply(context.Background(), env.ID, strconv.Itoa(i), false); err != nil {
+			t.Fatalf("apply v%d: %v", i, err)
+		}
+	}
+
+	history, err := svc.GatewayHistory(context.Background(), env.ID)
+	if err != nil {
+		t.Fatalf("history: %v", err)
+	}
+	if len(history) != store.KeepApplies {
+		t.Fatalf("expected %d history entries, got %d", store.KeepApplies, len(history))
+	}
+	// Newest first: the last three applied, 6, 5 and 4.
+	for i, want := range []int{6, 5, 4} {
+		if history[i].Seq != want {
+			t.Fatalf("history[%d] should name version %d, got %d", i, want, history[i].Seq)
+		}
+	}
+
+	// Every version the history still names is readable, so a revert to any of them resolves.
+	for _, entry := range history {
+		if _, err := svc.GetVersion(context.Background(), entry.Seq); err != nil {
+			t.Fatalf("version %d is named by the history but was pruned: %v", entry.Seq, err)
+		}
+	}
+}
+
+func TestVersionHistoryPruned(t *testing.T) {
+	svc := newTestService(t, &fakeClient{})
+	_, _ = svc.CreateGateway(context.Background(), CreateGatewayInput{Name: "dev",
+		Target: model.Target{DataPlaneID: "dp"}})
 	for i := 0; i < 7; i++ {
-		if _, err := svc.UploadVersion(context.Background(), env.ID, bundleOf("app-"+strconv.Itoa(i)), nil,
+		if _, err := svc.UploadVersion(context.Background(), bundleOf("app-"+strconv.Itoa(i)), nil,
 			"v"); err != nil {
 			t.Fatalf("upload: %v", err)
 		}
 	}
-	versions, _ := svc.ListVersions(context.Background(), env.ID)
-	if len(versions) != store.KeepPrevious+1 {
-		t.Fatalf("expected %d versions retained, got %d", store.KeepPrevious+1, len(versions))
+	versions, _ := svc.ListVersions(context.Background())
+	if len(versions) != store.KeepVersions {
+		t.Fatalf("expected %d versions retained, got %d", store.KeepVersions, len(versions))
 	}
-	// Newest first: seq 7 down to 4.
-	if versions[0].Seq != 7 || versions[len(versions)-1].Seq != 4 {
+	// Newest first: seq 7 down to 3.
+	if versions[0].Seq != 7 || versions[len(versions)-1].Seq != 3 {
 		t.Fatalf("unexpected retained range: %d..%d", versions[0].Seq, versions[len(versions)-1].Seq)
 	}
 }
@@ -753,7 +830,7 @@ func setupPromotionPair(t *testing.T, fake *fakeClient) (*Service, model.Gateway
 		Name: "dev", Target: model.Target{DataPlaneID: "dev"}})
 	prod, _ := svc.CreateGateway(context.Background(), CreateGatewayInput{
 		Name: "prod", Target: model.Target{DataPlaneID: "prod"}})
-	if _, err := svc.UploadVersion(context.Background(), dev.ID, bundleOf("app-a", testAppB), nil,
+	if _, err := svc.UploadVersion(context.Background(), bundleOf("app-a", testAppB), nil,
 		"dev-v1"); err != nil {
 		t.Fatalf("upload: %v", err)
 	}
@@ -781,7 +858,8 @@ func TestPromoteRemembersWhatWasHeldBack(t *testing.T) {
 }
 
 func TestPromoteKeepsHoldingBackOnALaterRun(t *testing.T) {
-	svc, dev, prod := setupPromotionPair(t, &fakeClient{})
+	fake := &fakeClient{}
+	svc, dev, prod := setupPromotionPair(t, fake)
 
 	if _, err := svc.Promote(context.Background(), PromoteInput{
 		FromGatewayID: dev.ID, ToGatewayID: prod.ID,
@@ -792,21 +870,23 @@ func TestPromoteKeepsHoldingBackOnALaterRun(t *testing.T) {
 
 	// dev changes again and the user promotes without expressing a preference. The earlier decision
 	// stands: asking again every time is how a held back resource eventually slips through.
-	_, err := svc.UploadVersion(context.Background(), dev.ID, bundleOf("app-a", testAppB, "app-c"), nil, "dev-v2")
+	_, err := svc.UploadVersion(context.Background(), bundleOf("app-a", testAppB, "app-c"), nil, "dev-v2")
 	if err != nil {
 		t.Fatalf("upload: %v", err)
 	}
-	result, err := svc.Promote(context.Background(), PromoteInput{FromGatewayID: dev.ID, ToGatewayID: prod.ID})
-	if err != nil {
+	if _, err := svc.Promote(context.Background(), PromoteInput{
+		FromGatewayID: dev.ID, ToGatewayID: prod.ID, Apply: true,
+	}); err != nil {
 		t.Fatalf("second promote: %v", err)
 	}
 
-	full, _ := svc.GetVersion(context.Background(), prod.ID, result.NewVersion.Seq)
-	if strings.Contains(full.Resources, testAppB) {
-		t.Fatalf("app-b was held back earlier and must stay held back:\n%s", full.Resources)
+	// The exclusion is honored where it matters: what reaches the data plane.
+	content := fake.lastImport().Content
+	if strings.Contains(content, testAppB) {
+		t.Fatalf("app-b was held back earlier and must stay held back:\n%s", content)
 	}
-	if !strings.Contains(full.Resources, "app-c") {
-		t.Fatalf("a resource nobody held back should promote:\n%s", full.Resources)
+	if !strings.Contains(content, "app-c") {
+		t.Fatalf("a resource nobody held back should promote:\n%s", content)
 	}
 }
 
@@ -829,7 +909,7 @@ func TestPromoteReleasesAResourceWhenItIsSelectedAgain(t *testing.T) {
 		t.Fatalf("second promote: %v", err)
 	}
 
-	full, _ := svc.GetVersion(context.Background(), prod.ID, result.NewVersion.Seq)
+	full, _ := svc.GetVersion(context.Background(), result.Seq)
 	if !strings.Contains(full.Resources, testAppB) {
 		t.Fatalf("app-b was selected and should have promoted:\n%s", full.Resources)
 	}
@@ -909,7 +989,7 @@ func TestApplyQueuesWhenThisPodCannotReachTheDataPlane(t *testing.T) {
 		Name: "dev", Target: model.Target{DataPlaneID: "dev-dp"},
 	})
 	_, _ = svc.store.AddVersion(context.Background(), model.Version{
-		GatewayID: env.ID, Origin: model.OriginUploaded, CreatedAt: svc.now().UTC(), Resources: app("a"),
+		Origin: model.OriginUploaded, CreatedAt: svc.now().UTC(), Resources: app("a"),
 	})
 
 	result, err := svc.Apply(context.Background(), env.ID, "latest", false)
@@ -943,7 +1023,7 @@ func TestApplyDeliversInlineWhenThisPodHoldsTheConnection(t *testing.T) {
 		Name: "dev", Target: model.Target{DataPlaneID: "dev-dp"},
 	})
 	_, _ = svc.store.AddVersion(context.Background(), model.Version{
-		GatewayID: env.ID, Origin: model.OriginUploaded, CreatedAt: svc.now().UTC(), Resources: app("a"),
+		Origin: model.OriginUploaded, CreatedAt: svc.now().UTC(), Resources: app("a"),
 	})
 
 	result, err := svc.Apply(context.Background(), env.ID, "latest", false)
@@ -1053,24 +1133,20 @@ func TestPromoteComparesAgainstWhatTheDestinationIsRunning(t *testing.T) {
 	})
 
 	// Stage is running v1. A later capture adds app-b, but nothing has adopted it.
+	// One organization stream: v1 has app-a alone, v2 adds app-b.
 	_, _ = svc.store.AddVersion(context.Background(), model.Version{
-		GatewayID: stage.ID, Origin: model.OriginUploaded, CreatedAt: svc.now().UTC(), Resources: app("app-a"),
+		Origin: model.OriginUploaded, CreatedAt: svc.now().UTC(), Resources: app("app-a"),
 	})
+	_, _ = svc.store.AddVersion(context.Background(), model.Version{
+		Origin: model.OriginCaptured, CreatedAt: svc.now().UTC(),
+		Resources: bundleOf("app-a", testAppB),
+	})
+	// Stage is still running v1; dev has moved on to v2.
 	if _, err := svc.Apply(context.Background(), stage.ID, "1", false); err != nil {
 		t.Fatalf("apply v1 to stage: %v", err)
 	}
-	_, _ = svc.store.AddVersion(context.Background(), model.Version{
-		GatewayID: stage.ID, Origin: model.OriginCaptured, CreatedAt: svc.now().UTC(),
-		Resources: bundleOf("app-a", testAppB),
-	})
-
-	// Dev is running both applications.
-	_, _ = svc.store.AddVersion(context.Background(), model.Version{
-		GatewayID: dev.ID, Origin: model.OriginUploaded, CreatedAt: svc.now().UTC(),
-		Resources: bundleOf("app-a", testAppB),
-	})
-	if _, err := svc.Apply(context.Background(), dev.ID, "1", false); err != nil {
-		t.Fatalf("apply to dev: %v", err)
+	if _, err := svc.Apply(context.Background(), dev.ID, "2", false); err != nil {
+		t.Fatalf("apply v2 to dev: %v", err)
 	}
 
 	result, err := svc.Promote(context.Background(), PromoteInput{FromGatewayID: dev.ID, ToGatewayID: stage.ID})
@@ -1078,8 +1154,9 @@ func TestPromoteComparesAgainstWhatTheDestinationIsRunning(t *testing.T) {
 		t.Fatalf("promote: %v", err)
 	}
 
-	// Against what stage runs, app-b is an addition. Against its newest capture it would read as
-	// unchanged, and the operator would be told a promotion changes nothing when it adds a resource.
+	// Against what stage runs, app-b is an addition. Against the organization's newest version it
+	// would read as unchanged, and the operator would be told a promotion changes nothing when it
+	// adds a resource.
 	if result.Preview.Summary.Added != 1 {
 		t.Fatalf("expected app-b to read as an addition, got %+v", result.Preview.Summary)
 	}
@@ -1101,13 +1178,13 @@ func TestPromoteSendsWhatTheSourceIsRunning(t *testing.T) {
 
 	// Dev is running v1; v2 is a capture that added app-b and was never applied.
 	_, _ = svc.store.AddVersion(context.Background(), model.Version{
-		GatewayID: dev.ID, Origin: model.OriginUploaded, CreatedAt: svc.now().UTC(), Resources: app("app-a"),
+		Origin: model.OriginUploaded, CreatedAt: svc.now().UTC(), Resources: app("app-a"),
 	})
 	if _, err := svc.Apply(context.Background(), dev.ID, "1", false); err != nil {
 		t.Fatalf("apply v1 to dev: %v", err)
 	}
 	_, _ = svc.store.AddVersion(context.Background(), model.Version{
-		GatewayID: dev.ID, Origin: model.OriginCaptured, CreatedAt: svc.now().UTC(),
+		Origin: model.OriginCaptured, CreatedAt: svc.now().UTC(),
 		Resources: bundleOf("app-a", testAppB),
 	})
 
@@ -1116,7 +1193,7 @@ func TestPromoteSendsWhatTheSourceIsRunning(t *testing.T) {
 		t.Fatalf("promote: %v", err)
 	}
 
-	promoted, err := svc.store.GetVersion(context.Background(), stage.ID, result.NewVersion.Seq)
+	promoted, err := svc.store.GetVersion(context.Background(), result.Seq)
 	if err != nil {
 		t.Fatalf("get promoted version: %v", err)
 	}

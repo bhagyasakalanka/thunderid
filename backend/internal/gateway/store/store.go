@@ -16,9 +16,12 @@
  * under the License.
  */
 
-// Package store persists gateways and their version history to the gateway database.
-// Version history is bounded: each gateway retains its current version plus up to KeepPrevious
-// older versions (and always the currently-applied version, even if it falls outside that window).
+// Package store persists an organization's gateways, its captured versions, and what each gateway
+// has run.
+//
+// Both are bounded. The organization keeps its newest KeepVersions, and each gateway keeps its
+// newest KeepApplies entries. A version an entry still names is kept whatever its age, so going back
+// never lands on a version that has been pruned away.
 package store
 
 import (
@@ -27,13 +30,18 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/thunder-id/thunderid/internal/gateway/model"
 	"github.com/thunder-id/thunderid/internal/system/database/provider"
 )
 
-// KeepPrevious is how many previous versions to retain in addition to the current one.
-const KeepPrevious = 3
+// KeepVersions is how many of the organization's versions are retained.
+const KeepVersions = 5
+
+// KeepApplies is how many entries a gateway's history retains, which is how far back it can be
+// returned to.
+const KeepApplies = 3
 
 // ErrNotFound is returned when an gateway or version does not exist.
 var ErrNotFound = errors.New("not found")
@@ -175,19 +183,13 @@ func (s *Store) DeleteGateway(ctx context.Context, id string) error {
 
 // ---- versions ----
 
-// AddVersion assigns the next sequence to v, persists it, and prunes old versions. The stored version
-// (with its assigned Seq) is returned.
+// AddVersion stores a new version for the organization, assigning the next sequence.
 //
-// The sequence is read and then written rather than assigned by the database. Two captures of the
-// same gateway at the same instant therefore collide on the primary key, and the second is
-// refused: the history stays correct and the caller can capture again.
+// The sequence is read and then written rather than assigned by the database. Two captures at the
+// same instant therefore collide on the primary key, and the second is refused: the history stays
+// correct and the caller can capture again.
 func (s *Store) AddVersion(ctx context.Context, v model.Version) (model.Version, error) {
-	env, err := s.GetGateway(ctx, v.GatewayID)
-	if err != nil {
-		return model.Version{}, err
-	}
-
-	seqs, err := s.versionSeqs(ctx, v.GatewayID)
+	seqs, err := s.versionSeqs(ctx)
 	if err != nil {
 		return model.Version{}, err
 	}
@@ -206,25 +208,24 @@ func (s *Store) AddVersion(ctx context.Context, v model.Version) (model.Version,
 	if err != nil {
 		return model.Version{}, err
 	}
-	if _, err := dbClient.QueryContext(ctx, queryInsertVersion,
-		s.deploymentID, v.GatewayID, v.Seq, string(raw)); err != nil {
+	if _, err := dbClient.QueryContext(ctx, queryInsertVersion, s.deploymentID, v.Seq, string(raw)); err != nil {
 		return model.Version{}, fmt.Errorf("failed to store version: %w", err)
 	}
 
-	if err := s.prune(ctx, v.GatewayID, env.AppliedSeq); err != nil {
+	if err := s.prune(ctx); err != nil {
 		return model.Version{}, err
 	}
 	return v, nil
 }
 
 // GetVersion returns a full version (including resources and variables).
-func (s *Store) GetVersion(ctx context.Context, envID string, seq int) (model.Version, error) {
+func (s *Store) GetVersion(ctx context.Context, seq int) (model.Version, error) {
 	dbClient, err := s.client()
 	if err != nil {
 		return model.Version{}, err
 	}
 
-	results, err := dbClient.QueryContext(ctx, queryGetVersion, s.deploymentID, envID, seq)
+	results, err := dbClient.QueryContext(ctx, queryGetVersion, s.deploymentID, seq)
 	if err != nil {
 		return model.Version{}, fmt.Errorf("failed to read version: %w", err)
 	}
@@ -235,13 +236,13 @@ func (s *Store) GetVersion(ctx context.Context, envID string, seq int) (model.Ve
 }
 
 // ListVersions returns version metadata (payload stripped) newest first.
-func (s *Store) ListVersions(ctx context.Context, envID string) ([]model.Version, error) {
+func (s *Store) ListVersions(ctx context.Context) ([]model.Version, error) {
 	dbClient, err := s.client()
 	if err != nil {
 		return nil, err
 	}
 
-	results, err := dbClient.QueryContext(ctx, queryListVersions, s.deploymentID, envID)
+	results, err := dbClient.QueryContext(ctx, queryListVersions, s.deploymentID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list versions: %w", err)
 	}
@@ -259,9 +260,9 @@ func (s *Store) ListVersions(ctx context.Context, envID string) ([]model.Version
 	return out, nil
 }
 
-// LatestSeq returns the highest version sequence for an gateway, or 0 if none exist.
-func (s *Store) LatestSeq(ctx context.Context, envID string) (int, error) {
-	seqs, err := s.versionSeqs(ctx, envID)
+// LatestSeq returns the organization's highest version sequence, or 0 if none exist.
+func (s *Store) LatestSeq(ctx context.Context) (int, error) {
+	seqs, err := s.versionSeqs(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -271,16 +272,69 @@ func (s *Store) LatestSeq(ctx context.Context, envID string) (int, error) {
 	return seqs[len(seqs)-1], nil
 }
 
-// ---- internals ----
+// ---- gateway history ----
 
-// versionSeqs returns the existing version sequences for an gateway in ascending order.
-func (s *Store) versionSeqs(ctx context.Context, envID string) ([]int, error) {
+// RecordApply appends to a gateway's history that it was moved onto a version.
+func (s *Store) RecordApply(ctx context.Context, gatewayID string, seq int) (model.Apply, error) {
+	history, err := s.ListApplies(ctx, gatewayID)
+	if err != nil {
+		return model.Apply{}, err
+	}
+	next := 1
+	if len(history) > 0 {
+		next = history[0].Ordinal + 1
+	}
+
+	dbClient, err := s.client()
+	if err != nil {
+		return model.Apply{}, err
+	}
+	if _, err := dbClient.QueryContext(ctx, queryInsertApply,
+		s.deploymentID, gatewayID, next, seq); err != nil {
+		return model.Apply{}, fmt.Errorf("failed to record the apply: %w", err)
+	}
+	// Older entries fall off the end, so a gateway can be returned to what it ran recently rather
+	// than to everything it has ever run.
+	if _, err := dbClient.ExecuteContext(ctx, queryTrimApplies,
+		s.deploymentID, gatewayID, next-KeepApplies); err != nil {
+		return model.Apply{}, fmt.Errorf("failed to trim the gateway history: %w", err)
+	}
+	return model.Apply{Ordinal: next, Seq: seq}, nil
+}
+
+// ListApplies returns what a gateway has run, newest first.
+func (s *Store) ListApplies(ctx context.Context, gatewayID string) ([]model.Apply, error) {
 	dbClient, err := s.client()
 	if err != nil {
 		return nil, err
 	}
 
-	results, err := dbClient.QueryContext(ctx, queryVersionSeqs, s.deploymentID, envID)
+	results, err := dbClient.QueryContext(ctx, queryListApplies, s.deploymentID, gatewayID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read the gateway history: %w", err)
+	}
+
+	out := make([]model.Apply, 0, len(results))
+	for _, row := range results {
+		out = append(out, model.Apply{
+			Ordinal:   parseInt(row["ordinal"]),
+			Seq:       parseInt(row["seq"]),
+			AppliedAt: parseTime(row["applied_at"]),
+		})
+	}
+	return out, nil
+}
+
+// ---- internals ----
+
+// versionSeqs returns the organization's version sequences in ascending order.
+func (s *Store) versionSeqs(ctx context.Context) ([]int, error) {
+	dbClient, err := s.client()
+	if err != nil {
+		return nil, err
+	}
+
+	results, err := dbClient.QueryContext(ctx, queryVersionSeqs, s.deploymentID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list version sequences: %w", err)
 	}
@@ -292,29 +346,40 @@ func (s *Store) versionSeqs(ctx context.Context, envID string) ([]int, error) {
 	return seqs, nil
 }
 
-// prune keeps the newest KeepPrevious+1 versions plus the applied version, removing the rest.
-func (s *Store) prune(ctx context.Context, envID string, appliedSeq int) error {
-	seqs, err := s.versionSeqs(ctx, envID)
+// prune keeps the organization's newest KeepVersions, plus any version a gateway's history still
+// names.
+//
+// A version named by a history entry is kept however old it is: that history is what "go back to
+// what this gateway was running before" reads, and pruning a version out from under it would leave
+// the entry pointing at nothing. Histories are themselves bounded, so what this holds beyond the
+// window is bounded too.
+func (s *Store) prune(ctx context.Context) error {
+	seqs, err := s.versionSeqs(ctx)
 	if err != nil {
 		return err
 	}
 	keep := map[int]bool{}
-	for i := len(seqs) - 1; i >= 0 && len(keep) < KeepPrevious+1; i-- {
+	for i := len(seqs) - 1; i >= 0 && len(keep) < KeepVersions; i-- {
 		keep[seqs[i]] = true
-	}
-	if appliedSeq > 0 {
-		keep[appliedSeq] = true
 	}
 
 	dbClient, err := s.client()
 	if err != nil {
 		return err
 	}
+	applied, err := dbClient.QueryContext(ctx, queryAppliedSeqs, s.deploymentID)
+	if err != nil {
+		return fmt.Errorf("failed to read what the gateways have run: %w", err)
+	}
+	for _, row := range applied {
+		keep[parseInt(row["seq"])] = true
+	}
+
 	for _, seq := range seqs {
 		if keep[seq] {
 			continue
 		}
-		if _, err := dbClient.QueryContext(ctx, queryDeleteVersion, s.deploymentID, envID, seq); err != nil {
+		if _, err := dbClient.QueryContext(ctx, queryDeleteVersion, s.deploymentID, seq); err != nil {
 			return fmt.Errorf("failed to prune version %d: %w", seq, err)
 		}
 	}
@@ -348,6 +413,23 @@ func toBytes(value interface{}) []byte {
 		return []byte(v)
 	default:
 		return nil
+	}
+}
+
+// parseTime coerces a timestamp column value, which a driver hands back as a time or as text.
+func parseTime(value interface{}) time.Time {
+	switch v := value.(type) {
+	case time.Time:
+		return v.UTC()
+	case []byte, string:
+		for _, layout := range []string{time.RFC3339, "2006-01-02 15:04:05"} {
+			if t, err := time.Parse(layout, string(toBytes(value))); err == nil {
+				return t.UTC()
+			}
+		}
+		return time.Time{}
+	default:
+		return time.Time{}
 	}
 }
 

@@ -27,15 +27,21 @@ import (
 type Origin string
 
 const (
-	// OriginCaptured means the version was captured from an gateway's control-plane source.
+	// OriginCaptured means the version was captured from the organization's configuration.
 	OriginCaptured Origin = "captured"
-	// OriginPromoted means the version was produced by promoting from a lower gateway.
-	OriginPromoted Origin = "promoted"
-	// OriginReverted means the version was produced by reverting to an earlier version.
-	OriginReverted Origin = "reverted"
 	// OriginUploaded means the version's payload was supplied directly by the caller.
 	OriginUploaded Origin = "uploaded"
 )
+
+// Apply is one entry in a gateway's history: an organization version that was applied to it, and
+// when. A gateway's history is these entries in order, and going back to what it ran before means
+// applying the version an earlier entry names.
+type Apply struct {
+	// Ordinal rises by one per gateway. The highest is what the gateway is running.
+	Ordinal   int       `json:"ordinal"`
+	Seq       int       `json:"seq"`
+	AppliedAt time.Time `json:"appliedAt"`
+}
 
 // Target identifies a data plane that a version is applied to.
 //
@@ -108,19 +114,19 @@ type Gateway struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
-// Version is an immutable snapshot of an gateway's declarative configuration. The parameterized
-// resource YAML and the externalized variable values are stored alongside the metadata.
+// Version is an immutable snapshot of the organization's declarative configuration. The
+// parameterized resource YAML and the externalized variable values are stored alongside the
+// metadata.
+//
+// A version belongs to the organization rather than to any gateway. It names no gateway because it
+// is not of one: the same version is what every gateway of the organization can be moved onto.
 type Version struct {
-	Seq             int               `json:"seq"`
-	GatewayID       string            `json:"gatewayId"`
-	Origin          Origin            `json:"origin"`
-	ParentSeq       int               `json:"parentSeq,omitempty"`
-	SourceGatewayID string            `json:"sourceEnvId,omitempty"`
-	SourceSeq       int               `json:"sourceSeq,omitempty"`
-	Note            string            `json:"note,omitempty"`
-	CreatedAt       time.Time         `json:"createdAt"`
-	Resources       string            `json:"resources,omitempty"`
-	Variables       map[string]string `json:"variables,omitempty"`
+	Seq       int               `json:"seq"`
+	Origin    Origin            `json:"origin"`
+	Note      string            `json:"note,omitempty"`
+	CreatedAt time.Time         `json:"createdAt"`
+	Resources string            `json:"resources,omitempty"`
+	Variables map[string]string `json:"variables,omitempty"`
 	// SecretKeys are the placeholders backed by a secret. Their values are deliberately absent: an
 	// apply sends a ${KEY} placeholder for each, leaving the data plane to supply the real value, so
 	// secrets never pass through this service.

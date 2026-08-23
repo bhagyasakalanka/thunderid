@@ -40,6 +40,7 @@ import (
 // from. That is the same guarantee the row-scoped resources get.
 type registry struct {
 	workspaceURL string
+	workspaceCA  string
 	dataPlanes   service.DataPlanes
 	tokenIssuer  service.DataPlaneTokenIssuer
 	sealer       service.SecretSealer
@@ -76,11 +77,12 @@ func (r *registry) serverForID(id string) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	svc := service.New(st, func(baseURL string, creds thunder.Credentials, insecure bool) service.ThunderClient {
-		return thunder.New(baseURL, creds, insecure)
+	svc := service.New(st, func(baseURL string, creds thunder.Credentials, caFile string) service.ThunderClient {
+		return thunder.New(baseURL, creds, caFile)
 	})
 	svc.SetSecretSealer(r.sealer)
 	svc.SetWorkspaceURL(r.workspaceURL)
+	svc.SetWorkspaceCA(r.workspaceCA)
 	svc.SetOrganization(id)
 	svc.SetDataPlanes(r.dataPlanes)
 	svc.SetDataPlaneTokenIssuer(r.tokenIssuer)
@@ -153,6 +155,18 @@ func (r *registry) SetWorkspaceURL(baseURL string) {
 	r.workspaceURL = baseURL
 	for _, server := range r.servers {
 		server.svc.SetWorkspaceURL(baseURL)
+	}
+}
+
+// SetWorkspaceCA installs the certificate the workspace presents. A capture calls the control plane
+// this server is, so what it has to trust is this server's own certificate, which on-premise is
+// commonly signed by a private CA the system roots do not carry.
+func (r *registry) SetWorkspaceCA(caFile string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.workspaceCA = caFile
+	for _, server := range r.servers {
+		server.svc.SetWorkspaceCA(caFile)
 	}
 }
 

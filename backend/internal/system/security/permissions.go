@@ -313,14 +313,33 @@ func InitSystemPermissions(handle string) {
 		{"PUT /agent-types/**", p.AgentType},
 		{"DELETE /agent-types/**", p.AgentType},
 
-		// Gateway variable APIs. Resolve returns non-secret values that reads already expose, so
-		// the view permission is enough; it still precedes the /gateway-variables/** rules.
-		{"GET /gateway-variables/resolve", p.GatewayVarView},
-		{"GET /gateway-variables", p.GatewayVarView},
-		{"POST /gateway-variables", p.GatewayVar},
-		{"GET /gateway-variables/**", p.GatewayVarView},
-		{"PUT /gateway-variables/**", p.GatewayVar},
-		{"DELETE /gateway-variables/**", p.GatewayVar},
+		// Gateway variable APIs. A variable belongs to one gateway and is served under it, so these
+		// name that path; a rule naming a path the server does not serve matches nothing and leaves
+		// the route on the root permission. They precede the gateway rules below, which would
+		// otherwise match the same requests first and demand more.
+		//
+		// Resolve returns non-secret values that reads already expose, so the view permission covers it.
+		{"GET /gateways/*/variables", p.GatewayVarView},
+		{"POST /gateways/*/variables", p.GatewayVar},
+		{"GET /gateways/*/variables/**", p.GatewayVarView},
+		{"PUT /gateways/*/variables/**", p.GatewayVar},
+		{"DELETE /gateways/*/variables/**", p.GatewayVar},
+
+		// Versions belong to the organization. Capturing one reads the whole of its configuration, so
+		// it takes the root system permission, as does everything else about a gateway: registering
+		// one, issuing its data plane token, applying a version. Stated rather than left to the
+		// fallback, so the requirement is visible here and does not change with it. Promotion carries
+		// a second, separate scope check.
+		{"GET /versions", p.Root},
+		{"POST /versions", p.Root},
+		{"GET /versions/**", p.Root},
+		{"GET /gateways", p.Root},
+		{"POST /gateways", p.Root},
+		{"GET /gateways/**", p.Root},
+		{"POST /gateways/**", p.Root},
+		{"PATCH /gateways/**", p.Root},
+		{"PUT /gateways/**", p.Root},
+		{"DELETE /gateways/**", p.Root},
 
 		// Tenant self-management APIs. These act on the caller's own workspace, named by the deployment
 		// claim in its token, so the scope is all there is to check.

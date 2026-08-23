@@ -51,7 +51,7 @@ type ThunderClient interface {
 }
 
 // ClientFactory builds a ThunderClient for a base URL.
-type ClientFactory func(baseURL string, creds thunder.Credentials, insecure bool) ThunderClient
+type ClientFactory func(baseURL string, creds thunder.Credentials, caFile string) ThunderClient
 
 // Store is the persistence this service needs, which store.Store implements against the gateway
 // database. It is an interface so tests can substitute one that needs no database.
@@ -63,10 +63,15 @@ type Store interface {
 	GetGateway(ctx context.Context, id string) (model.Gateway, error)
 	ListGateways(ctx context.Context) ([]model.Gateway, error)
 	DeleteGateway(ctx context.Context, id string) error
+	// Versions belong to the organization, so none of these names a gateway.
 	AddVersion(ctx context.Context, v model.Version) (model.Version, error)
-	GetVersion(ctx context.Context, envID string, seq int) (model.Version, error)
-	ListVersions(ctx context.Context, envID string) ([]model.Version, error)
-	LatestSeq(ctx context.Context, envID string) (int, error)
+	GetVersion(ctx context.Context, seq int) (model.Version, error)
+	ListVersions(ctx context.Context) ([]model.Version, error)
+	LatestSeq(ctx context.Context) (int, error)
+
+	// What each gateway has run, which is the gateway's own history.
+	RecordApply(ctx context.Context, gatewayID string, seq int) (model.Apply, error)
+	ListApplies(ctx context.Context, gatewayID string) ([]model.Apply, error)
 
 	// Work queued for a Data Plane. Enqueue and Get are this deployment's own; claiming and
 	// completing are not, because a pod holds connections for whichever Data Planes dialed it
@@ -92,7 +97,10 @@ func callerCredentials(ctx context.Context) thunder.Credentials {
 type Service struct {
 	store     Store
 	newClient ClientFactory
-	now       func() time.Time
+	// workspaceCA is the certificate the workspace presents, trusted in addition to the system roots
+	// so a control plane behind a private CA can read its own configuration.
+	workspaceCA string
+	now         func() time.Time
 	// dataPlanes reaches the data planes connected to this control plane.
 	dataPlanes DataPlanes
 	// tokens issues the credential a data plane connects with.
@@ -112,6 +120,12 @@ type Service struct {
 // from the server's configuration after this service is built.
 func (s *Service) SetWorkspaceURL(baseURL string) {
 	s.workspaceURL = baseURL
+}
+
+// SetWorkspaceCA installs the certificate the workspace presents, so a capture trusts it without
+// verification being turned off.
+func (s *Service) SetWorkspaceCA(caFile string) {
+	s.workspaceCA = caFile
 }
 
 // SetOrganization names the organization whose gateways this service manages.
@@ -142,7 +156,7 @@ func (s *Service) workspaceClient(ctx context.Context) (ThunderClient, error) {
 	if strings.TrimSpace(s.workspaceURL) == "" {
 		return nil, ErrNoWorkspace
 	}
-	return s.newClient(s.workspaceURL, callerCredentials(ctx), false), nil
+	return s.newClient(s.workspaceURL, callerCredentials(ctx), s.workspaceCA), nil
 }
 
 // New builds a Service.
@@ -288,7 +302,7 @@ func (s *Service) ListGatewaySummaries(ctx context.Context) ([]GatewaySummary, e
 
 	out := make([]GatewaySummary, 0, len(envs))
 	for _, env := range envs {
-		latest, err := s.store.LatestSeq(ctx, env.ID)
+		latest, err := s.store.LatestSeq(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -430,17 +444,12 @@ func wasManaged(envs []model.Gateway, id string) bool {
 
 // ---- versions ----
 
-// CaptureVersion reads the organization's workspace as it currently stands and records it as a new
-// version of the given gateway.
-func (s *Service) CaptureVersion(ctx context.Context, envID, note string) (model.Version, error) {
-	// Read only to establish that the gateway exists, so a capture against an unknown one is
-	// refused before anything is exported.
-	if _, err := s.store.GetGateway(ctx, envID); err != nil {
-		return model.Version{}, err
-	}
-	// A capture always reads the organization's workspace as it stands, whichever gateway it is
-	// recorded against. The gateways are resources inside that one workspace rather than separate
-	// deployments, so there is no per-gateway source to read from and nothing to configure.
+// CaptureVersion captures the organization's configuration as a new version.
+//
+// It names no gateway. What it reads is the organization's configuration as authored on this control
+// plane, which is the same whichever gateway the version is later applied to, so a gateway has no
+// state of its own to capture: it only receives a version.
+func (s *Service) CaptureVersion(ctx context.Context, note string) (model.Version, error) {
 	client, err := s.workspaceClient(ctx)
 	if err != nil {
 		return model.Version{}, err
@@ -450,8 +459,8 @@ func (s *Service) CaptureVersion(ctx context.Context, envID, note string) (model
 		return model.Version{}, fmt.Errorf("export failed: %w", err)
 	}
 	// The default resource server's identifier is this deployment's audience. Captured verbatim it
-	// would travel to every gateway the bundle is promoted to, so each of them would name the
-	// audience of the gateway it was captured from. Templated here, resolved per target on apply.
+	// would travel to every gateway the bundle is applied to, so each of them would name the audience
+	// of the control plane it was captured from. Templated here, resolved per gateway on apply.
 	exported.Resources = bundle.TemplateDeploymentURL(exported.Resources)
 
 	secretKeys, err := client.SecretKeys(ctx)
@@ -461,25 +470,17 @@ func (s *Service) CaptureVersion(ctx context.Context, envID, note string) (model
 	// The control plane only lists the secrets it still holds, and it forwards a credential to the data
 	// plane rather than keeping it. The bundle is the authority on which placeholders are credentials.
 	secretKeys = mergeKeys(secretKeys, bundle.SecretVariables(exported.Resources))
-	configured, err := client.GatewayVariables(ctx, envID)
-	if err != nil {
-		return model.Version{}, fmt.Errorf("reading gateway variables failed: %w", err)
-	}
 
-	// The export's own .env is the starting point, then the control plane's configured gateway
-	// variables override it: those are what the operator set for this deployment, whereas the export
-	// only reflects whatever the resources happened to contain.
+	// Only what the export itself carries. A gateway's own variables are not folded in here: they
+	// belong to the gateway, not to the organization's configuration, and an apply reads them from
+	// whichever gateway it is writing to.
 	vars := bundle.ParseEnv(exported.EnvFile)
-	for k, v := range configured {
-		vars[k] = v
-	}
 	// A secret's value is never stored here; the placeholder is sent on apply instead.
 	for _, key := range secretKeys {
 		delete(vars, key)
 	}
 
 	return s.store.AddVersion(ctx, model.Version{
-		GatewayID:  envID,
 		Origin:     model.OriginCaptured,
 		Note:       note,
 		CreatedAt:  s.now().UTC(),
@@ -489,18 +490,13 @@ func (s *Service) CaptureVersion(ctx context.Context, envID, note string) (model
 	})
 }
 
-// UploadVersion stores a caller-supplied bundle as a new version.
-func (s *Service) UploadVersion(ctx context.Context, envID, resources string,
-	variables map[string]string, note string) (
-	model.Version, error) {
-	if _, err := s.store.GetGateway(ctx, envID); err != nil {
-		return model.Version{}, err
-	}
+// UploadVersion stores a caller-supplied bundle as a new version of the organization.
+func (s *Service) UploadVersion(ctx context.Context, resources string,
+	variables map[string]string, note string) (model.Version, error) {
 	if variables == nil {
 		variables = map[string]string{}
 	}
 	return s.store.AddVersion(ctx, model.Version{
-		GatewayID: envID,
 		Origin:    model.OriginUploaded,
 		Note:      note,
 		CreatedAt: s.now().UTC(),
@@ -510,16 +506,22 @@ func (s *Service) UploadVersion(ctx context.Context, envID, resources string,
 }
 
 // GetVersion returns a full version.
-func (s *Service) GetVersion(ctx context.Context, envID string, seq int) (model.Version, error) {
-	return s.store.GetVersion(ctx, envID, seq)
+func (s *Service) GetVersion(ctx context.Context, seq int) (model.Version, error) {
+	return s.store.GetVersion(ctx, seq)
 }
 
-// ListVersions returns version metadata newest first.
-func (s *Service) ListVersions(ctx context.Context, envID string) ([]model.Version, error) {
-	if _, err := s.store.GetGateway(ctx, envID); err != nil {
+// ListVersions returns the organization's version metadata, newest first.
+func (s *Service) ListVersions(ctx context.Context) ([]model.Version, error) {
+	return s.store.ListVersions(ctx)
+}
+
+// GatewayHistory returns what a gateway has run, newest first. This is a gateway's own history: the
+// organization versions applied to it, and what "go back to what it was running before" reads.
+func (s *Service) GatewayHistory(ctx context.Context, gatewayID string) ([]model.Apply, error) {
+	if _, err := s.store.GetGateway(ctx, gatewayID); err != nil {
 		return nil, err
 	}
-	return s.store.ListVersions(ctx, envID)
+	return s.store.ListApplies(ctx, gatewayID)
 }
 
 // Diff computes the difference between two version references (a sequence number, "latest" or
@@ -658,7 +660,7 @@ func (s *Service) CheckVariables(ctx context.Context, envID, versionRef string) 
 	if seq == 0 {
 		return VariableStatus{}, ErrNoVersions
 	}
-	version, err := s.store.GetVersion(ctx, envID, seq)
+	version, err := s.store.GetVersion(ctx, seq)
 	if err != nil {
 		return VariableStatus{}, err
 	}
@@ -697,14 +699,14 @@ func (s *Service) Apply(ctx context.Context, envID, versionRef string, dryRun bo
 	if targetSeq == 0 {
 		return ApplyResult{}, ErrNoVersions
 	}
-	target, err := s.store.GetVersion(ctx, envID, targetSeq)
+	target, err := s.store.GetVersion(ctx, targetSeq)
 	if err != nil {
 		return ApplyResult{}, err
 	}
 
 	var appliedRes []bundle.Resource
 	if env.AppliedSeq > 0 {
-		if applied, err := s.store.GetVersion(ctx, envID, env.AppliedSeq); err == nil {
+		if applied, err := s.store.GetVersion(ctx, env.AppliedSeq); err == nil {
 			appliedRes = withoutExcluded(bundle.Parse(applied.Resources), env.Excluded)
 		}
 	}
@@ -786,7 +788,7 @@ func (s *Service) ApplyAll(ctx context.Context, dryRun bool) []ApplyAllResult {
 	for _, env := range envs {
 		outcome := ApplyAllResult{GatewayID: env.ID, GatewayName: env.Name}
 
-		latest, err := s.store.LatestSeq(ctx, env.ID)
+		latest, err := s.store.LatestSeq(ctx)
 		if err != nil {
 			outcome.Error = err.Error()
 			results = append(results, outcome)
@@ -815,7 +817,7 @@ func (s *Service) ApplyAll(ctx context.Context, dryRun bool) []ApplyAllResult {
 type PromoteInput struct {
 	FromGatewayID string
 	ToGatewayID   string
-	VersionRef    string   // version in the source gateway; default "latest"
+	VersionRef    string   // organization version to move onto; default what the source is running
 	Selection     []string // resource keys to promote, honored only when SelectionProvided
 	// SelectionProvided distinguishes "the user chose these" from "the user expressed no preference".
 	// Without it an empty selection could not mean "hold everything back", because it would be
@@ -828,29 +830,39 @@ type PromoteInput struct {
 
 // PromoteResult reports a promotion.
 type PromoteResult struct {
-	Preview    diff.Diff     `json:"preview"`
-	NewVersion model.Version `json:"newVersion"`
+	Preview diff.Diff `json:"preview"`
+	// Seq is the organization version the target was moved onto. Promoting creates no version, so
+	// there is a sequence here rather than a new one.
+	Seq int `json:"seq"`
 	// Secrets reports what happened to the target gateway's credentials.
 	Secrets targetSecretOutcome `json:"secrets"`
 	Applied *ApplyResult        `json:"applied,omitempty"`
 }
 
-// PromotePreview returns the diff of a source gateway's version against the target gateway's
-// current version, without writing anything. This is what a caller reviews (and selects from) before
-// promoting.
+// PromotePreview returns the diff between what the target gateway is running and the version being
+// promoted onto it, without writing anything. This is what a caller reviews (and selects from)
+// before promoting.
 func (s *Service) PromotePreview(ctx context.Context,
 	fromGatewayID, toGatewayID, versionRef string) (diff.Diff, error) {
-	_, _, sourceRes, targetRes, err := s.promoteInputs(ctx, fromGatewayID, toGatewayID, versionRef)
+	sourceRes, targetRes, _, err := s.promoteInputs(ctx, fromGatewayID, toGatewayID, versionRef)
 	if err != nil {
 		return diff.Diff{}, err
 	}
 	return diff.Compute(targetRes, sourceRes), nil
 }
 
-// Promote copies selected changes from a source gateway's version into a new version of the
-// target gateway, optionally applying it to the target's data plane.
+// Promote moves the target gateway onto the version the source gateway is running.
+//
+// It creates no version. A version belongs to the organization and already exists; promoting decides
+// which gateway runs it, which is why the result names a sequence rather than a new version. What
+// differs between two gateways running the same version is what each holds back, so a selection is
+// remembered against the target as its exclusions rather than baked into a version of its own.
+//
+// Any gateway may be moved onto any version here. Which moves an organization actually permits comes
+// from its environment hierarchy, which is held outside this server: the caller that knows the
+// hierarchy decides, and this carries out the move it asks for.
 func (s *Service) Promote(ctx context.Context, in PromoteInput) (PromoteResult, error) {
-	source, target, sourceRes, targetRes, err := s.promoteInputs(ctx, in.FromGatewayID, in.ToGatewayID, in.VersionRef)
+	sourceRes, targetRes, sourceSeq, err := s.promoteInputs(ctx, in.FromGatewayID, in.ToGatewayID, in.VersionRef)
 	if err != nil {
 		return PromoteResult{}, err
 	}
@@ -860,50 +872,28 @@ func (s *Service) Promote(ctx context.Context, in PromoteInput) (PromoteResult, 
 	if err != nil {
 		return PromoteResult{}, err
 	}
-
 	// A resource held back on an earlier run stays held back unless this run deliberately selects it.
-	selection := in.Selection
-	if !in.SelectionProvided {
-		selection = defaultSelection(preview, targetEnv.Excluded)
-	} else if err := s.rememberSelection(ctx, targetEnv, preview, selection); err != nil {
-		return PromoteResult{}, err
-	} else if targetEnv, err = s.store.GetGateway(ctx, in.ToGatewayID); err != nil {
-		return PromoteResult{}, err
+	if in.SelectionProvided {
+		if err := s.rememberSelection(ctx, targetEnv, preview, in.Selection); err != nil {
+			return PromoteResult{}, err
+		}
 	}
-
-	promotedRes := applySelection(targetRes, sourceRes, preview, selection)
-	vars := mergePreferTarget(source.Variables, target.currentVariables)
 
 	// No credential travels with a promotion. The destination's control plane holds none, and its data
 	// plane's secret service is where they live and where an operator sets them; inventing one here
 	// would reach that data plane through capture and replace a credential already in use.
-	secretOutcome := targetSecretOutcome{Skipped: secretKeysOf(source)}
-
-	newVersion, err := s.store.AddVersion(ctx, model.Version{
-		GatewayID:       in.ToGatewayID,
-		Origin:          model.OriginPromoted,
-		ParentSeq:       target.currentSeq,
-		SourceGatewayID: in.FromGatewayID,
-		SourceSeq:       source.Seq,
-		Note:            in.Note,
-		CreatedAt:       s.now().UTC(),
-		Resources:       bundle.Marshal(promotedRes),
-		Variables:       vars,
-		SecretKeys:      secretKeysOf(source),
-	})
+	source, err := s.store.GetVersion(ctx, sourceSeq)
 	if err != nil {
 		return PromoteResult{}, err
 	}
-
-	// Promoting moves a version onto the destination gateway and nothing else. There is no tenant
-	// of its own to write into: an organization has one workspace, and the gateways are resources
-	// inside it. The promoted configuration reaches a running deployment only when it is applied.
 	result := PromoteResult{
-		Preview: preview, NewVersion: stripPayload(newVersion),
-		Secrets: secretOutcome,
+		Preview: preview,
+		Seq:     sourceSeq,
+		Secrets: targetSecretOutcome{Skipped: secretKeysOf(source)},
 	}
+
 	if in.Apply {
-		applied, err := s.Apply(ctx, in.ToGatewayID, strconv.Itoa(newVersion.Seq), in.DryRun)
+		applied, err := s.Apply(ctx, in.ToGatewayID, strconv.Itoa(sourceSeq), in.DryRun)
 		if err != nil {
 			return result, err
 		}
@@ -912,27 +902,10 @@ func (s *Service) Promote(ctx context.Context, in PromoteInput) (PromoteResult, 
 	return result, nil
 }
 
-// promotionBaseline is the version an gateway is taken to be at when promoting.
-//
-// It is what has been applied to its data plane, not what has been captured. A capture is a draft: it
-// records the control plane as it stands, but nothing is committed to until it is applied, and
-// several captures can pile up without the gateway moving. Promoting the newest capture would
-// push work that was never adopted, and comparing against it would describe a destination state that
-// nothing is running.
-//
-// An gateway with nothing applied yet falls back to its newest version, so a freshly registered
-// one can still promote.
-func (s *Service) promotionBaseline(ctx context.Context, env model.Gateway) (int, error) {
-	if env.AppliedSeq > 0 {
-		return env.AppliedSeq, nil
-	}
-	return s.store.LatestSeq(ctx, env.ID)
-}
-
 // ---- revert ----
 
-// RevertInput is the input to Revert. ToRef accepts a version number or "previous", which targets the
-// version immediately before the current head.
+// RevertInput is the input to Revert. ToRef accepts an organization version number or "previous",
+// which is what this gateway was running before its current version.
 type RevertInput struct {
 	GatewayID string
 	ToRef     string
@@ -943,59 +916,47 @@ type RevertInput struct {
 
 // RevertResult reports a revert.
 type RevertResult struct {
-	Preview    diff.Diff     `json:"preview"`
-	NewVersion model.Version `json:"newVersion"`
-	Applied    *ApplyResult  `json:"applied,omitempty"`
+	Preview diff.Diff `json:"preview"`
+	// Seq is the organization version the gateway was moved back onto.
+	Seq     int          `json:"seq"`
+	Applied *ApplyResult `json:"applied,omitempty"`
 }
 
-// Revert creates a new version that restores the content of an earlier version, optionally applying
-// it. History is preserved: reverting adds a new head rather than deleting versions.
+// Revert moves a gateway back onto a version it ran before, optionally applying it.
+//
+// Nothing is created and nothing is deleted. A version belongs to the organization and going back is
+// a change of which one this gateway runs, so its history gains an entry rather than the stream
+// gaining a version. That is also what keeps the version it returns to from being pruned.
 func (s *Service) Revert(ctx context.Context, in RevertInput) (RevertResult, error) {
 	env, err := s.store.GetGateway(ctx, in.GatewayID)
 	if err != nil {
 		return RevertResult{}, err
 	}
-	toSeq, err := s.resolveSeq(ctx, env, in.ToRef)
+	toSeq, err := s.resolveSeq(ctx, env, defaultRef(in.ToRef, "previous"))
 	if err != nil {
 		return RevertResult{}, err
 	}
 	if toSeq == 0 {
 		return RevertResult{}, ErrNoVersions
 	}
-	target, err := s.store.GetVersion(ctx, in.GatewayID, toSeq)
+	target, err := s.store.GetVersion(ctx, toSeq)
 	if err != nil {
 		return RevertResult{}, err
 	}
-	latestSeq, err := s.store.LatestSeq(ctx, in.GatewayID)
-	if err != nil {
-		return RevertResult{}, err
-	}
+
 	var currentRes []bundle.Resource
-	if latestSeq > 0 {
-		if current, err := s.store.GetVersion(ctx, in.GatewayID, latestSeq); err == nil {
+	if env.AppliedSeq > 0 {
+		if current, err := s.store.GetVersion(ctx, env.AppliedSeq); err == nil {
 			currentRes = bundle.Parse(current.Resources)
 		}
 	}
-	preview := diff.Compute(currentRes, bundle.Parse(target.Resources))
-
-	newVersion, err := s.store.AddVersion(ctx, model.Version{
-		GatewayID:  in.GatewayID,
-		Origin:     model.OriginReverted,
-		ParentSeq:  latestSeq,
-		SourceSeq:  toSeq,
-		Note:       in.Note,
-		CreatedAt:  s.now().UTC(),
-		Resources:  target.Resources,
-		Variables:  target.Variables,
-		SecretKeys: secretKeysOf(target),
-	})
-	if err != nil {
-		return RevertResult{}, err
+	result := RevertResult{
+		Preview: diff.Compute(currentRes, bundle.Parse(target.Resources)),
+		Seq:     toSeq,
 	}
-	result := RevertResult{Preview: preview, NewVersion: stripPayload(newVersion)}
 
 	if in.Apply {
-		applied, err := s.Apply(ctx, in.GatewayID, strconv.Itoa(newVersion.Seq), in.DryRun)
+		applied, err := s.Apply(ctx, in.GatewayID, strconv.Itoa(toSeq), in.DryRun)
 		if err != nil {
 			return result, err
 		}
@@ -1006,52 +967,47 @@ func (s *Service) Revert(ctx context.Context, in RevertInput) (RevertResult, err
 
 // ---- helpers ----
 
-// promoteContext carries the resolved current state of the target gateway.
-type promoteContext struct {
-	currentSeq       int
-	currentVariables map[string]string
-}
-
-// promoteInputs resolves the source version and the target gateway's current version.
+// promoteInputs resolves the version the source gateway is running and what the target is running,
+// as the two sides of the comparison a promotion is reviewed against.
+//
+// Both are taken to be what each gateway is actually running rather than what has been captured, so
+// the diff is between two states that exist rather than between two drafts.
 func (s *Service) promoteInputs(ctx context.Context, fromGatewayID, toGatewayID, versionRef string) (
-	model.Version, promoteContext, []bundle.Resource, []bundle.Resource, error) {
+	sourceRes, targetRes []bundle.Resource, sourceSeq int, err error) {
 	fromGateway, err := s.store.GetGateway(ctx, fromGatewayID)
 	if err != nil {
-		return model.Version{}, promoteContext{}, nil, nil, err
+		return nil, nil, 0, err
 	}
 	toGateway, err := s.store.GetGateway(ctx, toGatewayID)
 	if err != nil {
-		return model.Version{}, promoteContext{}, nil, nil, err
-	}
-	// Any gateway may be moved to any other. Which moves an organization actually permits comes from
-	// its gateway hierarchy, which is held outside this server: the caller that knows the hierarchy
-	// decides, and this carries out the move it asks for.
-	// A promotion moves what the source is running, not what has been captured from it. A caller naming
-	// a version explicitly still gets that one.
-	sourceSeq, err := s.resolveSeq(ctx, fromGateway, defaultRef(versionRef, "promotable"))
-	if err != nil {
-		return model.Version{}, promoteContext{}, nil, nil, err
-	}
-	if sourceSeq == 0 {
-		return model.Version{}, promoteContext{}, nil, nil, ErrNoVersions
-	}
-	source, err := s.store.GetVersion(ctx, fromGatewayID, sourceSeq)
-	if err != nil {
-		return model.Version{}, promoteContext{}, nil, nil, err
+		return nil, nil, 0, err
 	}
 
-	// The destination is likewise taken to be at what it is running, so the comparison is between two
-	// states that exist rather than between two drafts.
-	tctx := promoteContext{currentVariables: map[string]string{}}
-	var targetRes []bundle.Resource
-	if targetSeq, err := s.promotionBaseline(ctx, toGateway); err == nil && targetSeq > 0 {
-		if targetVersion, err := s.store.GetVersion(ctx, toGatewayID, targetSeq); err == nil {
-			tctx.currentSeq = targetSeq
-			tctx.currentVariables = targetVersion.Variables
-			targetRes = bundle.Parse(targetVersion.Resources)
+	// What the source is running is what gets promoted. A source that has run nothing yet falls back
+	// to the organization's newest version, so a freshly registered gateway can still promote.
+	sourceSeq, err = s.resolveSeq(ctx, fromGateway, defaultRef(versionRef, "applied"))
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	if sourceSeq == 0 {
+		if sourceSeq, err = s.store.LatestSeq(ctx); err != nil {
+			return nil, nil, 0, err
 		}
 	}
-	return source, tctx, bundle.Parse(source.Resources), targetRes, nil
+	if sourceSeq == 0 {
+		return nil, nil, 0, ErrNoVersions
+	}
+	source, err := s.store.GetVersion(ctx, sourceSeq)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+
+	if toGateway.AppliedSeq > 0 {
+		if current, err := s.store.GetVersion(ctx, toGateway.AppliedSeq); err == nil {
+			targetRes = bundle.Parse(current.Resources)
+		}
+	}
+	return bundle.Parse(source.Resources), targetRes, sourceSeq, nil
 }
 
 // resolveResources resolves a version reference to its parsed resources.
@@ -1063,7 +1019,7 @@ func (s *Service) resolveResources(ctx context.Context, env model.Gateway, ref s
 	if seq == 0 {
 		return nil, nil
 	}
-	v, err := s.store.GetVersion(ctx, env.ID, seq)
+	v, err := s.store.GetVersion(ctx, seq)
 	if err != nil {
 		return nil, err
 	}
@@ -1075,21 +1031,23 @@ func (s *Service) resolveResources(ctx context.Context, env model.Gateway, ref s
 func (s *Service) resolveSeq(ctx context.Context, env model.Gateway, ref string) (int, error) {
 	switch ref {
 	case "", "latest":
-		return s.store.LatestSeq(ctx, env.ID)
+		return s.store.LatestSeq(ctx)
 	case "previous":
-		// The version immediately before the current head, which is what a one-click revert targets.
-		versions, err := s.store.ListVersions(ctx, env.ID)
+		// What this gateway was running before its current version, read from its own history rather
+		// than from the organization's stream: going back means returning to a state this gateway was
+		// actually in, which is not the same as the version captured before the current one.
+		history, err := s.store.ListApplies(ctx, env.ID)
 		if err != nil {
 			return 0, err
 		}
-		if len(versions) < 2 {
-			return 0, ErrNoPreviousVersion
+		for _, entry := range history {
+			if entry.Seq != env.AppliedSeq {
+				return entry.Seq, nil
+			}
 		}
-		return versions[1].Seq, nil
+		return 0, ErrNoPreviousVersion
 	case "applied":
 		return env.AppliedSeq, nil
-	case "promotable":
-		return s.promotionBaseline(ctx, env)
 	default:
 		seq, err := strconv.Atoi(ref)
 		if err != nil || seq <= 0 {
@@ -1118,73 +1076,6 @@ func deletionsFromDiff(d diff.Diff) []thunder.ResourceDeletion {
 		out = append(out, thunder.ResourceDeletion{ResourceType: c.Type, ID: c.ID, Category: c.Category})
 	}
 	return out
-}
-
-// applySelection builds the promoted resource set: start from the target's current resources and
-// apply the selected changes (add/update sets the source resource, delete removes it). An empty
-// selection applies every change. Ordering follows the source bundle, then any target-only resources.
-func applySelection(targetRes, sourceRes []bundle.Resource, d diff.Diff, selection []string) []bundle.Resource {
-	// An empty selection means nothing was chosen, not everything. The caller resolves what "no
-	// preference" means before getting here, so that an gateway with every change held back
-	// promotes nothing rather than promoting the lot.
-	sel := map[string]bool{}
-	for _, k := range selection {
-		sel[k] = true
-	}
-	sourceIdx := bundle.Index(sourceRes)
-	result := map[string]bundle.Resource{}
-	for _, r := range targetRes {
-		result[r.Key()] = r
-	}
-	for _, c := range d.Changes {
-		if c.Change == diff.Unchanged {
-			continue
-		}
-		if !sel[c.Key] {
-			continue
-		}
-		switch c.Change {
-		case diff.Added, diff.Updated:
-			result[c.Key] = sourceIdx[c.Key]
-		case diff.Deleted:
-			delete(result, c.Key)
-		}
-	}
-
-	var out []bundle.Resource
-	emitted := map[string]bool{}
-	for _, r := range sourceRes {
-		if v, ok := result[r.Key()]; ok && !emitted[r.Key()] {
-			out = append(out, v)
-			emitted[r.Key()] = true
-		}
-	}
-	for _, r := range targetRes {
-		if v, ok := result[r.Key()]; ok && !emitted[r.Key()] {
-			out = append(out, v)
-			emitted[r.Key()] = true
-		}
-	}
-	return out
-}
-
-// mergePreferTarget returns source overlaid with target, so target's gateway-specific values win
-// while new placeholders introduced by promoted resources are filled from the source.
-func mergePreferTarget(source, target map[string]string) map[string]string {
-	out := map[string]string{}
-	for k, v := range source {
-		out[k] = v
-	}
-	for k, v := range target {
-		out[k] = v
-	}
-	return out
-}
-
-func stripPayload(v model.Version) model.Version {
-	v.Resources = ""
-	v.Variables = nil
-	return v
 }
 
 func newID(prefix string) string {

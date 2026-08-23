@@ -43,19 +43,6 @@ func changedKeys(d diff.Diff) []string {
 	return keys
 }
 
-// defaultSelection is what runs when the caller expresses no preference: everything that changed,
-// minus what was held back before.
-func defaultSelection(d diff.Diff, excluded []string) []string {
-	held := toSet(excluded)
-	var selection []string
-	for _, key := range changedKeys(d) {
-		if !held[key] {
-			selection = append(selection, key)
-		}
-	}
-	return selection
-}
-
 // nextExclusions folds an explicit selection into the remembered ones.
 //
 // Only the resources on offer in this run are reconsidered: a key that did not change is neither

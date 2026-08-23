@@ -49,15 +49,17 @@ func registerRoutes(mux *http.ServeMux, reg *registry) {
 	}
 
 	routes := map[string]func(*Server) http.HandlerFunc{
-		"POST /gateways":                     func(s *Server) http.HandlerFunc { return s.createGateway },
-		"GET /gateways":                      func(s *Server) http.HandlerFunc { return s.listGateways },
-		"GET /gateways/{id}":                 func(s *Server) http.HandlerFunc { return s.getGateway },
-		"PATCH /gateways/{id}":               func(s *Server) http.HandlerFunc { return s.updateGateway },
-		"GET /data-plane-jobs/{id}":          func(s *Server) http.HandlerFunc { return s.getDataPlaneJob },
-		"DELETE /gateways/{id}":              func(s *Server) http.HandlerFunc { return s.deleteGateway },
-		"POST /gateways/{id}/versions":       func(s *Server) http.HandlerFunc { return s.createVersion },
-		"GET /gateways/{id}/versions":        func(s *Server) http.HandlerFunc { return s.listVersions },
-		"GET /gateways/{id}/versions/{seq}":  func(s *Server) http.HandlerFunc { return s.getVersion },
+		"POST /gateways":            func(s *Server) http.HandlerFunc { return s.createGateway },
+		"GET /gateways":             func(s *Server) http.HandlerFunc { return s.listGateways },
+		"GET /gateways/{id}":        func(s *Server) http.HandlerFunc { return s.getGateway },
+		"PATCH /gateways/{id}":      func(s *Server) http.HandlerFunc { return s.updateGateway },
+		"GET /data-plane-jobs/{id}": func(s *Server) http.HandlerFunc { return s.getDataPlaneJob },
+		"DELETE /gateways/{id}":     func(s *Server) http.HandlerFunc { return s.deleteGateway },
+		// Versions belong to the organization, so they are not served under a gateway.
+		"POST /versions":                     func(s *Server) http.HandlerFunc { return s.createVersion },
+		"GET /versions":                      func(s *Server) http.HandlerFunc { return s.listVersions },
+		"GET /versions/{seq}":                func(s *Server) http.HandlerFunc { return s.getVersion },
+		"GET /gateways/{id}/history":         func(s *Server) http.HandlerFunc { return s.gatewayHistory },
 		"GET /gateways/{id}/diff":            func(s *Server) http.HandlerFunc { return s.diff },
 		"GET /gateways/{id}/variable-status": func(s *Server) http.HandlerFunc { return s.checkVariables },
 		"POST /gateways/{id}/apply":          func(s *Server) http.HandlerFunc { return s.apply },
@@ -88,7 +90,7 @@ func registerRoutes(mux *http.ServeMux, reg *registry) {
 		mux.HandleFunc(middleware.WithCORS(pattern, auth.RecordCallerToken(handler), opts))
 	}
 
-	for _, pattern := range []string{"OPTIONS /gateways", "OPTIONS /gateways/",
+	for _, pattern := range []string{"OPTIONS /gateways", "OPTIONS /gateways/", "OPTIONS /versions",
 		"OPTIONS /promotions", "OPTIONS /apply"} {
 		mux.HandleFunc(middleware.WithCORS(pattern, func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
