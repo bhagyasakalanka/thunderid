@@ -18,12 +18,12 @@ import {
 import {Copy} from '@wso2/oxygen-ui-icons-react';
 import {useState, type JSX} from 'react';
 import {useTranslation} from 'react-i18next';
-import useRegenerateEnvironmentSecret from '../api/useRegenerateEnvironmentSecret';
+import useRegenerateGatewaySecret from '../api/useRegenerateGatewaySecret';
 import type {RegeneratedSecret, SecretEntry} from '../models/promotion';
 
 interface RegenerateSecretDialogProps {
   open: boolean;
-  envId: string;
+  gatewayId: string;
   secret: SecretEntry | null;
   onClose: () => void;
 }
@@ -37,12 +37,12 @@ interface RegenerateSecretDialogProps {
  */
 export default function RegenerateSecretDialog({
   open,
-  envId,
+  gatewayId,
   secret,
   onClose,
 }: RegenerateSecretDialogProps): JSX.Element {
   const {t} = useTranslation();
-  const regenerate = useRegenerateEnvironmentSecret();
+  const regenerate = useRegenerateGatewaySecret();
   const [issued, setIssued] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
 
@@ -62,7 +62,7 @@ export default function RegenerateSecretDialog({
       return;
     }
     regenerate.mutate(
-      {envId, name: secret.name},
+      {gatewayId, name: secret.name},
       {
         onSuccess: (data: RegeneratedSecret) => {
           setIssued(data.value);

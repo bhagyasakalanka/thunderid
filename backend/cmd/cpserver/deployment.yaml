@@ -1,6 +1,6 @@
 # Control Plane deployment configuration.
 #
-# The Control Plane is where configuration is authored, versioned, and promoted between environments.
+# The Control Plane is where configuration is authored, versioned, and promoted between gateways.
 # It serves the management APIs and the Control Plane console, and it holds no runtime traffic: no
 # OAuth2 flows, no logins, no tokens. Those are the Data Plane's (see ../dpserver/deployment.yaml).
 #
@@ -12,13 +12,11 @@ server:
   hostname: "localhost"
   port: 8095
 
-  # Each tenant is one organization's environment, identified as "<org>:<env>" (for example
-  # "org1:dev"). The identifier is taken from a claim in the caller's token rather than from the
-  # request, so a caller cannot address a tenant it has no token for.
+  # Each tenant is one organization, identified by the deployment claim in the caller's token rather
+  # than by the request, so a caller cannot address a tenant it has no token for. An organization
+  # provisions its own workspace, and its gateways are resources inside that workspace.
   deployment_id_source: "token"
   deployment_id_claim: "deploymentId"
-  # The tenant that owns the Control Plane's own resources, as opposed to any customer's.
-  system_deployment_id: "root"
 
   security:
     # Permissions this plane's management APIs require, prefixed. A token from the trusted issuer

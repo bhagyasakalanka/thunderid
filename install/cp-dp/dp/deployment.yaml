@@ -14,7 +14,7 @@
 # gate. Configuration is authored on the Control Plane and applied down to here, so the management
 # APIs are not served and resources that arrived from the Control Plane are read only on this side.
 #
-# One of these files describes one environment, for example org1's dev. A second environment is a
+# One of these files describes one gateway, for example org1's dev. A second gateway is a
 # second deployment of this file with its own id, database, and vault prefix.
 
 server:
@@ -42,7 +42,7 @@ server:
         type: "openbao"
         address: "https://openbao.example.com:8200"
         mount: "secret"
-        # Scopes this deployment's secrets within the mount, so environments sharing one vault do
+        # Scopes this deployment's secrets within the mount, so gateways sharing one vault do
         # not collide. Use the deployment identifier.
         path_prefix: "thunderid/org1-dev"
         namespace: ""
@@ -87,7 +87,7 @@ tls:
 channel:
   client:
     enabled: true
-    # This deployment's identifier, as "<org>:<env>". It must match the environment registered on
+    # This deployment's identifier, as "<org>:<gateway>". It must match the gateway registered on
     # the Control Plane, and is the same for every replica.
     id: "org1:dev"
     # Which replica this pod is. Left empty it defaults to the host name, which under Kubernetes is
@@ -96,7 +96,7 @@ channel:
     # new connection would evict the last.
     instance: ""
     control_plane_url: "wss://cp.example.com/cp/connect"
-    # Issued by the Control Plane when the environment is registered, and shown once.
+    # Issued by the Control Plane when the gateway is registered, and shown once.
     auth_token: "{{.DP_CHANNEL_TOKEN}}"
     # The authority that signed the Control Plane's certificate, when it is not one the system
     # already trusts. Naming it keeps verification on.

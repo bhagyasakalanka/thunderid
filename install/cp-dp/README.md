@@ -6,7 +6,7 @@ Planes.
 | File | Runs |
 |---|---|
 | [cp/deployment.yaml](cp/deployment.yaml) | The Control Plane: authoring, versioning, promotion. No runtime traffic. |
-| [dp/deployment.yaml](dp/deployment.yaml) | One Data Plane environment: OAuth2/OIDC, flows, the gate. |
+| [dp/deployment.yaml](dp/deployment.yaml) | One Data Plane gateway: OAuth2/OIDC, flows, the gate. |
 
 Each is a complete config, not a Helm template. Copy it, edit the hostnames and database details,
 and mount it over `/opt/thunderid/deployment.yaml`.
@@ -31,12 +31,12 @@ psql -h "$DB_HOST" -U "$DB_USER" -d configdb           -f dbscripts/configdb/pos
 psql -h "$DB_HOST" -U "$DB_USER" -d entitydb           -f dbscripts/entitydb/postgres.sql
 psql -h "$DB_HOST" -U "$DB_USER" -d runtime_transient  -f dbscripts/runtime-transient/postgres.sql
 psql -h "$DB_HOST" -U "$DB_USER" -d runtime_persistent -f dbscripts/runtime-persistent/postgres.sql
-psql -h "$DB_HOST" -U "$DB_USER" -d environmentdb      -f dbscripts/environmentdb/postgres.sql
 ```
 
-`environmentdb` is the Control Plane's alone: it holds the environments and captured versions that
-promotion compares. A Data Plane runs no environment manager and configures no such datasource, so
-it loads the other four.
+A gateway and the versions captured from it are resources of the organization, so they sit in
+`configdb` alongside the rest of its configuration rather than in a database of their own. A Control
+Plane holds no runtime state, so it loads `configdb` and `entitydb` only; the two runtime databases
+are the Data Plane's.
 
 These scripts create tables unconditionally, so run them against empty databases only.
 
@@ -50,7 +50,7 @@ tokens of its own. Every tenant API acts on the organization named by the caller
 An organization provisions itself with `POST /tenant`, which applies the `bootstrap/` bundle
 in the image into that organization's own partition. That is what the bundle is in the image for.
 Nothing is copied from another tenant: an organization has one workspace, and its gateways are
-resources inside it, registered with `POST /environments` using the same token.
+resources inside it, registered with `POST /gateways` using the same token.
 
 **A Data Plane holds nothing either, at first.** It is fed by a Control Plane: its organization
 units, user types, applications, flows and themes all arrive on the first apply, so seeding any of
@@ -69,7 +69,7 @@ they change. The database passwords come from there rather than from `deployment
 placeholders the server resolves at startup.
 
 **It does not register a Data Plane with its Control Plane.** That happens on the Control Plane,
-which issues the environment's channel token and shows it once. Put that token where
+which issues the gateway's channel token and shows it once. Put that token where
 `channel.client.auth_token` reads it from before starting the pods.
 
 ## The audience a token binds to
@@ -81,7 +81,7 @@ back to the deployment's `defaultResourceServer`, and with neither the request i
 
 Two things follow, and both are handled for you.
 
-**The audience differs per environment.** Promoted verbatim, every environment would name the audience
+**The audience differs per gateway.** Promoted verbatim, every gateway would name the audience
 of the one the bundle was captured from, and a token minted for dev would name the same audience as
 one minted for prod. So a capture replaces the origin of that identifier with a placeholder, and each
 apply resolves it from the target's own base URL:
@@ -91,7 +91,7 @@ dev    →  https://dev.example.com/mcp
 stage  →  https://stage.example.com/mcp
 ```
 
-Set `baseUrl` on each environment's target. The path an operator chose is kept; only the origin is
+Set `baseUrl` on each gateway's target. The path an operator chose is kept; only the origin is
 replaced, and only for the resource server the deployment's own default points at. Any other resource
 server is configuration an operator authored and is promoted as it stands.
 
@@ -215,13 +215,13 @@ reached would be invisible to the rest. Do not run more than one replica on `fil
 
 **Run the Control Plane with one replica for now.** A Data Plane's connection lives in the memory of
 the single Control Plane pod it dialled, and there is no routing between pods yet, so an apply that
-arrives at any other pod reports the Data Plane as offline. Its database and environment data are
+arrives at any other pod reports the Data Plane as offline. Its database and gateway data are
 already shared, so this is the only thing standing in the way of scaling it.
 
 ## Storage
 
-Neither plane needs durable storage of its own. The Control Plane keeps its environments and their
-captured versions in `environmentdb`, and a Data Plane's configuration comes from the Control Plane,
+Neither plane needs durable storage of its own. The Control Plane keeps its gateways and their
+captured versions in `configdb`, and a Data Plane's configuration comes from the Control Plane,
 its secrets from the vault, and its data from Postgres. Both are free to be rescheduled anywhere.
 
 ## Ports

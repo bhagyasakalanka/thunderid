@@ -3,8 +3,6 @@ CREATE DATABASE runtime_transient;
 CREATE DATABASE configdb;
 CREATE DATABASE entitydb;
 CREATE DATABASE runtime_persistent;
--- The environment manager's datasource. Only a Control Plane uses it.
-CREATE DATABASE environmentdb;
 
 -- Run db1 initialization
 \connect runtime_transient
@@ -22,6 +20,3 @@ CREATE DATABASE environmentdb;
 \connect runtime_persistent
 \i /docker-entrypoint-initdb.d/runtime-persistent-postgres.sql
 
--- Run db5 initialization
-\connect environmentdb
-\i /docker-entrypoint-initdb.d/environment-postgres.sql

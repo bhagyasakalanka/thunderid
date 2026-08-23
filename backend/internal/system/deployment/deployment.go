@@ -107,9 +107,9 @@ func IDFromContext(ctx context.Context) (string, bool) {
 
 // OrganizationOf returns the organization a deployment id belongs to.
 //
-// A deployment id names an environment as "<org>:<env>", and everything an organization owns across
-// its environments - its gateways, their variables, its registry row - is partitioned under the
-// organization rather than under any one environment. An id naming no organization is its own
+// A deployment id names a gateway as "<org>:<gateway>", and everything an organization owns across
+// its gateways - the gateways themselves, their variables, its registry row - is partitioned under
+// the organization rather than under any one gateway. An id naming no organization is its own
 // organization, which is what a single-tenant deployment has.
 func OrganizationOf(id string) string {
 	org, _, found := strings.Cut(id, ":")

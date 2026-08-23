@@ -5,19 +5,19 @@ import {useMutation, useQueryClient, type UseMutationResult} from '@tanstack/rea
 import {useToast} from '@thunderid/contexts';
 import {useThunderID} from '@thunderid/react';
 import {useTranslation} from 'react-i18next';
-import useEnvManagerUrl from './useEnvManagerUrl';
+import useGatewayApiUrl from './useGatewayApiUrl';
 import PromotionQueryKeys from '../constants/promotion-query-keys';
 import type {ApplyAllResult} from '../models/promotion';
 
 /**
- * Re-applies every environment's latest version.
+ * Re-applies every gateway's latest version.
  *
  * Editing a value the configuration references, such as a redirect URL, does not change any stored
  * version, so nothing reaches the Data Planes until an apply runs. This is that push.
  */
 export default function useApplyAll(): UseMutationResult<{results: ApplyAllResult[]}, Error, void> {
   const {http} = useThunderID();
-  const baseUrl: string | undefined = useEnvManagerUrl();
+  const baseUrl: string | undefined = useGatewayApiUrl();
   const queryClient: ReturnType<typeof useQueryClient> = useQueryClient();
   const {t} = useTranslation('promotions');
   const {showToast} = useToast();
@@ -35,14 +35,14 @@ export default function useApplyAll(): UseMutationResult<{results: ApplyAllResul
       return response.data;
     },
     onSuccess: (data: {results: ApplyAllResult[]}) => {
-      queryClient.invalidateQueries({queryKey: [PromotionQueryKeys.ENVIRONMENTS]}).catch(() => {
+      queryClient.invalidateQueries({queryKey: [PromotionQueryKeys.GATEWAYS]}).catch(() => {
         // Ignore invalidation errors.
       });
       const failed: number = (data.results ?? []).filter((r: ApplyAllResult) => Boolean(r.error)).length;
       const applied: number = (data.results ?? []).length - failed;
       if (failed > 0) {
         showToast(
-          t('applyAll.partial', 'Applied to {{applied}} environment(s); {{failed}} could not be applied', {
+          t('applyAll.partial', 'Applied to {{applied}} gateway(s); {{failed}} could not be applied', {
             applied,
             failed,
           }),
@@ -50,10 +50,10 @@ export default function useApplyAll(): UseMutationResult<{results: ApplyAllResul
         );
         return;
       }
-      showToast(t('applyAll.success', 'Applied to {{applied}} environment(s)', {applied}), 'success');
+      showToast(t('applyAll.success', 'Applied to {{applied}} gateway(s)', {applied}), 'success');
     },
     onError: () => {
-      showToast(t('applyAll.error', 'Failed to apply to the environments. Please try again.'), 'error');
+      showToast(t('applyAll.error', 'Failed to apply to the gateways. Please try again.'), 'error');
     },
   });
 }

@@ -13,12 +13,12 @@ import {
 } from '@wso2/oxygen-ui';
 import {useState, type JSX} from 'react';
 import {useTranslation} from 'react-i18next';
-import useSetEnvironmentSecret from '../api/useSetEnvironmentSecret';
+import useSetGatewaySecret from '../api/useSetGatewaySecret';
 import type {SecretEntry} from '../models/promotion';
 
 interface SetSecretDialogProps {
   open: boolean;
-  envId: string;
+  gatewayId: string;
   secret: SecretEntry | null;
   onClose: () => void;
 }
@@ -29,9 +29,9 @@ interface SetSecretDialogProps {
  * This is the only way to fill a credential the Data Plane replays to a third party, because that value
  * is issued elsewhere and cannot be generated here.
  */
-export default function SetSecretDialog({open, envId, secret, onClose}: SetSecretDialogProps): JSX.Element {
+export default function SetSecretDialog({open, gatewayId, secret, onClose}: SetSecretDialogProps): JSX.Element {
   const {t} = useTranslation();
-  const setSecret = useSetEnvironmentSecret();
+  const setSecret = useSetGatewaySecret();
   const [value, setValue] = useState<string>('');
 
   // Reset as the dialog opens, during render rather than in an effect: an effect would render the
@@ -48,7 +48,7 @@ export default function SetSecretDialog({open, envId, secret, onClose}: SetSecre
     if (!secret || value === '') {
       return;
     }
-    setSecret.mutate({envId, name: secret.name, value}, {onSuccess: () => onClose()});
+    setSecret.mutate({gatewayId, name: secret.name, value}, {onSuccess: () => onClose()});
   };
 
   return (

@@ -42,8 +42,8 @@ export default function QueuedWorkNotice({
     if (!settled) {
       return;
     }
-    // The environment now holds a different version, so anything showing it has to be re-read.
-    queryClient.invalidateQueries({queryKey: [PromotionQueryKeys.ENVIRONMENTS]}).catch(() => {
+    // The gateway now holds a different version, so anything showing it has to be re-read.
+    queryClient.invalidateQueries({queryKey: [PromotionQueryKeys.GATEWAYS]}).catch(() => {
       // Ignore invalidation errors.
     });
     onSettled?.();

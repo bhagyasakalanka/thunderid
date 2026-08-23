@@ -30,7 +30,7 @@ const HeaderDataPlaneID = "X-Data-Plane-ID"
 
 // HeaderDataPlaneInstance is the request header naming which replica of that Data Plane is
 // connecting. It is carried separately from the id rather than encoded into it, so the id stays what
-// the environment records and what the token is issued against.
+// the gateway records and what the token is issued against.
 const HeaderDataPlaneInstance = "X-Data-Plane-Instance"
 
 // defaultInstance stands in when a Data Plane names no replica, which is a deployment running a

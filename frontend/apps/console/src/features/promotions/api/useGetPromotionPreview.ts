@@ -8,18 +8,22 @@ import PromotionQueryKeys from '../constants/promotion-query-keys';
 import type {Diff} from '../models/promotion';
 
 /**
- * Previews what promoting a source environment's version into a target environment would change.
+ * Previews what promoting a source gateway's version into a target gateway would change.
  * This is the diff the user reviews, and selects from, before promoting.
  */
-export default function useGetPromotionPreview(fromEnv: string, toEnv: string, version?: string): UseQueryResult<Diff> {
+export default function useGetPromotionPreview(
+  fromGateway: string,
+  toGateway: string,
+  version?: string,
+): UseQueryResult<Diff> {
   const {http} = useThunderID();
   const baseUrl: string | undefined = usePromotionServiceUrl();
 
   return useQuery<Diff>({
-    queryKey: [PromotionQueryKeys.PROMOTION_PREVIEW, fromEnv, toEnv, version ?? 'latest'],
-    enabled: Boolean(baseUrl) && Boolean(fromEnv) && Boolean(toEnv),
+    queryKey: [PromotionQueryKeys.PROMOTION_PREVIEW, fromGateway, toGateway, version ?? 'latest'],
+    enabled: Boolean(baseUrl) && Boolean(fromGateway) && Boolean(toGateway),
     queryFn: async (): Promise<Diff> => {
-      const params = new URLSearchParams({fromEnv, toEnv});
+      const params = new URLSearchParams({fromGateway, toGateway});
       if (version) {
         params.set('version', version);
       }

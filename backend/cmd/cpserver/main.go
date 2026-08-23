@@ -106,7 +106,7 @@ func main() {
 	}
 
 	// Register the Control Plane services.
-	jwtService, runtimeCryptoSvc, importService, exportService, envManager,
+	jwtService, runtimeCryptoSvc, importService, exportService, gatewayManager,
 		envVarService := registerServices(mux, cacheManager)
 
 	// When invoked as the bootstrap one-shot (`cpserver bootstrap`), create the
@@ -144,9 +144,9 @@ func main() {
 		logger.Fatal(ctx, "Failed to initialize TenantService", log.Error(err))
 	}
 	// A gateway's Console is pointed at that gateway's own address as it is created, which is recorded
-	// as an environment variable.
-	if envManager != nil {
-		envManager.SetEnvironmentVariables(envVarService)
+	// as a gateway variable.
+	if gatewayManager != nil {
+		gatewayManager.SetGatewayVariables(envVarService)
 	}
 
 	// Initialize the Resource Server token-revocation cache. The initial deny-list snapshot is loaded

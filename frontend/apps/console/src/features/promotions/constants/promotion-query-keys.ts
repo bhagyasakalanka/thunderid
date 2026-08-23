@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 const PromotionQueryKeys = {
-  ENVIRONMENTS: 'promotion-environments',
+  GATEWAYS: 'promotion-gateways',
   VERSIONS: 'promotion-versions',
   DIFF: 'promotion-diff',
   VARIABLES: 'promotion-variables',

@@ -6,33 +6,33 @@ import {ArrowRight} from '@wso2/oxygen-ui-icons-react';
 import {useState, type JSX} from 'react';
 import {useTranslation} from 'react-i18next';
 import {useParams} from 'react-router';
-import useGetEnvironments from '../api/useGetEnvironments';
+import useGetGateways from '../api/useGetGateways';
 import DataPlaneStatusChip from '../components/DataPlaneStatusChip';
 import PromoteDialog from '../components/PromoteDialog';
-import type {Environment} from '../models/promotion';
+import type {Gateway} from '../models/promotion';
 
 /**
  * Chooses which gateway to promote a version into.
  *
  * The target is picked here rather than derived from a chain, because gateways are a flat set. On its
- * own the Control Plane permits any pair, so every other gateway is offered. With an environment
+ * own the Control Plane permits any pair, so every other gateway is offered. With an gateway
  * manager connected the hierarchy decides, and it accepts or refuses the move that is asked for.
  */
 export default function PromotePage(): JSX.Element {
   const {t} = useTranslation();
-  const {envId = ''} = useParams<{envId: string}>();
-  const {data} = useGetEnvironments();
-  const [target, setTarget] = useState<Environment | undefined>(undefined);
+  const {gatewayId = ''} = useParams<{gatewayId: string}>();
+  const {data} = useGetGateways();
+  const [target, setTarget] = useState<Gateway | undefined>(undefined);
 
-  const environments: Environment[] = data?.environments ?? [];
-  const source: Environment | undefined = environments.find((env: Environment) => env.id === envId);
-  const targets: Environment[] = environments.filter((env: Environment) => env.id !== envId);
+  const gateways: Gateway[] = data?.gateways ?? [];
+  const source: Gateway | undefined = gateways.find((env: Gateway) => env.id === gatewayId);
+  const targets: Gateway[] = gateways.filter((env: Gateway) => env.id !== gatewayId);
 
   return (
     <PageContent>
       <PageTitle>
         <PageTitle.Header>
-          {t('promotions:promote.title', 'Promote {{name}}', {name: source?.name ?? envId})}
+          {t('promotions:promote.title', 'Promote {{name}}', {name: source?.name ?? gatewayId})}
         </PageTitle.Header>
         <PageTitle.SubHeader>
           {t('promotions:promote.subtitle', 'Choose which gateway to promote this configuration into.')}
@@ -46,7 +46,7 @@ export default function PromotePage(): JSX.Element {
       )}
 
       <Stack spacing={2}>
-        {targets.map((env: Environment) => (
+        {targets.map((env: Gateway) => (
           <Card key={env.id} sx={{p: 2}}>
             <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
               <Box sx={{flexGrow: 1, minWidth: 200}}>
@@ -80,10 +80,10 @@ export default function PromotePage(): JSX.Element {
       {target && source && (
         <PromoteDialog
           open
-          fromEnvId={source.id}
-          fromEnvName={source.name}
-          toEnvId={target.id}
-          toEnvName={target.name}
+          fromGatewayId={source.id}
+          fromGatewayName={source.name}
+          toGatewayId={target.id}
+          toGatewayName={target.name}
           toDataPlaneConnected={target.dataPlane?.connected ?? false}
           onClose={() => {
             setTarget(undefined);

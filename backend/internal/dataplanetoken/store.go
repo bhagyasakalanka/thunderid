@@ -19,7 +19,7 @@
 // Package dataplanetoken issues and holds the credential a data plane presents when it dials the
 // control plane's channel.
 //
-// A token is minted when an environment is registered and shown once. It is held encrypted, so a
+// A token is minted when a gateway is registered and shown once. It is held encrypted, so a
 // database dump does not yield a set of working data-plane credentials, and it is never readable
 // afterwards: the only way to recover from a lost one is to issue another.
 package dataplanetoken

@@ -16,12 +16,12 @@ import {
 } from '@wso2/oxygen-ui';
 import {useState, type JSX} from 'react';
 import {useTranslation} from 'react-i18next';
-import useRegenerateEnvironmentSecret from '../api/useRegenerateEnvironmentSecret';
+import useRegenerateGatewaySecret from '../api/useRegenerateGatewaySecret';
 import type {SecretEntry} from '../models/promotion';
 
 interface GenerateMissingSecretsDialogProps {
   open: boolean;
-  envId: string;
+  gatewayId: string;
   /** Every credential the Data Plane does not hold, of both kinds. */
   missing: SecretEntry[];
   onClose: () => void;
@@ -43,12 +43,12 @@ interface Issued {
  */
 export default function GenerateMissingSecretsDialog({
   open,
-  envId,
+  gatewayId,
   missing,
   onClose,
 }: GenerateMissingSecretsDialogProps): JSX.Element {
   const {t} = useTranslation();
-  const regenerate = useRegenerateEnvironmentSecret();
+  const regenerate = useRegenerateGatewaySecret();
   const [issued, setIssued] = useState<Issued[]>([]);
   const [running, setRunning] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
@@ -75,7 +75,7 @@ export default function GenerateMissingSecretsDialog({
     // is easier to read when the order matches the list.
     for (const secret of generatable) {
       try {
-        const result = await regenerate.mutateAsync({envId, name: secret.name});
+        const result = await regenerate.mutateAsync({gatewayId, name: secret.name});
         results.push({name: secret.name, value: result.value});
       } catch (error) {
         results.push({name: secret.name, value: '', error: (error as Error).message});

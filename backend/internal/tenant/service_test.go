@@ -108,9 +108,9 @@ func TestCreateTenantProvisionsTheCallersOwnWorkspace(t *testing.T) {
 	assert.Equal(t, "acme", store.registry["acme"].DeploymentID)
 }
 
-// The organization owns the workspace, so a token naming one of its environments still provisions
-// (and later reads and deletes) the organization's single workspace rather than a per-environment one.
-func TestCreateTenantUsesTheOrganizationWhenTheTokenNamesAnEnvironment(t *testing.T) {
+// The organization owns the workspace, so a token naming one of its gateways still provisions
+// (and later reads and deletes) the organization's single workspace rather than a per-gateway one.
+func TestCreateTenantUsesTheOrganizationWhenTheTokenNamesAGateway(t *testing.T) {
 	store := newFakeStore()
 	var provisioned []string
 	svc := newTestService(store, func(_ context.Context, _ importer.ImportServiceInterface,

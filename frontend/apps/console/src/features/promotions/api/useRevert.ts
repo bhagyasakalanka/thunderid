@@ -5,25 +5,25 @@ import {useMutation, useQueryClient, type UseMutationResult} from '@tanstack/rea
 import {useToast} from '@thunderid/contexts';
 import {useThunderID} from '@thunderid/react';
 import {useTranslation} from 'react-i18next';
-import useEnvManagerUrl from './useEnvManagerUrl';
+import useGatewayApiUrl from './useGatewayApiUrl';
 import PromotionQueryKeys from '../constants/promotion-query-keys';
 import type {RevertResult} from '../models/promotion';
 
 /** Variables for a revert. toVersion accepts a version number or "previous". */
 export interface RevertVariables {
-  envId: string;
+  gatewayId: string;
   toVersion: string;
   apply?: boolean;
   note?: string;
 }
 
 /**
- * Reverts an environment to an earlier version. Reverting adds a new version restoring the older
+ * Reverts an gateway to an earlier version. Reverting adds a new version restoring the older
  * content rather than deleting history.
  */
 export default function useRevert(): UseMutationResult<RevertResult, Error, RevertVariables> {
   const {http} = useThunderID();
-  const baseUrl: string | undefined = useEnvManagerUrl();
+  const baseUrl: string | undefined = useGatewayApiUrl();
   const queryClient: ReturnType<typeof useQueryClient> = useQueryClient();
   const {t} = useTranslation('promotions');
   const {showToast} = useToast();
@@ -31,7 +31,7 @@ export default function useRevert(): UseMutationResult<RevertResult, Error, Reve
   return useMutation<RevertResult, Error, RevertVariables>({
     mutationFn: async (variables: RevertVariables): Promise<RevertResult> => {
       const response: {data: RevertResult} = await http.request({
-        url: `${baseUrl}/environments/${variables.envId}/revert`,
+        url: `${baseUrl}/gateways/${variables.gatewayId}/revert`,
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         credentials: 'same-origin',
@@ -41,18 +41,18 @@ export default function useRevert(): UseMutationResult<RevertResult, Error, Reve
       return response.data;
     },
     onSuccess: (_result: RevertResult, variables: RevertVariables) => {
-      queryClient.invalidateQueries({queryKey: [PromotionQueryKeys.ENVIRONMENTS]}).catch(() => {
+      queryClient.invalidateQueries({queryKey: [PromotionQueryKeys.GATEWAYS]}).catch(() => {
         // Ignore invalidation errors.
       });
-      queryClient.invalidateQueries({queryKey: [PromotionQueryKeys.VERSIONS, variables.envId]}).catch(() => {
+      queryClient.invalidateQueries({queryKey: [PromotionQueryKeys.VERSIONS, variables.gatewayId]}).catch(() => {
         // Ignore invalidation errors.
       });
       // A revert records a new version restoring an earlier one. It reaches the running deployment
-      // only when the environment is applied.
-      showToast(t('revert.success', 'Environment reverted successfully'), 'success');
+      // only when the gateway is applied.
+      showToast(t('revert.success', 'Gateway reverted successfully'), 'success');
     },
     onError: () => {
-      showToast(t('revert.error', 'Failed to revert the environment. Please try again.'), 'error');
+      showToast(t('revert.error', 'Failed to revert the gateway. Please try again.'), 'error');
     },
   });
 }

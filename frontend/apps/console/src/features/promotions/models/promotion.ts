@@ -7,26 +7,26 @@ export type VersionOrigin = 'captured' | 'promoted' | 'reverted' | 'uploaded';
 /** How a resource differs between two configuration versions. */
 export type ChangeType = 'added' | 'updated' | 'deleted' | 'unchanged';
 
-/** An environment in the promotion chain. */
-export interface Environment {
+/** An gateway in the promotion chain. */
+export interface Gateway {
   id: string;
   name: string;
   appliedSeq: number;
   /**
-   * Resource keys a user chose not to promote into this environment. The choice is remembered, so a
+   * Resource keys a user chose not to promote into this gateway. The choice is remembered, so a
    * later promotion holds them back by default until they are deliberately selected again.
    */
   excluded?: string[];
   latestSeq: number;
   hasPendingChanges: boolean;
   /**
-   * Whether the Control Plane administers this environment directly rather than only promoting into
-   * it. Editing configuration in the organization's workspace is editing this environment, and a
-   * credential created there is issued against it. Exactly one environment holds this.
+   * Whether the Control Plane administers this gateway directly rather than only promoting into
+   * it. Editing configuration in the organization's workspace is editing this gateway, and a
+   * credential created there is issued against it. Exactly one gateway holds this.
    */
   managedByControlPlane?: boolean;
   /**
-   * Whether this environment's Data Plane is currently connected. The Data Plane dials the Control
+   * Whether this gateway's Data Plane is currently connected. The Data Plane dials the Control
    * Plane and holds that connection open, so nothing can be applied or promoted to one that is not
    * connected.
    */
@@ -35,29 +35,29 @@ export interface Environment {
   updatedAt: string;
 }
 
-/** Whether an environment's Data Plane is connected, and when it was last heard from. */
+/** Whether an gateway's Data Plane is connected, and when it was last heard from. */
 export interface DataPlaneStatus {
   connected: boolean;
   lastSeen?: string;
 }
 
-export interface EnvironmentListResponse {
-  environments: Environment[];
+export interface GatewayListResponse {
+  gateways: Gateway[];
   /**
    * Whether this caller holds the promotion scope. Promotion is a release decision, so it is gated
-   * where every other environment action is not; the console leaves the action out rather than
+   * where every other gateway action is not; the console leaves the action out rather than
    * offering it and having the request refused.
    */
   canPromote?: boolean;
 }
 
-/** A stored configuration snapshot for an environment. */
+/** A stored configuration snapshot for an gateway. */
 export interface Version {
   seq: number;
-  envId: string;
+  gatewayId: string;
   origin: VersionOrigin;
   parentSeq?: number;
-  sourceEnvId?: string;
+  sourceGatewayId?: string;
   sourceSeq?: number;
   note?: string;
   createdAt: string;
@@ -135,7 +135,7 @@ export type DataPlaneJobStatus = 'pending' | 'claimed' | 'done' | 'failed';
 export interface DataPlaneJob {
   id: string;
   dataPlaneId: string;
-  envId?: string;
+  gatewayId?: string;
   type: string;
   status: DataPlaneJobStatus;
   /** The data plane's answer, as JSON, once the status is "done". */
@@ -157,9 +157,9 @@ export interface RevertResult {
   applied?: ApplyResult;
 }
 
-/** How an environment's next apply would resolve its placeholders. */
+/** How an gateway's next apply would resolve its placeholders. */
 export interface VariableStatus {
-  envId: string;
+  gatewayId: string;
   seq: number;
   required: string[];
   missing: string[];
@@ -170,10 +170,10 @@ export interface VariableStatus {
   secretsChecked: boolean;
 }
 
-/** One environment's outcome from applying across every environment. */
+/** One gateway's outcome from applying across every gateway. */
 export interface ApplyAllResult {
-  envId: string;
-  envName: string;
+  gatewayId: string;
+  gatewayName: string;
   applied?: ApplyResult;
   error?: string;
 }
@@ -188,7 +188,7 @@ export interface ApplyAllResult {
  */
 export type SecretKind = 'hash' | 'value';
 
-/** One secret-backed placeholder of an environment. */
+/** One secret-backed placeholder of an gateway. */
 export interface SecretEntry {
   name: string;
   /** The resource field it fills, e.g. clientSecret. */
@@ -200,14 +200,14 @@ export interface SecretEntry {
   held: boolean;
 }
 
-/** Every credential an environment needs, with its status on the Data Plane. */
+/** Every credential an gateway needs, with its status on the Data Plane. */
 export interface SecretList {
-  envId: string;
+  gatewayId: string;
   seq: number;
   secrets: SecretEntry[];
   /** False when the secret service could not be reached, so held is not a judgement. */
   checked: boolean;
-  /** Why it could not be reached. Usually this environment's own credentials or endpoint. */
+  /** Why it could not be reached. Usually this gateway's own credentials or endpoint. */
   checkError?: string;
   /**
    * Set when the Control Plane pod serving this request holds no connection to the data plane and

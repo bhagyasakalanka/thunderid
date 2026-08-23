@@ -18,7 +18,7 @@ describe('DataPlaneStatusChip', () => {
     expect(screen.getByText('Data Plane offline')).toBeInTheDocument();
   });
 
-  // An environment the service could not report on is offline as far as an operator is concerned:
+  // An gateway the service could not report on is offline as far as an operator is concerned:
   // nothing can be applied to it either way, and showing nothing would read as connected.
   it('treats an unknown status as offline', () => {
     render(<DataPlaneStatusChip />);

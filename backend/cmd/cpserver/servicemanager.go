@@ -43,18 +43,18 @@ import (
 	"github.com/thunder-id/thunderid/internal/entity"
 	"github.com/thunder-id/thunderid/internal/entityprovider"
 	"github.com/thunder-id/thunderid/internal/entitytype"
-	"github.com/thunder-id/thunderid/internal/environmentvariable"
-	"github.com/thunder-id/thunderid/internal/envmgr"
-	"github.com/thunder-id/thunderid/internal/envmgr/dataplane"
-	"github.com/thunder-id/thunderid/internal/envmgr/jobrunner"
-	"github.com/thunder-id/thunderid/internal/envmgr/secretcapture"
-	envmgrservice "github.com/thunder-id/thunderid/internal/envmgr/service"
 	flowconfig "github.com/thunder-id/thunderid/internal/flow/config"
 	flowcore "github.com/thunder-id/thunderid/internal/flow/core"
 	"github.com/thunder-id/thunderid/internal/flow/executormeta"
 	"github.com/thunder-id/thunderid/internal/flow/graphbuilder"
 	"github.com/thunder-id/thunderid/internal/flow/interceptor"
 	flowmgt "github.com/thunder-id/thunderid/internal/flow/mgt"
+	"github.com/thunder-id/thunderid/internal/gateway"
+	"github.com/thunder-id/thunderid/internal/gateway/dataplane"
+	"github.com/thunder-id/thunderid/internal/gateway/jobrunner"
+	"github.com/thunder-id/thunderid/internal/gateway/secretcapture"
+	gatewayservice "github.com/thunder-id/thunderid/internal/gateway/service"
+	"github.com/thunder-id/thunderid/internal/gatewayvariable"
 	"github.com/thunder-id/thunderid/internal/group"
 	"github.com/thunder-id/thunderid/internal/idp"
 	"github.com/thunder-id/thunderid/internal/inboundclient"
@@ -106,8 +106,8 @@ var dataPlaneTokens *dataplanetoken.Service
 // subcommands can create or read resources in-process through the same service instances.
 func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterface) (
 	jwt.JWTServiceInterface, kmprovider.RuntimeCryptoProvider,
-	importer.ImportServiceInterface, export.ExportServiceInterface, envmgrRegistry,
-	environmentvariable.EnvironmentVariableServiceInterface) {
+	importer.ImportServiceInterface, export.ExportServiceInterface, gatewayRegistry,
+	gatewayvariable.GatewayVariableServiceInterface) {
 	logger := log.GetLogger()
 
 	// Service registration runs during application startup, outside any request.
@@ -122,20 +122,20 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 	runtimeCryptoSvc, configCryptoSvc, err := kmprovider.Initialize(pkiService)
 	fatalOnError(ctx, logger, err, "Failed to initialize key manager provider")
 
-	envVarService, err := environmentvariable.Initialize(mux)
-	fatalOnError(ctx, logger, err, "Failed to initialize EnvironmentVariableService")
+	envVarService, err := gatewayvariable.Initialize(mux)
+	fatalOnError(ctx, logger, err, "Failed to initialize GatewayVariableService")
 
-	// Promotion between deployments is a control plane concern, so the environment manager is wired
+	// Promotion between deployments is a control plane concern, so the gateway manager is wired
 	// only here. It stays disabled unless a data directory is configured, which leaves a deployment
 	// using the standalone service untouched.
 	//
 	// It is initialized before the capturer because it is where a captured credential goes when this
 	// server hosts it.
-	envManager := initEnvironmentManager(ctx, logger, mux, config.GetServerRuntime().Config)
+	gatewayManager := initGatewayManager(ctx, logger, mux, config.GetServerRuntime().Config)
 
 	// A captured credential is handed to the Data Plane's secret service, so the Control Plane holds no
 	// secret at rest and the credential is usable immediately rather than at the next promotion.
-	secretCapturer := secretcapture.Select(ctx, logger, config.GetServerRuntime().Config, envManager)
+	secretCapturer := secretcapture.Select(ctx, logger, config.GetServerRuntime().Config, gatewayManager)
 
 	runtime := config.GetServerRuntime()
 	joseCfg := joseconfig.Config{
@@ -343,10 +343,10 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 		serverConfigService,
 	)
 
-	// A capture reads the organization's workspace, which is this very server, so the environment
+	// A capture reads the organization's workspace, which is this very server, so the gateway
 	// manager is told where that answers.
-	if envManager != nil {
-		envManager.SetWorkspaceURL(envmgr.WorkspaceURL(config.GetServerRuntime().Config))
+	if gatewayManager != nil {
+		gatewayManager.SetWorkspaceURL(gateway.WorkspaceURL(config.GetServerRuntime().Config))
 	}
 
 	// Register the health service.
@@ -355,12 +355,12 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 
 	// Initialize the CP-DP channel server (phone-home WebSocket). No-op when disabled.
 	chCfg := config.GetServerRuntime().Config.Channel.Server
-	// Tokens are issued per data plane when an environment is registered and held encrypted here, so
+	// Tokens are issued per data plane when a gateway is registered and held encrypted here, so
 	// the handshake knows which data plane connected instead of believing the id it claims.
 	dataPlaneTokens = dataplanetoken.New()
 	// A credential queued for a data plane is encrypted at rest with the server's configuration key.
-	if envManager != nil && configCryptoSvc != nil {
-		envManager.SetSecretSealer(jobrunner.NewConfigSealer(configCryptoSvc))
+	if gatewayManager != nil && configCryptoSvc != nil {
+		gatewayManager.SetSecretSealer(jobrunner.NewConfigSealer(configCryptoSvc))
 	}
 
 	channelServer = channel.InitializeServer(mux, channel.ServerConfig{
@@ -371,18 +371,18 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 		RPCTimeout: time.Duration(chCfg.RPCTimeoutSeconds) * time.Second,
 	}, dataPlaneTokens)
 
-	// Data planes are reached over the connections they hold open to this server, so the environment
+	// Data planes are reached over the connections they hold open to this server, so the gateway
 	// manager is given those rather than a client for each one's management API. Without a channel
 	// there is no way to reach a data plane at all, and an apply says so rather than failing obscurely.
-	if envManager != nil {
-		envManager.SetDataPlanes(dataplane.New(channelServer))
-		envManager.SetDataPlaneTokenIssuer(dataPlaneTokens)
+	if gatewayManager != nil {
+		gatewayManager.SetDataPlanes(dataplane.New(channelServer))
+		gatewayManager.SetDataPlaneTokenIssuer(dataPlaneTokens)
 		// Work queued by a pod that held no connection to its data plane waits in the database. This
 		// is what picks up the share of it this pod can deliver.
-		jobrunner.Start(ctx, envManager, channelServer)
+		jobrunner.Start(ctx, gatewayManager, channelServer)
 	}
 
-	return jwtService, runtimeCryptoSvc, importService, exportService, envManager, envVarService
+	return jwtService, runtimeCryptoSvc, importService, exportService, gatewayManager, envVarService
 }
 
 // dependencyConsumers groups the services that check the dependency registry before deleting their
@@ -482,7 +482,7 @@ func buildHashConfig() (cryptolib.HashConfig, error) {
 	}
 }
 
-// initEnvironmentManager mounts the in-process environment manager. A failure is logged rather than
+// initGatewayManager mounts the in-process gateway manager. A failure is logged rather than
 // fatal: promotion is one capability of the control plane, and losing it should not stop the
 // management APIs from serving.
 // It returns the manager when one is mounted, so captured credentials can be routed through it instead
@@ -491,26 +491,26 @@ func buildHashConfig() (cryptolib.HashConfig, error) {
 // A Control Plane always hosts it: attaching gateways is what a Control Plane is for, and a gateway is
 // a resource of the organization held in the configuration database alongside the rest of it, so there
 // is nothing to configure and nothing to turn off.
-func initEnvironmentManager(ctx context.Context, logger *log.Logger, mux *http.ServeMux,
-	_ config.Config) envmgrRegistry {
-	reg, err := envmgr.Initialize(mux)
+func initGatewayManager(ctx context.Context, logger *log.Logger, mux *http.ServeMux,
+	_ config.Config) gatewayRegistry {
+	reg, err := gateway.Initialize(mux)
 	if err != nil {
-		logger.Error(ctx, "Failed to start the in-process environment manager", log.Error(err))
+		logger.Error(ctx, "Failed to start the in-process gateway manager", log.Error(err))
 		return nil
 	}
-	logger.Info(ctx, "Serving the environment manager from this server")
+	logger.Info(ctx, "Serving the gateway manager from this server")
 	return reg
 }
 
-// envmgrRegistry is what the in-process environment manager exposes to this server: where a captured
+// gatewayRegistry is what the in-process gateway manager exposes to this server: where a captured
 // credential goes, and which control plane a promotion writes into.
-type envmgrRegistry interface {
+type gatewayRegistry interface {
 	secretcapture.LocalCaptureRouter
 	SetWorkspaceURL(baseURL string)
-	SetDataPlanes(planes envmgrservice.DataPlanes)
-	SetDataPlaneTokenIssuer(issuer envmgrservice.DataPlaneTokenIssuer)
-	SetSecretSealer(sealer envmgrservice.SecretSealer)
-	SetEnvironmentVariables(envVars environmentvariable.EnvironmentVariableServiceInterface)
+	SetDataPlanes(planes gatewayservice.DataPlanes)
+	SetDataPlaneTokenIssuer(issuer gatewayservice.DataPlaneTokenIssuer)
+	SetSecretSealer(sealer gatewayservice.SecretSealer)
+	SetGatewayVariables(envVars gatewayvariable.GatewayVariableServiceInterface)
 	// DeliverPending carries out work queued for a data plane this pod holds a connection to.
 	DeliverPending(ctx context.Context, dataPlaneID string) error
 }

@@ -12,7 +12,7 @@
 # comment demands an environment variable just as a real setting does.
 #
 # The Control Plane is where configuration is authored, versioned, and promoted between
-# environments. It serves no runtime traffic: no OAuth2 flows, no logins, no tokens. It also holds
+# gateways. It serves no runtime traffic: no OAuth2 flows, no logins, no tokens. It also holds
 # no secrets at rest, which is why there is no secret_provider section here. A credential captured
 # on this side is forwarded to the Data Plane that needs it, and what stays behind is a reference.
 
@@ -23,13 +23,11 @@ server:
   port: 8095
   public_url: "https://cp.example.com"
 
-  # Each tenant is one organization's environment, identified as "<org>:<env>", for example
-  # "org1:dev". The identifier comes from a claim in the caller's token rather than from the
-  # request, so a caller cannot address a tenant it holds no token for.
+  # Each tenant is one organization, identified by the deployment claim in the caller's token rather
+  # than by the request, so a caller cannot address a tenant it holds no token for. An organization
+  # provisions its own workspace, and its gateways are resources inside that workspace.
   deployment_id_source: "token"
   deployment_id_claim: "deploymentId"
-  # The tenant owning the Control Plane's own resources, as opposed to any customer's.
-  system_deployment_id: "root"
 
   security:
     # Permissions this plane's management APIs require, prefixed. A token from the trusted issuer
@@ -39,6 +37,12 @@ server:
     # Every system permission takes the prefix: tenant_instance:system, tenant_instance:system:ou,
     # tenant_instance:system:user, and so on. Leaving it unset keeps the unprefixed names.
     system_permission_prefix: "tenant_instance"
+
+    # There are no tokens to revoke here: this plane issues none, and the management tokens it
+    # accepts come from the trusted issuer below. Leaving this on would run a syncer against a
+    # revoked-token table this plane deliberately does not have.
+    token_revocation:
+      enabled: false
 
     # The identity provider whose tokens are accepted for the management APIs.
     trusted_issuer:
@@ -80,19 +84,6 @@ database:
       max_idle_conns: 100
       conn_max_lifetime: 3600
 
-  runtime_transient:
-    type: "postgres"
-    postgres:
-      hostname: "postgres.example.com"
-      port: 5432
-      name: "runtime_transient"
-      username: "dbuser"
-      password: "{{.DB_RUNTIME_TRANSIENT_PASSWORD}}"
-      sslmode: "require"
-      max_open_conns: 500
-      max_idle_conns: 100
-      conn_max_lifetime: 3600
-
   entity:
     type: "postgres"
     postgres:
@@ -101,35 +92,6 @@ database:
       name: "entitydb"
       username: "dbuser"
       password: "{{.DB_ENTITY_PASSWORD}}"
-      sslmode: "require"
-      max_open_conns: 500
-      max_idle_conns: 100
-      conn_max_lifetime: 3600
-
-  runtime_persistent:
-    type: "postgres"
-    postgres:
-      hostname: "postgres.example.com"
-      port: 5432
-      name: "runtime_persistent"
-      username: "dbuser"
-      password: "{{.DB_RUNTIME_PERSISTENT_PASSWORD}}"
-      sslmode: "require"
-      max_open_conns: 500
-      max_idle_conns: 100
-      conn_max_lifetime: 3600
-
-  # The environment manager's own datasource: environments and the captured versions promotion
-  # compares against. It is shared state, which is what lets more than one replica serve promotion.
-  # A Data Plane has no equivalent and configures none.
-  environment:
-    type: "postgres"
-    postgres:
-      hostname: "postgres.example.com"
-      port: 5432
-      name: "environmentdb"
-      username: "dbuser"
-      password: "{{.DB_ENVIRONMENT_PASSWORD}}"
       sslmode: "require"
       max_open_conns: 500
       max_idle_conns: 100

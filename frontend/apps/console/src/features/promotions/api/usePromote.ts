@@ -11,13 +11,13 @@ import type {PromoteResult} from '../models/promotion';
 
 /**
  * Variables for a promotion. The selection is the user's explicit choice of which changed
- * resources to promote, and the environment remembers it: anything omitted is held back on later
- * runs too, until it is selected again. Omit the field entirely to promote what the environment
+ * resources to promote, and the gateway remembers it: anything omitted is held back on later
+ * runs too, until it is selected again. Omit the field entirely to promote what the gateway
  * already remembers.
  */
 export interface PromoteVariables {
-  fromEnv: string;
-  toEnv: string;
+  fromGateway: string;
+  toGateway: string;
   version?: string;
   selection?: string[];
   apply?: boolean;
@@ -25,7 +25,7 @@ export interface PromoteVariables {
 }
 
 /**
- * Promotes configuration from one environment into the next, optionally limited to a selected set of
+ * Promotes configuration from one gateway into the next, optionally limited to a selected set of
  * changes and optionally applied to the target's data plane straight away.
  */
 export default function usePromote(): UseMutationResult<PromoteResult, Error, PromoteVariables> {
@@ -48,17 +48,17 @@ export default function usePromote(): UseMutationResult<PromoteResult, Error, Pr
       return response.data;
     },
     onSuccess: (_result: PromoteResult, variables: PromoteVariables) => {
-      queryClient.invalidateQueries({queryKey: [PromotionQueryKeys.ENVIRONMENTS]}).catch(() => {
+      queryClient.invalidateQueries({queryKey: [PromotionQueryKeys.GATEWAYS]}).catch(() => {
         // Ignore invalidation errors.
       });
-      queryClient.invalidateQueries({queryKey: [PromotionQueryKeys.VERSIONS, variables.toEnv]}).catch(() => {
+      queryClient.invalidateQueries({queryKey: [PromotionQueryKeys.VERSIONS, variables.toGateway]}).catch(() => {
         // Ignore invalidation errors.
       });
       queryClient.invalidateQueries({queryKey: [PromotionQueryKeys.PROMOTION_PREVIEW]}).catch(() => {
         // Ignore invalidation errors.
       });
       // A promotion moves the version onto the destination and writes nothing else. It reaches a
-      // running deployment only when that environment is applied.
+      // running deployment only when that gateway is applied.
       showToast(t('promote.success', 'Configuration promoted successfully'), 'success');
     },
     onError: () => {

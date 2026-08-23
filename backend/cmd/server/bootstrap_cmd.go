@@ -88,7 +88,7 @@ func parseBootstrapOptions(serverHome string, args []string) (bootstrap.Options,
 
 	setEnv("PUBLIC_URL", firstNonEmpty(os.Getenv("PUBLIC_URL"),
 		config.GetServerURL(&config.GetServerRuntime().Config.Server)))
-	// The bundle ranges over CONSOLE_REDIRECT_URIS, which buildArrayFromEnvVars
+	// The bundle ranges over CONSOLE_REDIRECT_URIS, which buildArrayFromGatewayVars
 	// reconstructs from the indexed CONSOLE_REDIRECT_URIS_0, _1, ... variables.
 	idx := 0
 	for _, uri := range strings.Split(*consoleRedirectURIs, ",") {

@@ -14,12 +14,12 @@ import {useNavigate} from 'react-router';
  * application ends up on a Data Plane with no redirect URIs and a broken login.
  */
 export default function MissingVariablesNotice({
-  envId = undefined,
+  gatewayId = undefined,
   missing,
   missingSecrets = [],
 }: {
-  /** The environment the secrets belong to, so the notice can lead to where they are set. */
-  envId?: string;
+  /** The gateway the secrets belong to, so the notice can lead to where they are set. */
+  gatewayId?: string;
   missing: string[];
   missingSecrets?: string[];
 }): JSX.Element | null {
@@ -37,11 +37,11 @@ export default function MissingVariablesNotice({
           severity="error"
           sx={{mb: 2}}
           action={
-            envId ? (
+            gatewayId ? (
               <Button
                 size="small"
                 onClick={() => {
-                  void navigate(`/promotions/${envId}/secrets`);
+                  void navigate(`/promotions/${gatewayId}/secrets`);
                 }}
               >
                 {t('promotions:variables.manageSecrets', 'Manage secrets')}
@@ -73,7 +73,7 @@ export default function MissingVariablesNotice({
         <MissingConfiguredVariables
           missing={missing}
           onManage={() => {
-            void navigate(`/promotions/${envId}/variables`);
+            void navigate(`/promotions/${gatewayId}/variables`);
           }}
         />
       )}
@@ -101,7 +101,7 @@ function MissingConfiguredVariables({missing, onManage}: {missing: string[]; onM
       <Typography variant="body2" sx={{mb: 1}}>
         {t(
           'promotions:variables.missingBody',
-          'Applying now leaves these fields empty on the Data Plane, which can break logins. Set them under Environment Variables first.',
+          'Applying now leaves these fields empty on the Data Plane, which can break logins. Set them under Gateway Variables first.',
         )}
       </Typography>
       <Box>

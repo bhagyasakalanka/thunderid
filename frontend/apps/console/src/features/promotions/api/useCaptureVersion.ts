@@ -5,23 +5,23 @@ import {useMutation, useQueryClient, type UseMutationResult} from '@tanstack/rea
 import {useToast} from '@thunderid/contexts';
 import {useThunderID} from '@thunderid/react';
 import {useTranslation} from 'react-i18next';
-import useEnvManagerUrl from './useEnvManagerUrl';
+import useGatewayApiUrl from './useGatewayApiUrl';
 import PromotionQueryKeys from '../constants/promotion-query-keys';
 import type {Version} from '../models/promotion';
 
-/** Variables for capturing a version from an environment's control-plane source. */
+/** Variables for capturing a version from an gateway's control-plane source. */
 export interface CaptureVersionVariables {
-  envId: string;
+  gatewayId: string;
   note?: string;
 }
 
 /**
- * Captures the environment's current control-plane configuration as a new version. The environment
+ * Captures the gateway's current control-plane configuration as a new version. The gateway
  * must have a source configured; without one the service reports that nothing can be captured.
  */
 export default function useCaptureVersion(): UseMutationResult<Version, Error, CaptureVersionVariables> {
   const {http} = useThunderID();
-  const baseUrl: string | undefined = useEnvManagerUrl();
+  const baseUrl: string | undefined = useGatewayApiUrl();
   const queryClient: ReturnType<typeof useQueryClient> = useQueryClient();
   const {t} = useTranslation('promotions');
   const {showToast} = useToast();
@@ -29,7 +29,7 @@ export default function useCaptureVersion(): UseMutationResult<Version, Error, C
   return useMutation<Version, Error, CaptureVersionVariables>({
     mutationFn: async (variables: CaptureVersionVariables): Promise<Version> => {
       const response: {data: Version} = await http.request({
-        url: `${baseUrl}/environments/${variables.envId}/versions`,
+        url: `${baseUrl}/gateways/${variables.gatewayId}/versions`,
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         credentials: 'same-origin',
@@ -39,10 +39,10 @@ export default function useCaptureVersion(): UseMutationResult<Version, Error, C
       return response.data;
     },
     onSuccess: (_result: Version, variables: CaptureVersionVariables) => {
-      queryClient.invalidateQueries({queryKey: [PromotionQueryKeys.ENVIRONMENTS]}).catch(() => {
+      queryClient.invalidateQueries({queryKey: [PromotionQueryKeys.GATEWAYS]}).catch(() => {
         // Ignore invalidation errors.
       });
-      queryClient.invalidateQueries({queryKey: [PromotionQueryKeys.VERSIONS, variables.envId]}).catch(() => {
+      queryClient.invalidateQueries({queryKey: [PromotionQueryKeys.VERSIONS, variables.gatewayId]}).catch(() => {
         // Ignore invalidation errors.
       });
       showToast(t('capture.success', 'Configuration captured as a new version'), 'success');

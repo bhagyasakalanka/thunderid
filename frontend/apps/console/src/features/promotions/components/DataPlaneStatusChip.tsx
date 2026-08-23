@@ -11,11 +11,11 @@ export interface DataPlaneStatusChipProps {
 }
 
 /**
- * Shows whether an environment's Data Plane is connected.
+ * Shows whether an gateway's Data Plane is connected.
  *
  * The Data Plane dials the Control Plane and holds that connection open, so it is the only route to
  * it: a disconnected Data Plane cannot be applied to or promoted into, and there is nothing an
- * operator can do from here to reach it. Showing the state next to the environment is what stops a
+ * operator can do from here to reach it. Showing the state next to the gateway is what stops a
  * promotion being started against one that cannot receive it.
  */
 export default function DataPlaneStatusChip({status = undefined}: DataPlaneStatusChipProps): JSX.Element {

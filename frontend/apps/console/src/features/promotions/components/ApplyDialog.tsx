@@ -19,12 +19,12 @@ import MissingVariablesNotice from './MissingVariablesNotice';
 import ResourceDiffList from './ResourceDiffList';
 import useApplyVersion from '../api/useApplyVersion';
 import useCheckVariables from '../api/useCheckVariables';
-import useGetEnvironmentDiff from '../api/useGetEnvironmentDiff';
+import useGetGatewayDiff from '../api/useGetGatewayDiff';
 
 export interface ApplyDialogProps {
   open: boolean;
-  envId: string;
-  envName: string;
+  gatewayId: string;
+  gatewayName: string;
   /** The version to apply, as a sequence number. */
   version: string;
   /**
@@ -44,20 +44,20 @@ export interface ApplyDialogProps {
  */
 export default function ApplyDialog({
   open,
-  envId,
-  envName,
+  gatewayId,
+  gatewayName,
   version,
   onQueued = undefined,
   onClose,
 }: ApplyDialogProps): JSX.Element {
   const {t} = useTranslation();
-  const {data: diff, isLoading, error} = useGetEnvironmentDiff(open ? envId : '', 'applied', version);
-  const {data: variableStatus} = useCheckVariables(open ? envId : '', version);
+  const {data: diff, isLoading, error} = useGetGatewayDiff(open ? gatewayId : '', 'applied', version);
+  const {data: variableStatus} = useCheckVariables(open ? gatewayId : '', version);
   const applyVersion = useApplyVersion();
 
   const handleApply = (): void => {
     applyVersion.mutate(
-      {envId, version},
+      {gatewayId, version},
       {
         onSuccess: (result): void => {
           // Work the data plane has not taken yet is handed back to the page, which follows it.
@@ -75,7 +75,7 @@ export default function ApplyDialog({
       <DialogTitle>{t('promotions:apply.title', 'Apply configuration')}</DialogTitle>
       <DialogContent dividers>
         <Typography variant="body2" sx={{mb: 2}}>
-          {t('promotions:apply.body', 'Version {{version}} will be applied to {{env}}.', {env: envName, version})}
+          {t('promotions:apply.body', 'Version {{version}} will be applied to {{env}}.', {env: gatewayName, version})}
         </Typography>
 
         <MissingVariablesNotice

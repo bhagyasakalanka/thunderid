@@ -409,7 +409,7 @@ CREATE INDEX idx_tenant_deployment ON "TENANT" (DEPLOYMENT_ID);
 -- Keyed by DATA_PLANE_ID alone, not by (DEPLOYMENT_ID, DATA_PLANE_ID) like the tenant-scoped tables:
 -- the handshake is authenticated before any tenant context exists, so the lookup cannot be scoped by
 -- one. A data plane id is already unique across a control plane, because the connection registry
--- keys by it. DEPLOYMENT_ID records which tenant the environment belongs to.
+-- keys by it. DEPLOYMENT_ID records which tenant the gateway belongs to.
 --
 -- TOKEN holds the ciphertext. It is encrypted with the configuration crypto service, the same one
 -- that protects connection secrets, so it is unreadable from a database dump alone.
@@ -453,11 +453,11 @@ CREATE INDEX idx_secret_deployment ON "SECRET" (DEPLOYMENT_ID);
 -- A gateway is a resource of the organization, so these live here with the rest of its configuration
 -- rather than in a database of their own. DEPLOYMENT_ID is the organization.
 -- ----------------------------------------------------------------------------
--- Environments configuration is promoted through, one row per environment.
+-- Gateways configuration is promoted through, one row per gateway.
 --
--- DATA is the environment document. Nothing queries inside it: an organization has a handful of
--- environments, they are read as a set, and ordering and rank are resolved in the server.
-CREATE TABLE "ENVIRONMENT" (
+-- DATA is the gateway document. Nothing queries inside it: an organization has a handful of
+-- gateways, they are read as a set, and ordering and rank are resolved in the server.
+CREATE TABLE "GATEWAY" (
     DEPLOYMENT_ID VARCHAR(255) NOT NULL,
     ID            VARCHAR(36)  NOT NULL,
     DATA          TEXT         NOT NULL,
@@ -466,45 +466,45 @@ CREATE TABLE "ENVIRONMENT" (
     PRIMARY KEY (DEPLOYMENT_ID, ID)
 );
 
--- Configuration versions captured from an environment, which promotion compares and applies.
+-- Configuration versions captured from a gateway, which promotion compares and applies.
 --
--- SEQ is assigned per environment and rises by one, so (DEPLOYMENT_ID, ENV_ID, SEQ) both identifies
--- a version and orders the history. Deleting an environment takes its versions with it.
-CREATE TABLE "ENVIRONMENT_VERSION" (
+-- SEQ is assigned per gateway and rises by one, so (DEPLOYMENT_ID, GATEWAY_ID, SEQ) both identifies
+-- a version and orders the history. Deleting a gateway takes its versions with it.
+CREATE TABLE "GATEWAY_VERSION" (
     DEPLOYMENT_ID VARCHAR(255) NOT NULL,
-    ENV_ID        VARCHAR(36)  NOT NULL,
+    GATEWAY_ID        VARCHAR(36)  NOT NULL,
     SEQ           INTEGER      NOT NULL,
     DATA          TEXT         NOT NULL,
     CREATED_AT    TEXT         DEFAULT (datetime('now')),
-    PRIMARY KEY (DEPLOYMENT_ID, ENV_ID, SEQ),
-    CONSTRAINT fk_environment_version_environment
-        FOREIGN KEY (DEPLOYMENT_ID, ENV_ID) REFERENCES "ENVIRONMENT" (DEPLOYMENT_ID, ID)
+    PRIMARY KEY (DEPLOYMENT_ID, GATEWAY_ID, SEQ),
+    CONSTRAINT fk_gateway_version_gateway
+        FOREIGN KEY (DEPLOYMENT_ID, GATEWAY_ID) REFERENCES "GATEWAY" (DEPLOYMENT_ID, ID)
         ON DELETE CASCADE
 );
 
--- Non-secret environment variables, held per environment. KEY is the declarative placeholder the
+-- Non-secret gateway variables, held per gateway. KEY is the declarative placeholder the
 -- value resolves (e.g. MY_APP_REDIRECT_URL); VALUE is stored in plaintext because it carries no
 -- confidential material.
 --
--- A variable belongs to one environment of the organization, because its value is a property of the
+-- A variable belongs to one gateway of the organization, because its value is a property of the
 -- deployment it is applied to: a redirect URL differs between dev and prod even though the
--- configuration referring to it is the same. Deleting an environment takes its variables with it.
-CREATE TABLE "ENVIRONMENT_VARIABLE" (
+-- configuration referring to it is the same. Deleting a gateway takes its variables with it.
+CREATE TABLE "GATEWAY_VARIABLE" (
     DEPLOYMENT_ID VARCHAR(255) NOT NULL,
     ID            VARCHAR(36)  PRIMARY KEY,
-    ENV_ID        VARCHAR(36)  NOT NULL,
+    GATEWAY_ID        VARCHAR(36)  NOT NULL,
     KEY           VARCHAR(255) NOT NULL,
     VALUE         TEXT         NOT NULL,
     DESCRIPTION   VARCHAR(255),
     CREATED_AT    TEXT         DEFAULT (datetime('now')),
     UPDATED_AT    TEXT         DEFAULT (datetime('now')),
-    CONSTRAINT unique_environment_variable_key UNIQUE (DEPLOYMENT_ID, ENV_ID, KEY),
-    CONSTRAINT fk_environment_variable_environment
-        FOREIGN KEY (DEPLOYMENT_ID, ENV_ID) REFERENCES "ENVIRONMENT" (DEPLOYMENT_ID, ID)
+    CONSTRAINT unique_gateway_variable_key UNIQUE (DEPLOYMENT_ID, GATEWAY_ID, KEY),
+    CONSTRAINT fk_gateway_variable_gateway
+        FOREIGN KEY (DEPLOYMENT_ID, GATEWAY_ID) REFERENCES "GATEWAY" (DEPLOYMENT_ID, ID)
         ON DELETE CASCADE
 );
 
-CREATE INDEX idx_environment_variable_environment ON "ENVIRONMENT_VARIABLE" (DEPLOYMENT_ID, ENV_ID);
+CREATE INDEX idx_gateway_variable_gateway ON "GATEWAY_VARIABLE" (DEPLOYMENT_ID, GATEWAY_ID);
 
 -- Work queued for a Data Plane, and what it answered.
 --
@@ -518,9 +518,9 @@ CREATE TABLE "DATA_PLANE_JOB" (
     DEPLOYMENT_ID VARCHAR(255) NOT NULL,
     ID            VARCHAR(64)  NOT NULL,
     -- The deployment this is for, as "<org>:<env>". DEPLOYMENT_ID above is the organization, so that
-    -- an organization's queue sits in one partition with its environments.
+    -- an organization's queue sits in one partition with its gateways.
     DATA_PLANE_ID VARCHAR(255) NOT NULL,
-    ENV_ID        VARCHAR(64),
+    GATEWAY_ID        VARCHAR(64),
     -- What to do: "import" applies configuration, "secret_put" stores one credential.
     TYPE          VARCHAR(32)  NOT NULL,
     -- The request, as JSON. Encrypted when it carries a credential, which is what ENCRYPTED records:

@@ -82,7 +82,7 @@ func (s *tenantService) callerOrganization(ctx context.Context) (string, *tidcom
 	if !ok {
 		return "", &ErrorNoTenantInToken
 	}
-	// The deployment claim may name an environment ("<org>:<env>"). The workspace is the
+	// The deployment claim may name a gateway ("<org>:<gateway>"). The workspace is the
 	// organization's, so everything the organization owns stays in one partition.
 	org := deployment.OrganizationOf(id)
 	if !deploymentIDPattern.MatchString(org) {
@@ -94,7 +94,7 @@ func (s *tenantService) callerOrganization(ctx context.Context) (string, *tidcom
 // CreateTenant provisions the caller's own workspace from the bootstrap baseline.
 //
 // The workspace holds the organization's configuration. Its gateways are resources inside it rather
-// than workspaces of their own, and are created through the environment API once this exists.
+// than workspaces of their own, and are created through the gateway API once this exists.
 func (s *tenantService) CreateTenant(ctx context.Context,
 	request CreateTenantRequest) (*Tenant, *tidcommon.ServiceError) {
 	deploymentID, svcErr := s.callerOrganization(ctx)

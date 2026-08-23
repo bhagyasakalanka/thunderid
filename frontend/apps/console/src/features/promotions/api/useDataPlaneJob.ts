@@ -3,7 +3,7 @@
 
 import {useQuery, type UseQueryResult} from '@tanstack/react-query';
 import {useThunderID} from '@thunderid/react';
-import useEnvManagerUrl from './useEnvManagerUrl';
+import useGatewayApiUrl from './useGatewayApiUrl';
 import PromotionQueryKeys from '../constants/promotion-query-keys';
 import type {DataPlaneJob} from '../models/promotion';
 
@@ -21,7 +21,7 @@ const POLL_INTERVAL = 3000;
  */
 export default function useDataPlaneJob(jobId: string | undefined): UseQueryResult<DataPlaneJob, Error> {
   const {http} = useThunderID();
-  const baseUrl: string | undefined = useEnvManagerUrl();
+  const baseUrl: string | undefined = useGatewayApiUrl();
 
   return useQuery<DataPlaneJob, Error>({
     queryKey: [PromotionQueryKeys.DATA_PLANE_JOB, jobId],

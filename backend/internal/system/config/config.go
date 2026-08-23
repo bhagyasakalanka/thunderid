@@ -129,11 +129,11 @@ func (c *OTPConfig) Validate() error {
 	return nil
 }
 
-// PromotionConfig configures who may promote configuration between an organization's environments.
+// PromotionConfig configures who may promote configuration between an organization's gateways.
 //
-// Promotion is the one environment action that is not open to every member of the organization:
+// Promotion is the one gateway action that is not open to every member of the organization:
 // moving a version into production is a release decision. Every other action, including applying and
-// reverting an environment the caller already administers, is left to the organization.
+// reverting a gateway the caller already administers, is left to the organization.
 type PromotionConfig struct {
 	// Scope is the scope a caller's token must carry to promote. It is configurable because the
 	// authorization server that issues these tokens is not always this one, and its scope naming is

@@ -5,11 +5,11 @@ import {Button, PageContent, PageTitle} from '@wso2/oxygen-ui';
 import {Plus} from '@wso2/oxygen-ui-icons-react';
 import {useState, type JSX} from 'react';
 import {useTranslation} from 'react-i18next';
-import CreateEnvironmentDialog from '../components/CreateEnvironmentDialog';
-import EnvironmentChain from '../components/EnvironmentChain';
+import CreateGatewayDialog from '../components/CreateGatewayDialog';
+import GatewayChain from '../components/GatewayChain';
 
 /**
- * Page showing the environment promotion chain.
+ * Page showing the gateway promotion chain.
  */
 export default function PromotionsListPage(): JSX.Element {
   const {t} = useTranslation();
@@ -20,7 +20,7 @@ export default function PromotionsListPage(): JSX.Element {
       <PageTitle>
         <PageTitle.Header>{t('promotions:listing.title', 'Promotions')}</PageTitle.Header>
         <PageTitle.SubHeader>
-          {t('promotions:listing.subtitle', 'Promote configuration through your environments and review every change')}
+          {t('promotions:listing.subtitle', 'Promote configuration through your gateways and review every change')}
         </PageTitle.SubHeader>
         <PageTitle.Actions>
           <Button
@@ -30,12 +30,12 @@ export default function PromotionsListPage(): JSX.Element {
               setCreateOpen(true);
             }}
           >
-            {t('promotions:environment.add', 'Add Environment')}
+            {t('promotions:gateway.add', 'Add Gateway')}
           </Button>
         </PageTitle.Actions>
       </PageTitle>
-      <EnvironmentChain />
-      <CreateEnvironmentDialog
+      <GatewayChain />
+      <CreateGatewayDialog
         open={createOpen}
         onClose={() => {
           setCreateOpen(false);

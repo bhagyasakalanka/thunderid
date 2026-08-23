@@ -119,18 +119,12 @@ const ConnectionCreateWizardPage = lazy(() =>
   import('@thunderid/configure-connections').then((m) => ({default: m.ConnectionCreateWizardPage})),
 );
 const PromotionsListPage = lazy(() => import('./features/promotions/pages/PromotionsListPage'));
-const EnvironmentDetailPage = lazy(() => import('./features/promotions/pages/EnvironmentDetailPage'));
-const EnvironmentSecretsPage = lazy(() => import('./features/promotions/pages/EnvironmentSecretsPage'));
+const GatewayDetailPage = lazy(() => import('./features/promotions/pages/GatewayDetailPage'));
+const GatewaySecretsPage = lazy(() => import('./features/promotions/pages/GatewaySecretsPage'));
 const PromotePage = lazy(() => import('./features/promotions/pages/PromotePage'));
-const EnvironmentVariablesListPage = lazy(
-  () => import('./features/environment-variables/pages/EnvironmentVariablesListPage'),
-);
-const EnvironmentVariableEditPage = lazy(
-  () => import('./features/environment-variables/pages/EnvironmentVariableEditPage'),
-);
-const CreateEnvironmentVariablePage = lazy(
-  () => import('./features/environment-variables/pages/CreateEnvironmentVariablePage'),
-);
+const GatewayVariablesListPage = lazy(() => import('./features/gateway-variables/pages/GatewayVariablesListPage'));
+const GatewayVariableEditPage = lazy(() => import('./features/gateway-variables/pages/GatewayVariableEditPage'));
+const CreateGatewayVariablePage = lazy(() => import('./features/gateway-variables/pages/CreateGatewayVariablePage'));
 const FlowBuilderPage = lazy(() => import('./features/flows/pages/FlowBuilderPage'));
 const CreateRolePage = lazy(() => import('@thunderid/configure-roles').then((m) => ({default: m.CreateRolePage})));
 const RoleEditPage = lazy(() => import('@thunderid/configure-roles').then((m) => ({default: m.RoleEditPage})));
@@ -227,14 +221,14 @@ export default function App(): JSX.Element {
                 />
                 <Route path={ROUTE_SEGMENTS.settings} element={<SettingsPage />} />
                 <Route path="promotions" element={<PromotionsListPage />} />
-                <Route path="promotions/:envId" element={<EnvironmentDetailPage />} />
-                <Route path="promotions/:envId/secrets" element={<EnvironmentSecretsPage />} />
-                <Route path="promotions/:envId/promote" element={<PromotePage />} />
-                {/* A variable belongs to an environment, so it is reached through one. */}
-                <Route path="promotions/:envId/variables" element={<EnvironmentVariablesListPage />} />
+                <Route path="promotions/:gatewayId" element={<GatewayDetailPage />} />
+                <Route path="promotions/:gatewayId/secrets" element={<GatewaySecretsPage />} />
+                <Route path="promotions/:gatewayId/promote" element={<PromotePage />} />
+                {/* A variable belongs to a gateway, so it is reached through one. */}
+                <Route path="promotions/:gatewayId/variables" element={<GatewayVariablesListPage />} />
                 <Route
-                  path="promotions/:envId/variables/:environmentVariableId"
-                  element={<EnvironmentVariableEditPage />}
+                  path="promotions/:gatewayId/variables/:gatewayVariableId"
+                  element={<GatewayVariableEditPage />}
                 />
               </Route>
               {/* Organization Units - wrapped in OrganizationUnitProvider to preserve tree state across navigation */}
@@ -541,14 +535,14 @@ export default function App(): JSX.Element {
                 <Route index element={<TranslationCreatePage />} />
               </Route>
               <Route
-                path="/promotions/:envId/variables/create"
+                path="/promotions/:gatewayId/variables/create"
                 element={
                   <ProtectedRoute>
                     <FullScreenLayout />
                   </ProtectedRoute>
                 }
               >
-                <Route index element={<CreateEnvironmentVariablePage />} />
+                <Route index element={<CreateGatewayVariablePage />} />
               </Route>
               <Route
                 path={RouteConfig.translations.list()}
