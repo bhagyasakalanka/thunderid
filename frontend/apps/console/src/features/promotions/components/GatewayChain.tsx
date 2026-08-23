@@ -6,6 +6,7 @@ import {type JSX} from 'react';
 import {useTranslation} from 'react-i18next';
 import {useNavigate} from 'react-router';
 import DataPlaneStatusChip from './DataPlaneStatusChip';
+import PromoteAction from './PromoteAction';
 import useGatewayApiUrl from '../api/useGatewayApiUrl';
 import useGetGateways from '../api/useGetGateways';
 import useSetManagedGateway from '../api/useSetManagedGateway';
@@ -110,15 +111,7 @@ export default function GatewayChain(): JSX.Element {
                 {t('promotions:listing.viewHistory', 'History')}
               </Button>
 
-              <Button
-                variant="contained"
-                disabled={env.latestSeq === 0}
-                onClick={() => {
-                  void navigate(`/promotions/${env.id}/promote`);
-                }}
-              >
-                {t('promotions:listing.promote', 'Promote')}
-              </Button>
+              <PromoteAction gatewayId={env.id} hasVersion={env.latestSeq !== 0} />
 
               {!env.managedByControlPlane && (
                 <Button

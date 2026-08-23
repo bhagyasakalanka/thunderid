@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /** How a configuration version came to exist. */
-export type VersionOrigin = 'captured' | 'promoted' | 'reverted' | 'uploaded';
+export type VersionOrigin = 'captured' | 'uploaded';
 
 /** How a resource differs between two configuration versions. */
 export type ChangeType = 'added' | 'updated' | 'deleted' | 'unchanged';
@@ -54,17 +54,24 @@ export interface GatewayListResponse {
 /** A stored configuration snapshot for an gateway. */
 export interface Version {
   seq: number;
-  gatewayId: string;
   origin: VersionOrigin;
-  parentSeq?: number;
-  sourceGatewayId?: string;
-  sourceSeq?: number;
   note?: string;
   createdAt: string;
 }
 
 export interface VersionListResponse {
   versions: Version[];
+}
+
+/** One entry in a gateway's history: an organization version it ran, and when. */
+export interface GatewayApply {
+  ordinal: number;
+  seq: number;
+  appliedAt: string;
+}
+
+export interface GatewayHistoryResponse {
+  history: GatewayApply[];
 }
 
 /** One line of a unified diff. Kind is ' ' (context), '+' (added) or '-' (removed). */
@@ -147,13 +154,15 @@ export interface DataPlaneJob {
 
 export interface PromoteResult {
   preview: Diff;
-  newVersion: Version;
+  /** The organization version the target was moved onto. Promoting creates no version. */
+  seq: number;
   applied?: ApplyResult;
 }
 
 export interface RevertResult {
   preview: Diff;
-  newVersion: Version;
+  /** The organization version the gateway was moved back onto. Reverting creates no version. */
+  seq: number;
   applied?: ApplyResult;
 }
 

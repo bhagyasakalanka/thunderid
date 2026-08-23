@@ -3,11 +3,14 @@
 
 /// <reference types="./vite-env.d.ts" />
 
-// Control Plane console bootstrap. The whole application (App, routes, layouts, features) is reused
-// from the Data Plane console via the `@console` alias; only this bootstrap and public/config.js
-// (plane: 'cp') are specific to the Control Plane.
+// Control Plane console bootstrap.
+//
+// The route tree is the Control Plane's own (./App), because the two planes differ in what they can
+// do: this one serves no runtime, so nothing that executes a flow is routed here. The layouts,
+// pages and feature packages the routes point at are shared with the Data Plane console through the
+// `@console` alias.
 
-import AppWithDecorators from '@console/AppWithDecorators';
+import AppWithDecorators from './AppWithDecorators';
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
 import {ReactQueryDevtools} from '@tanstack/react-query-devtools';
 import {ConfigProvider} from '@thunderid/contexts';

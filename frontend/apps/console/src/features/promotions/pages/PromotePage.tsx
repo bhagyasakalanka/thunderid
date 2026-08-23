@@ -7,6 +7,7 @@ import {useState, type JSX} from 'react';
 import {useTranslation} from 'react-i18next';
 import {useParams} from 'react-router';
 import useGetGateways from '../api/useGetGateways';
+import useGetPromotionTargets, {type PromotionTarget} from '../api/useGetPromotionTargets';
 import DataPlaneStatusChip from '../components/DataPlaneStatusChip';
 import PromoteDialog from '../components/PromoteDialog';
 import type {Gateway} from '../models/promotion';
@@ -22,11 +23,17 @@ export default function PromotePage(): JSX.Element {
   const {t} = useTranslation();
   const {gatewayId = ''} = useParams<{gatewayId: string}>();
   const {data} = useGetGateways();
+  const {data: permittedTargets} = useGetPromotionTargets(gatewayId);
   const [target, setTarget] = useState<Gateway | undefined>(undefined);
 
   const gateways: Gateway[] = data?.gateways ?? [];
   const source: Gateway | undefined = gateways.find((env: Gateway) => env.id === gatewayId);
-  const targets: Gateway[] = gateways.filter((env: Gateway) => env.id !== gatewayId);
+  // Where this may go is the environment manager's answer when one is connected, and every other
+  // gateway when none is. Offering a target the hierarchy refuses would only produce a rejection.
+  const permitted: PromotionTarget[] = permittedTargets ?? [];
+  const targets: Gateway[] = gateways.filter((env: Gateway) =>
+    permitted.some((target: PromotionTarget) => target.gatewayId === env.id),
+  );
 
   return (
     <PageContent>
@@ -41,7 +48,11 @@ export default function PromotePage(): JSX.Element {
 
       {targets.length === 0 && (
         <Alert severity="info">
-          {t('promotions:promote.noTargets', 'This organization has no other gateway to promote into.')}
+          {t(
+            'promotions:promote.noTargets',
+            'There is nowhere to promote {{name}} to. It is the last step of this organization\u2019s promotion path.',
+            {name: source?.name ?? gatewayId},
+          )}
         </Alert>
       )}
 

@@ -8,18 +8,21 @@ import PromotionQueryKeys from '../constants/promotion-query-keys';
 import type {VersionListResponse} from '../models/promotion';
 
 /**
- * Lists an gateway's retained configuration versions, newest first.
+ * Lists the organization's retained configuration versions, newest first.
+ *
+ * These belong to the organization, not to any gateway: the same version is what every gateway can
+ * be moved onto.
  */
-export default function useGetVersions(gatewayId: string): UseQueryResult<VersionListResponse> {
+export default function useGetVersions(): UseQueryResult<VersionListResponse> {
   const {http} = useThunderID();
   const baseUrl: string | undefined = useGatewayApiUrl();
 
   return useQuery<VersionListResponse>({
-    queryKey: [PromotionQueryKeys.VERSIONS, gatewayId],
-    enabled: Boolean(baseUrl) && Boolean(gatewayId),
+    queryKey: [PromotionQueryKeys.VERSIONS],
+    enabled: Boolean(baseUrl),
     queryFn: async (): Promise<VersionListResponse> => {
       const response: {data: VersionListResponse} = await http.request({
-        url: `${baseUrl}/gateways/${gatewayId}/versions`,
+        url: `${baseUrl}/versions`,
         method: 'GET',
         credentials: 'same-origin',
       } as unknown as Parameters<typeof http.request>[0]);

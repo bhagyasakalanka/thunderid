@@ -9,15 +9,16 @@ import useGatewayApiUrl from './useGatewayApiUrl';
 import PromotionQueryKeys from '../constants/promotion-query-keys';
 import type {Version} from '../models/promotion';
 
-/** Variables for capturing a version from an gateway's control-plane source. */
+/** Variables for capturing the organization's configuration as a version. */
 export interface CaptureVersionVariables {
-  gatewayId: string;
   note?: string;
 }
 
 /**
- * Captures the gateway's current control-plane configuration as a new version. The gateway
- * must have a source configured; without one the service reports that nothing can be captured.
+ * Captures the organization's current configuration as a new version.
+ *
+ * It names no gateway. A version belongs to the organization, and a gateway receives one by having
+ * it applied rather than by producing one of its own.
  */
 export default function useCaptureVersion(): UseMutationResult<Version, Error, CaptureVersionVariables> {
   const {http} = useThunderID();
@@ -29,7 +30,7 @@ export default function useCaptureVersion(): UseMutationResult<Version, Error, C
   return useMutation<Version, Error, CaptureVersionVariables>({
     mutationFn: async (variables: CaptureVersionVariables): Promise<Version> => {
       const response: {data: Version} = await http.request({
-        url: `${baseUrl}/gateways/${variables.gatewayId}/versions`,
+        url: `${baseUrl}/versions`,
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         credentials: 'same-origin',
@@ -38,11 +39,11 @@ export default function useCaptureVersion(): UseMutationResult<Version, Error, C
 
       return response.data;
     },
-    onSuccess: (_result: Version, variables: CaptureVersionVariables) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({queryKey: [PromotionQueryKeys.GATEWAYS]}).catch(() => {
         // Ignore invalidation errors.
       });
-      queryClient.invalidateQueries({queryKey: [PromotionQueryKeys.VERSIONS, variables.gatewayId]}).catch(() => {
+      queryClient.invalidateQueries({queryKey: [PromotionQueryKeys.VERSIONS]}).catch(() => {
         // Ignore invalidation errors.
       });
       showToast(t('capture.success', 'Configuration captured as a new version'), 'success');
