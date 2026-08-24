@@ -141,8 +141,12 @@ type ServerConfig struct {
 	// Which of the two a process is comes from the binary, not from here: a runtime serves exactly one
 	// deployment, and letting a configuration file say otherwise would let it scope requests by
 	// whatever an end user's token claimed.
-	DeploymentIDClaim string         `yaml:"deployment_id_claim" json:"deployment_id_claim"`
-	SecurityConfig    SecurityConfig `yaml:"security"            json:"security"`
+	DeploymentIDClaim string `yaml:"deployment_id_claim" json:"deployment_id_claim"`
+	// SystemDeploymentID is the reserved deployment the platform itself is served under, as opposed to
+	// any tenant it hosts. Defaults to "root" when empty, and is read only by a server that takes each
+	// request's deployment from its token.
+	SystemDeploymentID string         `yaml:"system_deployment_id" json:"system_deployment_id"`
+	SecurityConfig     SecurityConfig `yaml:"security"            json:"security"`
 }
 
 // GateClientConfig holds the client configuration details.
