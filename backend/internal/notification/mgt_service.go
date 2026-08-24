@@ -208,7 +208,7 @@ func (s *notificationSenderMgtService) UpdateSender(ctx context.Context, id stri
 	logger.Debug(ctx, "Updating notification sender", log.String("id", id), log.String("name", sender.Name))
 
 	// A sender applied from the control plane is owned there. Changing it here would last only until
-	// the next promotion overwrote it, so the change is refused instead.
+	// the next apply overwrote it, so the change is refused instead.
 	if svcErr := managedresource.Guard(ctx, managedresource.TypeConnection, id); svcErr != nil {
 		return nil, svcErr
 	}

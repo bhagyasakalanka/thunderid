@@ -18,7 +18,7 @@
 
 // Package secretresolver resolves secret references held in configuration.
 //
-// Configuration promoted from a Control Plane stores a reference such as "secret:MY_APP_CLIENT_SECRET"
+// Configuration applied from a control plane stores a reference such as "secret:MY_APP_CLIENT_SECRET"
 // rather than the secret itself, so no secret leaves the Control Plane. This package turns such a
 // reference into its value.
 //
@@ -275,7 +275,7 @@ type Hash struct {
 
 // ResolveHash returns the hash a reference points at, for verifying a presented credential.
 //
-// This is the counterpart to Resolve: a credential promoted from a control plane is stored as a
+// This is the counterpart to Resolve: a credential sent down by a control plane is stored as a
 // reference rather than a hash, so the value to compare against lives here rather than in the
 // database. The hash is returned with the parameters that produced it, because those come from
 // wherever the credential was created and need not match this server's own hashing configuration.

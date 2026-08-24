@@ -28,7 +28,7 @@ import (
 // StoreServer serves a writable secret store.
 //
 // Writes exist because a secret is propagated the moment it is created or updated on a control plane,
-// not when configuration is next promoted: a credential that reaches a data plane late is a credential
+// not when configuration is next applied: a credential that reaches a data plane late is a credential
 // that rejects logins in between.
 type StoreServer struct {
 	store *Store

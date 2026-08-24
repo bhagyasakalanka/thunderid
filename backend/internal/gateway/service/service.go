@@ -18,7 +18,7 @@
 
 // Package service holds the gateway-management orchestration: capturing config into versions,
 // diffing versions, applying a version to a data plane via the import API (create/update/delete), and
-// promoting or reverting between versions.
+// applying or reverting between versions.
 package service
 
 import (
@@ -279,21 +279,21 @@ func (s *Service) ListGateways(ctx context.Context) ([]model.Gateway, error) {
 	return s.store.ListGateways(ctx)
 }
 
-// GatewaySummary is an gateway plus the version state the promotion view needs, so the chain
+// GatewaySummary is a gateway plus the version state the gateway view needs, so the chain
 // can be rendered without a request per gateway.
 type GatewaySummary struct {
 	model.Gateway
 	LatestSeq int `json:"latestSeq"`
 	// HasPendingChanges reports whether the latest version differs from what is applied.
 	HasPendingChanges bool `json:"hasPendingChanges"`
-	// DataPlane reports whether this gateway's data plane is connected. Nothing can be applied or
-	// promoted to one that is not, so it is shown alongside the chain rather than discovered by
-	// starting a promotion that cannot finish.
+	// DataPlane reports whether this gateway's data plane is connected. Nothing can be applied to one
+	// that is not, so it is shown alongside the chain rather than discovered by starting an apply that
+	// cannot finish.
 	DataPlane model.DataPlaneStatus `json:"dataPlane"`
 }
 
 // ListGatewaySummaries returns every gateway of the organization, annotated with its version
-// state. The set is flat: which gateway promotes into which is not this server's to say.
+// state. The set is flat: which gateway feeds which is not this server's to say.
 func (s *Service) ListGatewaySummaries(ctx context.Context) ([]GatewaySummary, error) {
 	envs, err := s.store.ListGateways(ctx)
 	if err != nil {
@@ -329,7 +329,7 @@ type UpdateGatewayInput struct {
 
 // UpdateGateway changes a gateway's own details.
 //
-// This is how the gateway manager records what it knows after a promotion. It does not touch the
+// This is how the gateway manager records what it knows after an apply. It does not touch the
 // gateway's versions, its applied state or its target: those are this server's to manage, and a
 // caller that could rewrite them could claim a deployment is running something it is not.
 func (s *Service) UpdateGateway(ctx context.Context, id string,

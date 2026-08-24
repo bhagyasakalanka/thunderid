@@ -55,7 +55,7 @@ type Target struct {
 }
 
 // DataPlaneStatus reports whether a data plane is connected to this control plane. It is part of the
-// gateway as read, not as stored: an operator about to promote needs to know the destination can
+// gateway as read, not as stored: an operator about to apply needs to know the destination can
 // be reached, and nothing can be applied to a data plane that is not.
 type DataPlaneStatus struct {
 	Connected bool      `json:"connected"`
@@ -68,15 +68,15 @@ type DataPlaneStatus struct {
 // single workspace that every gateway captures from, and a gateway holds the versions, variables and
 // secrets that reach its own data plane.
 //
-// Gateways are unordered. Which one may be promoted into which is not modeled here: that hierarchy
+// Gateways are unordered. Which one may be applied into which is not modeled here: that hierarchy
 // belongs to the organization and is held outside this server, so the set here is a flat one.
 type Gateway struct {
 	ID     string `json:"id"`
 	Name   string `json:"name"`
 	Target Target `json:"target"`
 	// ManagedByControlPlane marks the one gateway the control plane administers directly, rather
-	// than only promotes into. Editing configuration in the organization's workspace is editing this
-	// gateway; every other gateway receives that configuration when it is promoted and
+	// than only applies into. Editing configuration in the organization's workspace is editing this
+	// gateway; every other gateway receives that configuration when it is applied and
 	// applied.
 	//
 	// It decides where a credential created in the workspace is issued. A credential is created once,
@@ -96,10 +96,10 @@ type Gateway struct {
 	// opaque means it can record what it needs without a change here. It is written by the caller that
 	// holds the hierarchy, and returned unchanged.
 	Attributes map[string]string `json:"attributes,omitempty"`
-	// Excluded lists resource keys a user chose not to promote into this gateway. The choice is
+	// Excluded lists resource keys a user chose not to apply into this gateway. The choice is
 	// remembered rather than asked again on every run: a resource held back once stays held back until
-	// it is deliberately selected again, at which point it is dropped from this list and promotes from
-	// then on. A key here is skipped by both promotion and apply.
+	// it is deliberately selected again, at which point it is dropped from this list and travels from
+	// then on.
 	Excluded []string `json:"excluded,omitempty"`
 	// AppliedSeq is the version sequence last applied to Target (0 when nothing has been applied).
 	AppliedSeq int `json:"appliedSeq"`

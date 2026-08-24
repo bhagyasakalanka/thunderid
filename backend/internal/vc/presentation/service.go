@@ -265,7 +265,7 @@ func (s *definitionService) UpdatePresentationDefinition(
 	ctx context.Context, id string, dto *PresentationDefinitionDTO,
 ) (*PresentationDefinitionDTO, *tidcommon.ServiceError) {
 	// A resource applied from the control plane is owned there. Changing it here would last only
-	// until the next promotion overwrote it, so the change is refused instead.
+	// until the next apply overwrote it, so the change is refused instead.
 	if svcErr := managedresource.Guard(ctx, managedresource.TypePresentationDefinition, id); svcErr != nil {
 		return nil, svcErr
 	}

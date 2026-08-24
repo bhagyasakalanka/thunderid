@@ -36,7 +36,7 @@ import (
 //
 // It returns how many providers received the secret. Zero with no error means the organization has no
 // gateway registered yet, which the caller treats as "nothing to do" rather than a failure:
-// secrets created before an gateway exists are recreated on promote.
+// secrets created before a gateway exists are recreated on the next apply.
 func (s *Service) CaptureSecretForTenant(ctx context.Context, deploymentID, name string,
 	body map[string]interface{}) (int, error) {
 	if strings.TrimSpace(deploymentID) == "" || strings.TrimSpace(name) == "" {

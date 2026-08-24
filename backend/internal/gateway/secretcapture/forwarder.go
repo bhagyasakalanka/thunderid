@@ -37,7 +37,7 @@ import (
 // secretForwarder sends a captured credential straight to the Data Plane's secret service instead of
 // keeping it on the Control Plane.
 //
-// Propagation is immediate rather than part of a configuration promotion: a credential that arrives
+// Propagation is immediate rather than part of a configuration apply: a credential that arrives
 // late is a credential that rejects logins until it lands. Nothing is persisted here, so the Control
 // Plane holds no secret at rest.
 type secretForwarder struct {

@@ -115,7 +115,7 @@ func TestStripCredentialLinesRemovesOnlyTheNamedCredentialFields(t *testing.T) {
 }
 
 // A deployment's default resource server identifier is the audience its tokens are bound to. Captured
-// verbatim it would travel to every gateway promoted to, so each would name the audience of the
+// verbatim it would travel to every gateway applied to, so each would name the audience of the
 // one it was captured from. Only the origin is replaced, so an operator's chosen path survives.
 func TestTemplateDeploymentURLReplacesOnlyTheOrigin(t *testing.T) {
 	resources := `resource_type: resource_server
@@ -135,7 +135,7 @@ value: {"resourceServerId":"rs-1"}`
 }
 
 // Only the resource server the default points at is this deployment's own. Every other one is
-// configuration an operator authored, and promoting it changed would be rewriting their work.
+// configuration an operator authored, and applying it changed would be rewriting their work.
 func TestTemplateDeploymentURLLeavesOtherResourceServersAlone(t *testing.T) {
 	resources := `resource_type: resource_server
 id: rs-1
@@ -154,7 +154,7 @@ value: {"resourceServerId":"rs-1"}`
 	got := TemplateDeploymentURL(resources)
 
 	if !strings.Contains(got, `identifier: "https://payments.example.com/api"`) {
-		t.Fatalf("an authored resource server must be promoted as it stands, got:\n%s", got)
+		t.Fatalf("an authored resource server must be applied as it stands, got:\n%s", got)
 	}
 	if !strings.Contains(got, `identifier: "{{.DEPLOYMENT_URL}}/mcp"`) {
 		t.Fatalf("expected the deployment's own identifier templated, got:\n%s", got)
@@ -172,7 +172,7 @@ identifier: "https://dev.example.com/mcp"`
 	}
 }
 
-// The templated placeholder has to be a variable the apply actually resolves, or every promotion
+// The templated placeholder has to be a variable the apply actually resolves, or every apply
 // would report it missing.
 func TestTemplatedDeploymentURLIsARequiredVariable(t *testing.T) {
 	resources := TemplateDeploymentURL(`resource_type: resource_server

@@ -44,7 +44,7 @@ type DataPlanes interface {
 	// For returns the data plane, or an error when it is not connected. The two are not worth
 	// distinguishing to a caller: nothing can be done with a data plane that is not there.
 	For(dataPlaneID string) (DataPlane, error)
-	// Status reports whether a data plane is connected, for showing an operator what a promotion or
+	// Status reports whether a data plane is connected, for showing an operator what an apply or
 	// an apply would find before they start one.
 	Status(dataPlaneID string) model.DataPlaneStatus
 }

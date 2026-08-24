@@ -418,7 +418,7 @@ func (rs *resourceService) UpdateResourceServer(
 	id string, resourceServer providers.ResourceServer,
 ) (*providers.ResourceServer, *tidcommon.ServiceError) {
 	// A resource applied from the control plane is owned there. Changing it here would last only
-	// until the next promotion overwrote it, so the change is refused instead.
+	// until the next apply overwrote it, so the change is refused instead.
 	if svcErr := managedresource.Guard(ctx, managedresource.TypeResourceServer, id); svcErr != nil {
 		return nil, svcErr
 	}
@@ -516,7 +516,7 @@ func (rs *resourceService) UpdateResourceServer(
 // DeleteResourceServer deletes a resource server.
 func (rs *resourceService) DeleteResourceServer(ctx context.Context, id string) *tidcommon.ServiceError {
 	// A resource applied from the control plane is owned there. Changing it here would last only
-	// until the next promotion overwrote it, so the change is refused instead.
+	// until the next apply overwrote it, so the change is refused instead.
 	if svcErr := managedresource.Guard(ctx, managedresource.TypeResourceServer, id); svcErr != nil {
 		return svcErr
 	}

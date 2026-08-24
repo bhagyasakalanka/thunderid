@@ -351,7 +351,7 @@ func snakeOf(field string) string {
 	}
 }
 
-// targetSecretOutcome reports what a promote did about the destination's credentials.
+// targetSecretOutcome reports what an apply did about the destination's credentials.
 //
 
 // generateSecretValue produces a fresh high-entropy credential.

@@ -293,7 +293,7 @@ func (rs *roleService) GetRoleWithPermissions(ctx context.Context, id string) (
 func (rs *roleService) UpdateRoleWithPermissions(
 	ctx context.Context, id string, role RoleUpdateDetail) (*RoleWithPermissions, *tidcommon.ServiceError) {
 	// A resource applied from the control plane is owned there. Changing it here would last only
-	// until the next promotion overwrote it, so the change is refused instead.
+	// until the next apply overwrote it, so the change is refused instead.
 	if svcErr := managedresource.Guard(ctx, managedresource.TypeRole, id); svcErr != nil {
 		return nil, svcErr
 	}
@@ -383,7 +383,7 @@ func (rs *roleService) UpdateRoleWithPermissions(
 // DeleteRole delete the specified role by its id.
 func (rs *roleService) DeleteRole(ctx context.Context, id string) *tidcommon.ServiceError {
 	// A resource applied from the control plane is owned there. Changing it here would last only
-	// until the next promotion overwrote it, so the change is refused instead.
+	// until the next apply overwrote it, so the change is refused instead.
 	if svcErr := managedresource.Guard(ctx, managedresource.TypeRole, id); svcErr != nil {
 		return svcErr
 	}

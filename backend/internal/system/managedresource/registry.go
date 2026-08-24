@@ -20,7 +20,7 @@
 // changes to them.
 //
 // A Data Plane receives its configuration from a Control Plane through the import API. Anything that
-// arrives that way belongs to the Control Plane: editing it here would work until the next promotion
+// arrives that way belongs to the control plane: editing it here would work until the next apply
 // silently overwrote it, which is worse than not being allowed to edit it at all. So the import
 // records what it writes, and the management APIs consult that record before changing anything.
 //

@@ -49,8 +49,8 @@ var ErrNotFound = errors.New("not found")
 // Store holds one deployment's gateways and their captured versions.
 //
 // The deployment is the organization, not one of its gateways: a deployment id names an
-// gateway as "<org>:<env>", and promotion compares one gateway against another, so the
-// whole chain an organization promotes through belongs to a single store.
+// gateway as "<org>:<env>", and a comparison runs one gateway against another, so every
+// gateway an organization owns belongs to a single store.
 //
 // Rows are the shared state every Control Plane replica reads and writes, so nothing is cached here.
 type Store struct {

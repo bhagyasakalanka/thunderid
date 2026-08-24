@@ -49,7 +49,7 @@ func TestImportMarksTheResourcesTheRequestNames(t *testing.T) {
 }
 
 func TestImportCanMarkAWholePayload(t *testing.T) {
-	// A promotion sends configuration that all came from the control plane, so naming every resource
+	// An apply sends configuration that all came from the control plane, so naming every resource
 	// individually would be noise.
 	req := &ImportRequest{Options: &ImportOptions{MarkManaged: true}}
 

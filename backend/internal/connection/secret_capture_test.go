@@ -40,7 +40,7 @@ func (r *recordingCapturer) CaptureReplayableSecret(_ context.Context, _, resour
 }
 
 // The field name each capture uses has to match the variable the exporter parameterizes for that
-// vendor, otherwise the promoted document references a variable the secret store does not hold.
+// vendor, otherwise the applied document references a variable the secret store does not hold.
 func TestCaptureConnectionSecrets(t *testing.T) {
 	initConfigWithTestCryptoKey(t)
 	t.Cleanup(config.ResetServerRuntime)

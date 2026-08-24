@@ -234,7 +234,7 @@ func (is *idpService) UpdateIdentityProvider(
 ) (*providers.IDPDTO,
 	*tidcommon.ServiceError) {
 	// A resource applied from the control plane is owned there. Changing it here would last only
-	// until the next promotion overwrote it, so the change is refused instead.
+	// until the next apply overwrote it, so the change is refused instead.
 	if svcErr := managedresource.Guard(ctx, managedresource.TypeConnection, idpID); svcErr != nil {
 		return nil, svcErr
 	}
@@ -309,7 +309,7 @@ func (is *idpService) UpdateIdentityProvider(
 // DeleteIdentityProvider deletes an identity provider.
 func (is *idpService) DeleteIdentityProvider(ctx context.Context, idpID string) *tidcommon.ServiceError {
 	// A resource applied from the control plane is owned there. Changing it here would last only
-	// until the next promotion overwrote it, so the change is refused instead.
+	// until the next apply overwrote it, so the change is refused instead.
 	if svcErr := managedresource.Guard(ctx, managedresource.TypeConnection, idpID); svcErr != nil {
 		return svcErr
 	}

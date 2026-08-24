@@ -85,7 +85,7 @@ func (c *localSecretCapture) capture(ctx context.Context, resourceType, resource
 		return
 	}
 
-	// Zero deliveries is not a failure: no gateway is registered for the tenant yet, and a promotion
+	// Zero deliveries is not a failure: no gateway is registered for the tenant yet, and an apply
 	// creates the credential against the target once one is.
 	if _, err := c.router.CaptureSecret(ctx, tenant, key, payload); err != nil {
 		log.GetLogger().Warn(ctx, "Failed to store a secret through the gateway manager",

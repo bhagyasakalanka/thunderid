@@ -533,7 +533,7 @@ func (ous *organizationUnitService) UpdateOrganizationUnit(
 	ctx context.Context, id string, request providers.OrganizationUnitRequestWithID,
 ) (providers.OrganizationUnit, *tidcommon.ServiceError) {
 	// A resource applied from the control plane is owned there. Changing it here would last only
-	// until the next promotion overwrote it, so the change is refused instead.
+	// until the next apply overwrote it, so the change is refused instead.
 	if svcErr := managedresource.Guard(ctx, managedresource.TypeOrganizationUnit, id); svcErr != nil {
 		return providers.OrganizationUnit{}, svcErr
 	}
@@ -750,7 +750,7 @@ func (ous *organizationUnitService) updateOUInternal(
 func (ous *organizationUnitService) DeleteOrganizationUnit(
 	ctx context.Context, id string) *tidcommon.ServiceError {
 	// A resource applied from the control plane is owned there. Changing it here would last only
-	// until the next promotion overwrote it, so the change is refused instead.
+	// until the next apply overwrote it, so the change is refused instead.
 	if svcErr := managedresource.Guard(ctx, managedresource.TypeOrganizationUnit, id); svcErr != nil {
 		return svcErr
 	}
