@@ -13,7 +13,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/thunder-id/thunderid/internal/system/deployment"
 )
 
 var testPublicPaths = []string{
@@ -612,4 +615,60 @@ func (suite *SecurityServiceTestSuite) TestProcess_AuthorizationFailure_Insuffic
 
 	assert.Nil(suite.T(), ctx)
 	assert.ErrorIs(suite.T(), err, errInsufficientPermissions)
+}
+
+// readsFromTheToken makes this process take each request's deployment from the given token claim, the
+// way a control plane binary does at start-up.
+func readsFromTheToken(t *testing.T, claim string) {
+	t.Helper()
+	require.NoError(t, deployment.UseTokenClaim(claim))
+	t.Cleanup(deployment.UseServerIdentifier)
+}
+
+// Where the deployment comes from the token, it is what stores scope by, so it has to reach them
+// through the request context.
+func (suite *SecurityServiceTestSuite) TestProcess_CarriesTheDeploymentFromTheClaim() {
+	readsFromTheToken(suite.T(), "deploymentId")
+	req := httptest.NewRequest(http.MethodGet, "/api/users", nil)
+	authCtx := newSecurityContext("user123", "ou456", "test_token", []string{"system"},
+		map[string]interface{}{"deploymentId": "acme"})
+	suite.mockAuth1.On("CanHandle", req).Return(true)
+	suite.mockAuth1.On("Authenticate", req).Return(authCtx, nil)
+
+	ctx, err := suite.service.Process(req)
+
+	suite.Require().NoError(err)
+	id, ok := deployment.IDFromContext(ctx)
+	assert.True(suite.T(), ok, "the request must carry the deployment from its token")
+	assert.Equal(suite.T(), "acme", id)
+}
+
+// A token with no deployment claim names no deployment. Serving it would run the request against
+// whichever one happened to be configured, so it is refused instead.
+func (suite *SecurityServiceTestSuite) TestProcess_RefusesATokenWithoutTheClaim() {
+	readsFromTheToken(suite.T(), "deploymentId")
+	req := httptest.NewRequest(http.MethodGet, "/api/users", nil)
+	authCtx := newSecurityContext("user123", "ou456", "test_token", []string{"system"}, nil)
+	suite.mockAuth1.On("CanHandle", req).Return(true)
+	suite.mockAuth1.On("Authenticate", req).Return(authCtx, nil)
+
+	_, err := suite.service.Process(req)
+
+	suite.Require().Error(err)
+}
+
+// A process taking its deployment from the server configuration ignores a claim in the token, rather
+// than quietly redirecting the request elsewhere.
+func (suite *SecurityServiceTestSuite) TestProcess_IgnoresADeploymentClaimByDefault() {
+	req := httptest.NewRequest(http.MethodGet, "/api/users", nil)
+	authCtx := newSecurityContext("user123", "ou456", "test_token", []string{"system"},
+		map[string]interface{}{"deploymentId": "acme"})
+	suite.mockAuth1.On("CanHandle", req).Return(true)
+	suite.mockAuth1.On("Authenticate", req).Return(authCtx, nil)
+
+	ctx, err := suite.service.Process(req)
+
+	suite.Require().NoError(err)
+	_, ok := deployment.IDFromContext(ctx)
+	assert.False(suite.T(), ok, "the request must not be scoped by a claim this process does not read")
 }

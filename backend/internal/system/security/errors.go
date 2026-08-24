@@ -23,4 +23,9 @@ var (
 
 	// errMissingAuthHeader indicates that the Authorization header is missing.
 	errMissingAuthHeader = errors.New("missing authorization header")
+
+	// errMissingDeploymentID indicates this process takes each request's deployment from a token
+	// claim, but the authenticated caller's token carries none. The request is refused rather than
+	// served against the wrong deployment.
+	errMissingDeploymentID = errors.New("missing deployment id claim")
 )
