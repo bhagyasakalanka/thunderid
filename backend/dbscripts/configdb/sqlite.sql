@@ -448,3 +448,21 @@ CREATE TABLE "DATA_PLANE_JOB" (
     COMPLETED_AT  TEXT,
     PRIMARY KEY (DEPLOYMENT_ID, ID)
 );
+
+-- configuration referring to it is the same. Deleting a gateway takes its variables with it.
+CREATE TABLE "GATEWAY_VARIABLE" (
+    DEPLOYMENT_ID VARCHAR(255) NOT NULL,
+    ID            VARCHAR(36)  PRIMARY KEY,
+    GATEWAY_ID        VARCHAR(36)  NOT NULL,
+    KEY           VARCHAR(255) NOT NULL,
+    VALUE         TEXT         NOT NULL,
+    DESCRIPTION   VARCHAR(255),
+    CREATED_AT    TEXT         DEFAULT (datetime('now')),
+    UPDATED_AT    TEXT         DEFAULT (datetime('now')),
+    CONSTRAINT unique_gateway_variable_key UNIQUE (DEPLOYMENT_ID, GATEWAY_ID, KEY),
+    CONSTRAINT fk_gateway_variable_gateway
+        FOREIGN KEY (DEPLOYMENT_ID, GATEWAY_ID) REFERENCES "GATEWAY" (DEPLOYMENT_ID, ID)
+        ON DELETE CASCADE
+);
+
+CREATE INDEX idx_gateway_variable_gateway ON "GATEWAY_VARIABLE" (DEPLOYMENT_ID, GATEWAY_ID);
