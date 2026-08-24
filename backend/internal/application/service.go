@@ -60,6 +60,7 @@ type applicationService struct {
 	cryptoSvc            providers.RuntimeCryptoProvider
 	dependencyRegistry   resourcedependency.Registry
 	serverConfigService  serverconfig.ServerConfigService
+	secretCapturer       SecretCapturer
 }
 
 // newApplicationService creates a new instance of ApplicationService.
@@ -70,6 +71,7 @@ func newApplicationService(
 	i18nService i18nmgt.I18nServiceInterface,
 	cryptoSvc providers.RuntimeCryptoProvider,
 	serverConfigSvc serverconfig.ServerConfigService,
+	secretCapturer SecretCapturer,
 ) ApplicationServiceInterface {
 	return &applicationService{
 		logger:               log.GetLogger().With(log.String(log.LoggerKeyComponentName, "ApplicationService")),
@@ -79,6 +81,7 @@ func newApplicationService(
 		i18nService:          i18nService,
 		cryptoSvc:            cryptoSvc,
 		serverConfigService:  serverConfigSvc,
+		secretCapturer:       secretCapturer,
 	}
 }
 
@@ -176,6 +179,10 @@ func (as *applicationService) CreateApplication(ctx context.Context, app *model.
 	}
 
 	as.syncPasskeyOriginsToCORS(ctx, processedDTO.PasskeyAllowedOrigins)
+	// Capture the generated client secret into the control plane secret store (best effort; no-op
+	// when no capturer is configured, as on a data plane). The key matches the placeholder the
+	// exporter emits for this field so the apply flow resolves it.
+	as.captureSecret(ctx, app.Name, clientSecret)
 
 	appForReturn := *app
 	appForReturn.AuthFlowID = inboundClient.AuthFlowID
@@ -393,6 +400,13 @@ func (as *applicationService) UpdateApplication(ctx context.Context, appID strin
 
 	if svcErr != nil {
 		return nil, svcErr
+	}
+
+	// A rotated client secret has to be captured here as well as on create. It is stored as a one way
+	// hash, so once this returns the value cannot be recovered, and without this the secret store keeps
+	// serving the one from creation while the application expects the new one.
+	if inboundAuthConfig != nil && inboundAuthConfig.OAuthConfig != nil {
+		as.captureSecret(ctx, app.Name, inboundAuthConfig.OAuthConfig.ClientSecret)
 	}
 
 	processedDTO := as.buildProcessedDTOForUpdate(appID, app, inboundAuthConfig)
