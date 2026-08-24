@@ -21,6 +21,7 @@ import (
 	oupkg "github.com/thunder-id/thunderid/internal/ou"
 	serverconst "github.com/thunder-id/thunderid/internal/system/constants"
 	"github.com/thunder-id/thunderid/internal/system/log"
+	"github.com/thunder-id/thunderid/internal/system/managedresource"
 	"github.com/thunder-id/thunderid/internal/system/resourcedependency"
 	"github.com/thunder-id/thunderid/internal/system/security"
 	"github.com/thunder-id/thunderid/internal/system/sysauthz"
@@ -126,7 +127,7 @@ func (us *userService) listAllUsers(
 		return nil, logErrorAndReturnServerError(ctx, logger, "Failed to get user list", err)
 	}
 
-	users := entitiesToUsers(entities)
+	users := entitiesToUsersForContext(ctx, entities)
 	if includeDisplay {
 		us.populateUserDisplayNames(ctx, users, logger)
 		us.populateOUHandles(ctx, users, logger)
@@ -157,7 +158,7 @@ func (us *userService) listUsersByOUIDs(
 		return nil, logErrorAndReturnServerError(ctx, logger, "Failed to get user list", err)
 	}
 
-	users := entitiesToUsers(entities)
+	users := entitiesToUsersForContext(ctx, entities)
 	if includeDisplay {
 		us.populateUserDisplayNames(ctx, users, logger)
 		us.populateOUHandles(ctx, users, logger)
@@ -251,7 +252,7 @@ func (us *userService) GetUsersByPath(
 				users[i] = User{ID: ouUser.ID, OUHandle: ou.Handle}
 			}
 		} else {
-			fetchedUsers := entitiesToUsers(fetchedEntities)
+			fetchedUsers := entitiesToUsersForContext(ctx, fetchedEntities)
 			// Build an ID-keyed map for display resolution, but only expose ID + Display.
 			userMap := make(map[string]User, len(fetchedUsers))
 			for _, u := range fetchedUsers {
@@ -405,7 +406,7 @@ func (us *userService) GetUser(
 	if e.Category != providers.EntityCategoryUser {
 		return nil, &ErrorUserNotFound
 	}
-	user := entityToUser(e)
+	user := entityToUserForContext(ctx, e)
 
 	// Check authz using the user's OU ID (fetched from store).
 	if svcErr := us.checkUserAccess(ctx, security.ActionReadUser, user.OUID, userID); svcErr != nil {
@@ -511,6 +512,11 @@ func (as *userService) GetUserGroups(ctx context.Context, userID string, limit, 
 // UpdateUser update the user for given user id.
 func (us *userService) UpdateUser(
 	ctx context.Context, userID string, user *User) (*User, *tidcommon.ServiceError) {
+	// A resource applied from the control plane is owned there. Changing it here would last only
+	// until the next apply overwrote it, so the change is refused instead.
+	if svcErr := managedresource.Guard(ctx, managedresource.TypeUser, userID); svcErr != nil {
+		return nil, svcErr
+	}
 	logger := log.GetLogger().With(log.String(log.LoggerKeyComponentName, loggerComponentName))
 	logger.Debug(ctx, "Updating user", log.MaskedString(log.LoggerKeyUserID, userID))
 
@@ -612,6 +618,11 @@ func (us *userService) UpdateUser(
 func (us *userService) UpdateUserAttributes(
 	ctx context.Context, userID string, attributes json.RawMessage,
 ) (*User, *tidcommon.ServiceError) {
+	// A resource applied from the control plane is owned there. Changing it here would last only
+	// until the next apply overwrote it, so the change is refused instead.
+	if svcErr := managedresource.Guard(ctx, managedresource.TypeUser, userID); svcErr != nil {
+		return nil, svcErr
+	}
 	logger := log.GetLogger().With(log.String(log.LoggerKeyComponentName, loggerComponentName))
 	logger.Debug(ctx, "Updating user attributes", log.MaskedString(log.LoggerKeyUserID, userID))
 
@@ -697,6 +708,11 @@ func (us *userService) UpdateUserCredentials(
 	userID string,
 	credentials json.RawMessage,
 ) *tidcommon.ServiceError {
+	// A resource applied from the control plane is owned there. Changing it here would last only
+	// until the next apply overwrote it, so the change is refused instead.
+	if svcErr := managedresource.Guard(ctx, managedresource.TypeUser, userID); svcErr != nil {
+		return svcErr
+	}
 	logger := log.GetLogger().With(log.String(log.LoggerKeyComponentName, loggerComponentName))
 	logger.Debug(ctx, "Updating user credentials", log.MaskedString(log.LoggerKeyUserID, userID))
 
@@ -818,6 +834,11 @@ func (us *userService) ValidateDeleteUser(ctx context.Context, userID string) *t
 
 // DeleteUser deletes the user with the given ID.
 func (us *userService) DeleteUser(ctx context.Context, userID string) *tidcommon.ServiceError {
+	// A resource applied from the control plane is owned there. Changing it here would last only
+	// until the next apply overwrote it, so the change is refused instead.
+	if svcErr := managedresource.Guard(ctx, managedresource.TypeUser, userID); svcErr != nil {
+		return svcErr
+	}
 	logger := log.GetLogger().With(log.String(log.LoggerKeyComponentName, loggerComponentName))
 	logger.Debug(ctx, "Deleting user", log.MaskedString(log.LoggerKeyUserID, userID))
 
