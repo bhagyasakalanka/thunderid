@@ -63,6 +63,7 @@ type userService struct {
 	entityTypeService  entitytype.EntityTypeServiceInterface
 	uuidGenerator      func() (string, error)
 	dependencyRegistry resourcedependency.Registry
+	secretCapturer     SecretCapturer
 }
 
 // newUserService creates a new instance of userService with injected dependencies.
@@ -71,6 +72,7 @@ func newUserService(
 	entityService entity.EntityServiceInterface,
 	ouService oupkg.OrganizationUnitServiceInterface,
 	entityTypeService entitytype.EntityTypeServiceInterface,
+	secretCapturer SecretCapturer,
 ) UserServiceInterface {
 	return &userService{
 		authzService:      authzService,
@@ -78,6 +80,7 @@ func newUserService(
 		ouService:         ouService,
 		entityTypeService: entityTypeService,
 		uuidGenerator:     utils.GenerateUUIDv7,
+		secretCapturer:    secretCapturer,
 	}
 }
 
@@ -321,6 +324,11 @@ func (us *userService) CreateUser(ctx context.Context, user *User) (*User, *tidc
 			return nil, &tidcommon.InternalServerError
 		}
 	}
+
+	// Capture schema defined credentials into the control plane secret store before the entity
+	// service hashes and strips them (best effort; no-op when no capturer is configured, as on a data
+	// plane).
+	us.captureUserCredentials(ctx, user)
 
 	e := userToEntity(user)
 	created, err := us.entityService.CreateEntity(ctx, e, nil)
@@ -764,6 +772,9 @@ func (us *userService) UpdateUserCredentials(
 		return logErrorAndReturnServerError(ctx, logger, "Failed to marshal credentials", err,
 			log.MaskedString(log.LoggerKeyUserID, userID))
 	}
+	// The rotated value is captured before it is hashed, since it cannot be recovered afterwards.
+	us.captureUpdatedCredentials(ctx, userID, plaintextCreds)
+
 	if err = us.entityService.UpdateCredentials(ctx, userID, plaintextJSON); err != nil {
 		if svcErr := mapEntityError(err); svcErr != nil {
 			return svcErr
