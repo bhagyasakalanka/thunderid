@@ -431,6 +431,47 @@ func TestGetRequiredPermissionForAPI(t *testing.T) {
 			method: http.MethodGet, path: "/users/menu", wantPerm: p.UserView,
 		},
 
+		// ---- Gateway variables, named by the path the server actually serves. A rule naming a path
+		// that is not served matches nothing, and the route silently falls back to the root
+		// permission, which makes the fine-grained permission unreachable. ----
+		{
+			name:   "GET a gateway's variables",
+			method: http.MethodGet, path: "/gateways/gw-1/variables", wantPerm: p.GatewayVarView,
+		},
+		{
+			name:   "POST a gateway variable",
+			method: http.MethodPost, path: "/gateways/gw-1/variables", wantPerm: p.GatewayVar,
+		},
+		{
+			name:   "GET one gateway variable",
+			method: http.MethodGet, path: "/gateways/gw-1/variables/var-1", wantPerm: p.GatewayVarView,
+		},
+		{
+			name:   "GET the resolved gateway variables",
+			method: http.MethodGet, path: "/gateways/gw-1/variables/resolve", wantPerm: p.GatewayVarView,
+		},
+		{
+			name:   "PUT one gateway variable",
+			method: http.MethodPut, path: "/gateways/gw-1/variables/var-1", wantPerm: p.GatewayVar,
+		},
+		{
+			name:   "DELETE one gateway variable",
+			method: http.MethodDelete, path: "/gateways/gw-1/variables/var-1", wantPerm: p.GatewayVar,
+		},
+
+		// ---- Administering a gateway itself takes the root permission, stated rather than reached
+		// through the fallback. ----
+		{name: "GET /gateways", method: http.MethodGet, path: "/gateways", wantPerm: p.Root},
+		{name: "POST /gateways", method: http.MethodPost, path: "/gateways", wantPerm: p.Root},
+		{
+			name:   "POST a gateway apply",
+			method: http.MethodPost, path: "/gateways/gw-1/apply", wantPerm: p.Root,
+		},
+		{
+			name:   "POST a version capture",
+			method: http.MethodPost, path: "/versions", wantPerm: p.Root,
+		},
+
 		// ---- Wrong method does not match mapped path ----
 		{
 			name:   "PATCH /users unmapped method falls back to system",
