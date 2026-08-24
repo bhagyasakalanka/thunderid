@@ -16,3 +16,8 @@ export {default as useToast} from './Toast/useToast';
 export {default as RoutesContext} from './Routes/RoutesContext';
 export {default as RoutesProvider, type RoutesProviderProps} from './Routes/RoutesProvider';
 export {default as useRoutes} from './Routes/useRoutes';
+
+// Managed resources: which resources this deployment does not own, because a control plane applied
+// them. Lives here so every configure-* package can ask, rather than only the console.
+export {useManagedResources, useIsManagedResource} from './ManagedResources';
+export type {ManagedResourceType, ManagedResourcesResponse} from './ManagedResources';

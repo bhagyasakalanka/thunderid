@@ -1,9 +1,16 @@
 // Copyright 2025-2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {PageLoadingAnimation, QueryErrorNotice, ResourceAvatar, UnsavedChangesBar} from '@thunderid/components';
+import {
+  ManagedResourceNotice,
+  PageLoadingAnimation,
+  QueryErrorNotice,
+  ResourceAvatar,
+  UnsavedChangesBar,
+} from '@thunderid/components';
 import {OAuth2GrantTypes, TokenEndpointAuthMethods, useGetApplication} from '@thunderid/configure-applications';
 import type {Application, OAuth2Config} from '@thunderid/configure-applications';
+import {useIsManagedResource} from '@thunderid/contexts';
 import {useLogger} from '@thunderid/logger/react';
 import {isEqualIgnoringEmpty} from '@thunderid/utils';
 import {
@@ -91,7 +98,19 @@ export default function ApplicationEditPage() {
   const location = useLocation();
   const {applicationId} = useParams<{applicationId: string}>();
 
-  const {data: application, isLoading, error, refetch} = useGetApplication(applicationId ?? '');
+  // An application applied from the control plane can only be changed there, so this view is read
+  // only for it in the same way a declarative resource is.
+  const isManagedApplication = useIsManagedResource('application');
+  const isManaged: boolean = isManagedApplication(applicationId ?? '');
+
+  const {data: fetchedApplication, isLoading, error, refetch} = useGetApplication(applicationId ?? '');
+  // A resource the control plane owns is read only here, and saying so on the object itself is what
+  // makes every section of this page and its children treat it that way, rather than each one
+  // having to learn about ownership separately.
+  const application = useMemo(
+    () => (isManaged && fetchedApplication ? {...fetchedApplication, isReadOnly: true} : fetchedApplication),
+    [fetchedApplication, isManaged],
+  );
   const updateApplication = useUpdateApplication();
 
   // Resolves an error through the `applications` catalog. `t` defaults to the `common` namespace,
@@ -504,7 +523,9 @@ export default function ApplicationEditPage() {
 
   return (
     <PageContent>
-      {application.isReadOnly && (
+      {/* A managed resource says where it can be changed; a declarative one has no such place. */}
+      {isManaged && <ManagedResourceNotice />}
+      {application.isReadOnly && !isManaged && (
         <Alert severity="info" sx={{mb: 2}}>
           {t('common:messages.readOnlyResource', 'This resource is read-only and cannot be modified.')}
         </Alert>

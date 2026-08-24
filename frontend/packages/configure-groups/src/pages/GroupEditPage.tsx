@@ -1,7 +1,8 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {PageLoadingAnimation, QueryErrorNotice, UnsavedChangesBar} from '@thunderid/components';
+import {ManagedResourceNotice, PageLoadingAnimation, QueryErrorNotice, UnsavedChangesBar} from '@thunderid/components';
+import {useIsManagedResource} from '@thunderid/contexts';
 import {useLogger} from '@thunderid/logger/react';
 import {getErrorMessage, isEqualIgnoringEmpty} from '@thunderid/utils';
 import {
@@ -53,11 +54,22 @@ function TabPanel({children = null, value, index, ...other}: TabPanelProps): JSX
 
 export default function GroupEditPage(): JSX.Element {
   const {groupId} = useParams<{groupId: string}>();
+  // A group applied from the control plane can only be changed there, so this view is read
+  // only for it in the same way a declarative resource is.
+  const isManagedGroup = useIsManagedResource('group');
+  const isManaged: boolean = isManagedGroup(groupId ?? '');
   const navigate = useNavigate();
   const {t} = useTranslation('groups');
   const logger = useLogger('GroupEditPage');
 
-  const {data: group, isLoading, error: fetchError, refetch} = useGetGroup(groupId ?? '');
+  const {data: fetchedGroup, isLoading, error: fetchError, refetch} = useGetGroup(groupId ?? '');
+  // A resource the control plane owns is read only here, and saying so on the object
+  // itself is what makes every section of this page and its children treat it that way,
+  // rather than each one having to learn about ownership separately.
+  const group = useMemo(
+    () => (isManaged && fetchedGroup ? {...fetchedGroup, isReadOnly: true} : fetchedGroup),
+    [fetchedGroup, isManaged],
+  );
   const updateGroup = useUpdateGroup();
 
   const [activeTab, setActiveTab] = useState(0);
@@ -192,7 +204,9 @@ export default function GroupEditPage(): JSX.Element {
 
   return (
     <PageContent>
-      {group.isReadOnly && (
+      {/* A managed resource says where it can be changed; a declarative one has no such place. */}
+      {isManaged && <ManagedResourceNotice />}
+      {group.isReadOnly && !isManaged && (
         <Alert severity="info" sx={{mb: 2}}>
           {t('common:messages.readOnlyResource', 'This resource is read-only and cannot be modified.')}
         </Alert>
@@ -344,7 +358,9 @@ export default function GroupEditPage(): JSX.Element {
         </TabPanel>
 
         <TabPanel value={activeTab} index={2}>
-          <EditAdvancedSettings onDeleteClick={group.isReadOnly ? undefined : () => setDeleteDialogOpen(true)} />
+          <EditAdvancedSettings
+            onDeleteClick={group.isReadOnly === true ? undefined : () => setDeleteDialogOpen(true)}
+          />
         </TabPanel>
       </>
 
