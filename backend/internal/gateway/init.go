@@ -56,6 +56,7 @@ func registerRoutes(mux *http.ServeMux, reg *registry) {
 		"POST /versions":                     func(s *Server) http.HandlerFunc { return s.createVersion },
 		"GET /versions":                      func(s *Server) http.HandlerFunc { return s.listVersions },
 		"GET /versions/{seq}":                func(s *Server) http.HandlerFunc { return s.getVersion },
+		"PATCH /versions/{seq}":              func(s *Server) http.HandlerFunc { return s.renameVersion },
 		"GET /gateways/{id}/history":         func(s *Server) http.HandlerFunc { return s.gatewayHistory },
 		"GET /gateways/{id}/diff":            func(s *Server) http.HandlerFunc { return s.diff },
 		"GET /gateways/{id}/variable-status": func(s *Server) http.HandlerFunc { return s.checkVariables },
@@ -79,8 +80,10 @@ func registerRoutes(mux *http.ServeMux, reg *registry) {
 		mux.HandleFunc(middleware.WithCORS(pattern, auth.RecordCallerToken(reg.handler(pick)), opts))
 	}
 
+	// A browser preflights a rename against the version's own path, so the subtree needs its own
+	// pattern: the bare "/versions" does not match "/versions/3".
 	for _, pattern := range []string{"OPTIONS /gateways", "OPTIONS /gateways/", "OPTIONS /versions",
-		"OPTIONS /apply"} {
+		"OPTIONS /versions/", "OPTIONS /apply"} {
 		mux.HandleFunc(middleware.WithCORS(pattern, func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
 		}, opts))

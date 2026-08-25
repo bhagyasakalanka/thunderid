@@ -980,3 +980,85 @@ func TestUpdateGatewayRefusesABlankName(t *testing.T) {
 		t.Fatalf("expected a validation error, got %v", err)
 	}
 }
+
+// A note written at capture time is often written before anyone knows what the version turned out to
+// be, so it can be corrected in place. What was captured must not move with it: a gateway running the
+// version is running those resources.
+func TestRenameVersionChangesOnlyTheNote(t *testing.T) {
+	fake := &fakeClient{
+		exportResources: bundleOf("app-a"),
+		exportEnv:       "APP_A_CLIENT_ID=abc",
+	}
+	svc := newTestService(t, fake)
+
+	captured, err := svc.CaptureVersion(context.Background(), "before release")
+	if err != nil {
+		t.Fatalf("capture: %v", err)
+	}
+
+	renamed, err := svc.RenameVersion(context.Background(), captured.Seq, "  release 1.4  ")
+	if err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	if renamed.Note != "release 1.4" {
+		t.Fatalf("expected the note trimmed and replaced, got %q", renamed.Note)
+	}
+	if renamed.Seq != captured.Seq {
+		t.Fatalf("renaming must not move the version, got seq %d want %d", renamed.Seq, captured.Seq)
+	}
+
+	full, err := svc.GetVersion(context.Background(), captured.Seq)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if full.Note != "release 1.4" {
+		t.Fatalf("expected the stored note to be the new one, got %q", full.Note)
+	}
+	if full.Variables["APP_A_CLIENT_ID"] != "abc" {
+		t.Fatalf("renaming must leave what was captured alone, got %#v", full.Variables)
+	}
+	if full.Resources == "" {
+		t.Fatal("renaming must leave the captured resources alone")
+	}
+}
+
+// Renaming a version a gateway has run leaves that history intact: an entry names the sequence, not
+// the note, so what the gateway can go back to is unchanged.
+func TestRenameVersionKeepsGatewayHistory(t *testing.T) {
+	fake := &fakeClient{exportResources: bundleOf("app-a")}
+	svc := newTestService(t, fake)
+	env, err := svc.CreateGateway(context.Background(), CreateGatewayInput{
+		Name:   "dev",
+		Target: model.Target{DataPlaneID: "dp"},
+	})
+	if err != nil {
+		t.Fatalf("create gateway: %v", err)
+	}
+	captured, err := svc.CaptureVersion(context.Background(), "first")
+	if err != nil {
+		t.Fatalf("capture: %v", err)
+	}
+	if _, err := svc.Apply(context.Background(), env.ID, strconv.Itoa(captured.Seq), false); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+
+	if _, err := svc.RenameVersion(context.Background(), captured.Seq, "renamed"); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+
+	history, err := svc.GatewayHistory(context.Background(), env.ID)
+	if err != nil {
+		t.Fatalf("history: %v", err)
+	}
+	if len(history) != 1 || history[0].Seq != captured.Seq {
+		t.Fatalf("expected the history to still name the version, got %#v", history)
+	}
+}
+
+// Renaming a version that was never captured is a not-found rather than a silent no-op.
+func TestRenameVersionRejectsAnUnknownSequence(t *testing.T) {
+	svc := newTestService(t, &fakeClient{})
+	if _, err := svc.RenameVersion(context.Background(), 42, "nope"); err == nil {
+		t.Fatal("expected renaming an unknown version to fail")
+	}
+}

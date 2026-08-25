@@ -117,6 +117,16 @@ func (m *memStore) GetVersion(_ context.Context, seq int) (model.Version, error)
 	return v, nil
 }
 
+func (m *memStore) RenameVersion(_ context.Context, seq int, note string) (model.Version, error) {
+	v, ok := m.versions[seq]
+	if !ok {
+		return model.Version{}, store.ErrNotFound
+	}
+	v.Note = note
+	m.versions[seq] = v
+	return v, nil
+}
+
 func (m *memStore) ListVersions(_ context.Context) ([]model.Version, error) {
 	seqs := m.seqs()
 	out := make([]model.Version, 0, len(seqs))
