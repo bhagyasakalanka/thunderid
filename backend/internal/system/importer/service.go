@@ -25,6 +25,7 @@ import (
 	"github.com/thunder-id/thunderid/internal/resource"
 	"github.com/thunder-id/thunderid/internal/role"
 	"github.com/thunder-id/thunderid/internal/system/log"
+	"github.com/thunder-id/thunderid/internal/system/managedresource"
 	"github.com/thunder-id/thunderid/internal/user"
 	"github.com/thunder-id/thunderid/internal/vc/credential"
 	"github.com/thunder-id/thunderid/internal/vc/presentation"
@@ -312,6 +313,14 @@ func (s *importService) ImportResources(
 		)
 	}
 
+	// A request that claims control plane authorship is allowed to change resources this deployment
+	// does not own, because that is how an apply updates what it wrote last time. A plain local import
+	// gets no such license: it writes this deployment's own resources and must be refused at a control
+	// plane owned one, the same as any other local caller.
+	if request.claimsControlPlaneAuthorship() {
+		ctx = managedresource.WithImport(ctx)
+	}
+
 	resolvedContent, err := resolveTemplate(request.Content, request.Variables)
 	if err != nil {
 		log.GetLogger().Warn(ctx, "Import template resolution failed", log.String("error", err.Error()))
@@ -352,6 +361,7 @@ func (s *importService) ImportResources(
 
 		if outcome.Status == statusSuccess {
 			imported++
+			s.recordManagedResource(ctx, request, outcome)
 		} else {
 			failed++
 			if !options.IsContinueOnErrorEnabled() {
@@ -1045,4 +1055,32 @@ func isNotFoundServiceError(svcErr *tidcommon.ServiceError) bool {
 	}
 	_, ok := notFoundErrorCodes[svcErr.Code]
 	return ok
+}
+
+// recordManagedResource records a written resource as owned by the control plane, so this
+// deployment's own management APIs refuse to change it.
+//
+// Only what the request asked for is marked. The import API is also how this deployment does its own
+// work, and marking everything it wrote would make those resources read only here too, which is the
+// opposite of what a data plane needs for anything it owns.
+//
+// A failure to record is logged rather than failing the import: the resource is already written, and
+// reporting the import as failed would be a worse answer than a resource that stays locally editable.
+func (s *importService) recordManagedResource(ctx context.Context, request *ImportRequest,
+	outcome ImportItemOutcome) {
+	if request.DryRun || outcome.ResourceID == "" {
+		return
+	}
+	if !request.marksAsManaged(outcome.ResourceType, outcome.ResourceID) {
+		return
+	}
+	registry := managedresource.Default()
+	if !registry.Enabled() {
+		return
+	}
+	if err := registry.Mark(ctx, outcome.ResourceType, outcome.ResourceID); err != nil {
+		log.GetLogger().Warn(ctx, "Failed to record a resource as control plane owned",
+			log.String("resourceType", outcome.ResourceType),
+			log.String("resourceId", outcome.ResourceID), log.Error(err))
+	}
 }

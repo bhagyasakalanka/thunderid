@@ -19,6 +19,17 @@ type ImportRequest struct {
 	Variables map[string]interface{} `json:"variables,omitempty"`
 	DryRun    bool                   `json:"dryRun,omitempty"`
 	Options   *ImportOptions         `json:"options,omitempty"`
+	// ManagedResources names the resources in this request that belong to the control plane, which
+	// makes them read only on this deployment. Nothing is marked unless it is named here or Options
+	// marks the whole request, because the import API is also how this deployment's own tooling writes
+	// its own resources, and those must stay editable.
+	ManagedResources []ResourceRef `json:"managedResources,omitempty"`
+}
+
+// ResourceRef identifies one resource in an import request.
+type ResourceRef struct {
+	ResourceType string `json:"resourceType"`
+	ID           string `json:"id"`
 }
 
 // ImportOptions controls runtime import behavior.
@@ -26,6 +37,10 @@ type ImportOptions struct {
 	Upsert          *bool  `json:"upsert,omitempty"`
 	ContinueOnError *bool  `json:"continueOnError,omitempty"`
 	Target          string `json:"target,omitempty"`
+	// MarkManaged marks every resource this request writes as owned by the control plane, which is
+	// what an apply wants: the whole payload came from there. It defaults to false so that an import
+	// used for this deployment's own work leaves its resources editable.
+	MarkManaged bool `json:"markManaged,omitempty"`
 }
 
 // IsUpsertEnabled returns whether upsert behavior is enabled.
@@ -84,4 +99,30 @@ type ImportItemOutcome struct {
 	Status       string `json:"status"`
 	Code         string `json:"code,omitempty"`
 	Message      string `json:"message,omitempty"`
+}
+
+// marksAsManaged reports whether the request declares this resource as belonging to the control
+// plane, either by naming it or by marking the whole request.
+func (r *ImportRequest) marksAsManaged(resourceType, resourceID string) bool {
+	if r == nil {
+		return false
+	}
+	if r.Options != nil && r.Options.MarkManaged {
+		return true
+	}
+	for _, ref := range r.ManagedResources {
+		if ref.ID == resourceID && (ref.ResourceType == "" || ref.ResourceType == resourceType) {
+			return true
+		}
+	}
+	return false
+}
+
+// claimsControlPlaneAuthorship reports whether the request is writing on behalf of the control plane.
+// Only such a request may change a resource this deployment does not own.
+func (r *ImportRequest) claimsControlPlaneAuthorship() bool {
+	if r == nil {
+		return false
+	}
+	return (r.Options != nil && r.Options.MarkManaged) || len(r.ManagedResources) > 0
 }
