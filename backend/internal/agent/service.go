@@ -58,6 +58,7 @@ type agentService struct {
 	ouService            oupkg.OrganizationUnitServiceInterface
 	dependencyRegistry   resourcedependency.Registry
 	roleService          role.RoleServiceInterface
+	secretCapturer       SecretCapturer
 }
 
 func newAgentService(
@@ -65,6 +66,7 @@ func newAgentService(
 	inboundClientService inboundclient.InboundClientServiceInterface,
 	ouService oupkg.OrganizationUnitServiceInterface,
 	roleService role.RoleServiceInterface,
+	secretCapturer SecretCapturer,
 ) AgentServiceInterface {
 	return &agentService{
 		logger:               log.GetLogger().With(log.String(log.LoggerKeyComponentName, "AgentService")),
@@ -72,6 +74,7 @@ func newAgentService(
 		inboundClientService: inboundClientService,
 		ouService:            ouService,
 		roleService:          roleService,
+		secretCapturer:       secretCapturer,
 	}
 }
 
@@ -151,6 +154,7 @@ func (s *agentService) CreateAgent(ctx context.Context, agent *model.Agent) (
 		agent.AllowedUserTypes, inboundConfigs)
 	resp.OUID = agent.OUID
 	s.populateOUHandleForComplete(ctx, resp)
+	s.captureSecret(ctx, agent.Name, clientSecret)
 	return resp, nil
 }
 
@@ -343,6 +347,7 @@ func (s *agentService) UpdateAgent(ctx context.Context, agentID string,
 		req.AllowedUserTypes, inboundConfigs)
 	resp.OUID = ouID
 	s.populateOUHandleForComplete(ctx, resp)
+	s.captureSecret(ctx, req.Name, clientSecret)
 	return resp, nil
 }
 
