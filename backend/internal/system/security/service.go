@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/thunder-id/thunderid/internal/system/deployment"
 	"github.com/thunder-id/thunderid/internal/system/log"
 )
 
@@ -110,6 +111,19 @@ func (s *securityService) Process(r *http.Request) (context.Context, error) {
 	ctx := r.Context()
 	if securityCtx != nil {
 		ctx = withSecurityContext(ctx, securityCtx)
+
+		// Where this process takes each request's deployment from the token, the named claim is read,
+		// a request without it is refused, and the value travels in the context so stores scope
+		// persistence by it. The configured identifier is never consulted then. A process that takes
+		// its deployment from the server configuration ignores any such claim and stores use the
+		// configured identifier, as they do today.
+		if claim, readsFromToken := deployment.TokenClaim(); readsFromToken {
+			val, _ := securityCtx.attributes[claim].(string)
+			if val == "" {
+				return s.handleAuthError(ctx, isPublic, errMissingDeploymentID)
+			}
+			ctx = deployment.WithID(ctx, val)
+		}
 
 		// Reject the request when the presented token has been revoked. This runs after successful
 		// authentication and is format-agnostic: it enforces on the token's jti and its token family
