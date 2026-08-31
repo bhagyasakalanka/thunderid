@@ -25,6 +25,7 @@ import (
 	"github.com/thunder-id/thunderid/internal/system/cryptolib"
 	i18nmgt "github.com/thunder-id/thunderid/internal/system/i18n/mgt"
 	"github.com/thunder-id/thunderid/internal/system/log"
+	"github.com/thunder-id/thunderid/internal/system/managedresource"
 	"github.com/thunder-id/thunderid/internal/system/resourcedependency"
 	sysutils "github.com/thunder-id/thunderid/internal/system/utils"
 	tidcommon "github.com/thunder-id/thunderid/pkg/thunderidengine/common"
@@ -336,6 +337,8 @@ func (as *applicationService) GetApplicationList(
 		applicationList = append(applicationList, buildBasicApplicationResponse(*cfg, &entities[i]))
 	}
 
+	markManagedApplications(ctx, applicationList)
+
 	return &model.ApplicationListResponse{
 		TotalResults: totalResults,
 		Count:        len(applicationList),
@@ -390,6 +393,11 @@ func (as *applicationService) GetApplication(ctx context.Context, appID string) 
 // UpdateApplication update the application for given app id.
 func (as *applicationService) UpdateApplication(ctx context.Context, appID string, app *model.ApplicationDTO) (
 	*model.ApplicationDTO, *tidcommon.ServiceError) {
+	// A resource applied from the control plane is owned there. Changing it here would last only
+	// until the next apply overwrote it, so the change is refused instead.
+	if svcErr := managedresource.Guard(ctx, managedresource.TypeApplication, appID); svcErr != nil {
+		return nil, svcErr
+	}
 	if appID == "" {
 		return nil, &ErrorInvalidApplicationID
 	}
@@ -619,6 +627,11 @@ func (as *applicationService) SetDependencyRegistry(r resourcedependency.Registr
 }
 
 func (as *applicationService) DeleteApplication(ctx context.Context, appID string) *tidcommon.ServiceError {
+	// A resource applied from the control plane is owned there. Changing it here would last only
+	// until the next apply overwrote it, so the change is refused instead.
+	if svcErr := managedresource.Guard(ctx, managedresource.TypeApplication, appID); svcErr != nil {
+		return svcErr
+	}
 	if appID == "" {
 		return &ErrorInvalidApplicationID
 	}
@@ -2236,5 +2249,19 @@ func (as *applicationService) syncPasskeyOriginsToCORS(ctx context.Context, orig
 	); svcErr != nil {
 		as.logger.Warn(ctx, "Failed to update CORS config with passkey allowed origins",
 			log.String("error", svcErr.ErrorDescription.DefaultValue))
+	}
+}
+
+// markManagedApplications reports the control plane owned applications as read only, which is what a
+// client renders its edit and delete controls from.
+func markManagedApplications(ctx context.Context, items []model.BasicApplicationResponse) {
+	managed := managedresource.Default().ManagedIDs(ctx, managedresource.TypeApplication)
+	if len(managed) == 0 {
+		return
+	}
+	for i := range items {
+		if managed[items[i].ID] {
+			items[i].IsReadOnly = true
+		}
 	}
 }

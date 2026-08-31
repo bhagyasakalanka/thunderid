@@ -12,6 +12,7 @@ import (
 	"github.com/thunder-id/thunderid/internal/notification"
 	ncommon "github.com/thunder-id/thunderid/internal/notification/common"
 	serverconst "github.com/thunder-id/thunderid/internal/system/constants"
+	"github.com/thunder-id/thunderid/internal/system/managedresource"
 	"github.com/thunder-id/thunderid/internal/system/resourcedependency"
 	sysutils "github.com/thunder-id/thunderid/internal/system/utils"
 	tidcommon "github.com/thunder-id/thunderid/pkg/thunderidengine/common"
@@ -167,6 +168,8 @@ func (s *service) listInstances(ctx context.Context, category connectionCategory
 		page = instances[offset:end]
 	}
 
+	markManagedConnections(ctx, page)
+
 	extraQuery := ""
 	if category != "" {
 		extraQuery = "&category=" + string(category)
@@ -314,4 +317,19 @@ func (s *service) usagesSMSByProvider(ctx context.Context, provider ncommon.Mess
 		return nil, svcErr
 	}
 	return s.notificationService.GetSenderUsages(ctx, id)
+}
+
+// markManagedConnections reports the control plane owned entries as read only, which is what a client
+// renders its edit and delete controls from. Both backing services share the connection resource type,
+// so one lookup covers identity providers and notification senders alike.
+func markManagedConnections(ctx context.Context, items []connectionInstance) {
+	managed := managedresource.Default().ManagedIDs(ctx, managedresource.TypeConnection)
+	if len(managed) == 0 {
+		return
+	}
+	for i := range items {
+		if managed[items[i].ID] {
+			items[i].IsReadOnly = true
+		}
+	}
 }
