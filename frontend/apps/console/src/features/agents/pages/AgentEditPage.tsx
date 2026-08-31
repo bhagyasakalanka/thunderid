@@ -1,9 +1,16 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {PageLoadingAnimation, QueryErrorNotice, ResourceAvatar, UnsavedChangesBar} from '@thunderid/components';
+import {
+  ManagedResourceNotice,
+  PageLoadingAnimation,
+  QueryErrorNotice,
+  ResourceAvatar,
+  UnsavedChangesBar,
+} from '@thunderid/components';
 import {useGetAgentType, useGetAgentTypes} from '@thunderid/configure-agent-types';
 import {dropNonConformingOptionalAttributes} from '@thunderid/configure-users';
+import {useIsManagedResource} from '@thunderid/contexts';
 import {useLogger} from '@thunderid/logger/react';
 import {getErrorMessage, isEqualIgnoringEmpty} from '@thunderid/utils';
 import {
@@ -72,7 +79,19 @@ export default function AgentEditPage(): JSX.Element {
   const logger = useLogger('AgentEditPage');
   const {agentId} = useParams<{agentId: string}>();
 
-  const {data: agent, isLoading, error, refetch} = useGetAgent(agentId ?? '');
+  // An agent applied from the control plane can only be changed there, so this view is read
+  // only for it in the same way a declarative resource is.
+  const isManagedAgent = useIsManagedResource('agent');
+  const isManaged: boolean = isManagedAgent(agentId ?? '');
+
+  const {data: fetchedAgent, isLoading, error, refetch} = useGetAgent(agentId ?? '');
+  // A resource the control plane owns is read only here, and saying so on the object itself is what
+  // makes every section of this page and its children treat it that way, rather than each one
+  // having to learn about ownership separately.
+  const agent = useMemo(
+    () => (isManaged && fetchedAgent ? {...fetchedAgent, isReadOnly: true} : fetchedAgent),
+    [fetchedAgent, isManaged],
+  );
   const updateAgent = useUpdateAgent();
 
   // Resolves an error through the `agents` catalog. `t` defaults to the `common` namespace, so
@@ -384,7 +403,9 @@ export default function AgentEditPage(): JSX.Element {
 
   return (
     <PageContent>
-      {agent.isReadOnly && (
+      {/* A managed resource says where it can be changed; a declarative one has no such place. */}
+      {isManaged && <ManagedResourceNotice />}
+      {agent.isReadOnly && !isManaged && (
         <Alert severity="info" sx={{mb: 2}}>
           {t('common:messages.readOnlyResource', 'This resource is read-only and cannot be modified.')}
         </Alert>

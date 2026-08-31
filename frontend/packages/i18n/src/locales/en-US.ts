@@ -92,6 +92,9 @@ const translations = {
     'status.enabled': 'Enabled',
     'status.disabled': 'Disabled',
     'status.readOnly': 'Read Only',
+    'managedResource.title': 'Managed by the control plane',
+    'managedResource.body':
+      'This resource was applied from the control plane and is read only here. Change it there and apply again, otherwise the next apply would replace whatever was changed on this deployment.',
     'status.completed': 'Completed',
     'status.failed': 'Failed',
 
