@@ -1,9 +1,11 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {Alert, Box, Card, Chip, Stack, Typography} from '@wso2/oxygen-ui';
-import {type JSX} from 'react';
+import {Alert, Box, Card, Chip, IconButton, Stack, Tooltip, Typography} from '@wso2/oxygen-ui';
+import {Pencil} from '@wso2/oxygen-ui-icons-react';
+import {useState, type JSX} from 'react';
 import {useTranslation} from 'react-i18next';
+import RenameVersionDialog from './RenameVersionDialog';
 import useGetVersions from '../api/useGetVersions';
 import type {Version} from '../models/promotion';
 
@@ -17,6 +19,7 @@ import type {Version} from '../models/promotion';
 export default function OrganizationVersions(): JSX.Element {
   const {t} = useTranslation();
   const {data} = useGetVersions();
+  const [renaming, setRenaming] = useState<Version | null>(null);
 
   const versions: Version[] = data?.versions ?? [];
 
@@ -48,10 +51,24 @@ export default function OrganizationVersions(): JSX.Element {
                   {new Date(version.createdAt).toLocaleString()}
                   {version.note ? ` · ${version.note}` : ''}
                 </Typography>
+                <Tooltip title={t('promotions:rename.action', 'Rename')}>
+                  <IconButton
+                    size="small"
+                    onClick={() => setRenaming(version)}
+                    aria-label={t('promotions:rename.action', 'Rename')}
+                    data-testid={`rename-version-${version.seq}`}
+                  >
+                    <Pencil size={16} />
+                  </IconButton>
+                </Tooltip>
               </Stack>
             </Card>
           ))}
         </Stack>
+      )}
+
+      {renaming !== null && (
+        <RenameVersionDialog seq={renaming.seq} note={renaming.note ?? ''} onClose={() => setRenaming(null)} />
       )}
     </Box>
   );
