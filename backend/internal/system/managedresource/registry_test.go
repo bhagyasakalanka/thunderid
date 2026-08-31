@@ -109,7 +109,7 @@ func TestGuardAllowsTheImportItself(t *testing.T) {
 		t.Fatalf("mark: %v", err)
 	}
 
-	// The control plane has to be able to update what it owns, or a promotion could never run twice.
+	// The control plane has to be able to update what it owns, or an apply could never run twice.
 	if svcErr := Guard(ctx, TypeApplication, "app-1"); svcErr != nil {
 		t.Fatalf("an import must be able to change a managed resource, got %v", svcErr.Code)
 	}

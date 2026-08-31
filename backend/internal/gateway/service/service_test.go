@@ -714,8 +714,8 @@ func TestApplyLeavesAHeldBackResourceAlone(t *testing.T) {
 	}
 }
 
-// The promotion view shows whether each gateway's data plane is connected, because nothing can be
-// applied or promoted to one that is not, and an operator should see that before starting.
+// The gateway view shows whether each gateway's data plane is connected, because nothing can be
+// applied to one that is not, and an operator should see that before starting.
 func TestGatewaySummariesReportDataPlaneConnectivity(t *testing.T) {
 	fake := &fakeClient{}
 	svc := newTestService(t, fake)
@@ -888,7 +888,7 @@ func TestRegenerateDataPlaneTokenIssuesAnotherForTheSameDataPlane(t *testing.T) 
 	}
 }
 
-// The gateway manager records what it knows about a gateway after promoting. This server never
+// The gateway manager records what it knows about a gateway after applying. This server never
 // reads those attributes, so they are stored and returned unchanged.
 func TestUpdateGatewayRecordsWhatTheGatewayManagerKnows(t *testing.T) {
 	svc := newTestService(t, &fakeClient{})

@@ -459,7 +459,7 @@ func (gs *groupService) GetGroup(
 func (gs *groupService) UpdateGroup(
 	ctx context.Context, groupID string, request UpdateGroupRequest) (*Group, *tidcommon.ServiceError) {
 	// A resource applied from the control plane is owned there. Changing it here would last only
-	// until the next promotion overwrote it, so the change is refused instead.
+	// until the next apply overwrote it, so the change is refused instead.
 	if svcErr := managedresource.Guard(ctx, managedresource.TypeGroup, groupID); svcErr != nil {
 		return nil, svcErr
 	}
@@ -583,7 +583,7 @@ func (gs *groupService) SetDependencyRegistry(r resourcedependency.Registry) {
 
 func (gs *groupService) DeleteGroup(ctx context.Context, groupID string) *tidcommon.ServiceError {
 	// A resource applied from the control plane is owned there. Changing it here would last only
-	// until the next promotion overwrote it, so the change is refused instead.
+	// until the next apply overwrote it, so the change is refused instead.
 	if svcErr := managedresource.Guard(ctx, managedresource.TypeGroup, groupID); svcErr != nil {
 		return svcErr
 	}
@@ -810,7 +810,7 @@ func (gs *groupService) resolveMembers(
 func (gs *groupService) AddGroupMembers(
 	ctx context.Context, groupID string, members []Member) (*Group, *tidcommon.ServiceError) {
 	// A resource applied from the control plane is owned there. Changing it here would last only
-	// until the next promotion overwrote it, so the change is refused instead.
+	// until the next apply overwrote it, so the change is refused instead.
 	if svcErr := managedresource.Guard(ctx, managedresource.TypeGroup, groupID); svcErr != nil {
 		return nil, svcErr
 	}
@@ -827,7 +827,7 @@ func (gs *groupService) AddGroupMembers(
 func (gs *groupService) RemoveGroupMembers(
 	ctx context.Context, groupID string, members []Member) (*Group, *tidcommon.ServiceError) {
 	// A resource applied from the control plane is owned there. Changing it here would last only
-	// until the next promotion overwrote it, so the change is refused instead.
+	// until the next apply overwrote it, so the change is refused instead.
 	if svcErr := managedresource.Guard(ctx, managedresource.TypeGroup, groupID); svcErr != nil {
 		return nil, svcErr
 	}

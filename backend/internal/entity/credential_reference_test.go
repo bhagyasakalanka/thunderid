@@ -141,7 +141,7 @@ func TestHashPlaintextCredentials_KeepsAReferenceAsItIs(t *testing.T) {
 	}
 	ok, err := mustHashService(t).Verify([]byte(plaintext), ref)
 	if err != nil || !ok {
-		t.Fatalf("the promoted credential should verify, ok=%v err=%v", ok, err)
+		t.Fatalf("the applied credential should verify, ok=%v err=%v", ok, err)
 	}
 }
 

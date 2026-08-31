@@ -29,7 +29,7 @@ import (
 // Store holds the secrets this server serves and accepts writes for.
 //
 // Writes arrive from a control plane the moment a secret is created or updated, so they must take
-// effect immediately rather than waiting for a configuration promotion: a credential that reaches a
+// effect immediately rather than waiting for the next apply: a credential that reaches a
 // data plane late is a credential that rejects logins in between.
 //
 // Where the secrets actually live is the backend's business. The store keeps what it last read in

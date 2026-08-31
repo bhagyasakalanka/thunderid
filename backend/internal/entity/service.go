@@ -581,7 +581,7 @@ func (s *entityService) verifyCredentials(credentials map[string]interface{},
 
 // credentialReference builds what a presented value is verified against.
 //
-// A credential promoted from a control plane is stored as a reference rather than a hash, because the
+// A credential sent down by a control plane is stored as a reference rather than a hash, because the
 // hash lives in this deployment's secret provider instead of its database. Those are resolved here, so
 // verification is the same comparison either way. A credential created on this deployment is stored
 // normally and is used as it stands.

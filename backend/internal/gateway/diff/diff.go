@@ -18,7 +18,7 @@
 
 // Package diff computes a resource-level difference between two declarative bundles. Comparison is at
 // the granularity of a whole resource document (added, updated, deleted, unchanged); for updated
-// resources a line-level diff is included so the change can be reviewed before a promote or revert.
+// resources a line-level diff is included so the change can be reviewed before an apply or revert.
 package diff
 
 import (

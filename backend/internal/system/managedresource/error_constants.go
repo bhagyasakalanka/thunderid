@@ -37,7 +37,7 @@ var ErrorResourceManaged = tidcommon.ServiceError{
 	ErrorDescription: tidcommon.I18nMessage{
 		Key: "error.managedresource.resource_is_managed_description",
 		DefaultValue: "The resource was applied from the control plane and can only be changed there. " +
-			"A change made here would be overwritten by the next promotion",
+			"A change made here would be overwritten by the next apply",
 	},
 }
 

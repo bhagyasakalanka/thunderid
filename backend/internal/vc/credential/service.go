@@ -268,7 +268,7 @@ func (s *configurationService) UpdateCredentialConfiguration(
 	ctx context.Context, id string, dto *CredentialConfigurationDTO,
 ) (*CredentialConfigurationDTO, *tidcommon.ServiceError) {
 	// A resource applied from the control plane is owned there. Changing it here would last only
-	// until the next promotion overwrote it, so the change is refused instead.
+	// until the next apply overwrote it, so the change is refused instead.
 	if svcErr := managedresource.Guard(ctx, managedresource.TypeCredentialConfiguration, id); svcErr != nil {
 		return nil, svcErr
 	}

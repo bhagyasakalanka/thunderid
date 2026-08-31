@@ -306,7 +306,7 @@ var identifierLinePattern = regexp.MustCompile(
 // the path an operator chose is kept.
 //
 // Only the resource server the deployment's own default points at is touched. Every other one is
-// configuration an operator authored and is promoted as it stands.
+// configuration an operator authored and is applied as it stands.
 func TemplateDeploymentURL(resources string) string {
 	m := defaultResourceServerPattern.FindStringSubmatch(resources)
 	if m == nil {

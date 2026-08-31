@@ -23,7 +23,7 @@ import (
 )
 
 // withoutExcluded drops the held back resources from a bundle, so an apply pushes the same set the
-// promotion agreed on.
+// operator selected.
 func withoutExcluded(resources []bundle.Resource, excluded []string) []bundle.Resource {
 	if len(excluded) == 0 {
 		return resources

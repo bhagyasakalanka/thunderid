@@ -381,7 +381,7 @@ func (us *entityTypeService) UpdateEntityType(ctx context.Context, category Type
 	schemaID string, request UpdateEntityTypeRequest) (
 	*EntityType, *tidcommon.ServiceError) {
 	// A resource applied from the control plane is owned there. Changing it here would last only
-	// until the next promotion overwrote it, so the change is refused instead.
+	// until the next apply overwrote it, so the change is refused instead.
 	if svcErr := managedresource.Guard(ctx, managedresource.TypeEntityType, schemaID); svcErr != nil {
 		return nil, svcErr
 	}
@@ -478,7 +478,7 @@ func (us *entityTypeService) UpdateEntityType(ctx context.Context, category Type
 func (us *entityTypeService) DeleteEntityType(ctx context.Context, category TypeCategory,
 	schemaID string) *tidcommon.ServiceError {
 	// A resource applied from the control plane is owned there. Changing it here would last only
-	// until the next promotion overwrote it, so the change is refused instead.
+	// until the next apply overwrote it, so the change is refused instead.
 	if svcErr := managedresource.Guard(ctx, managedresource.TypeEntityType, schemaID); svcErr != nil {
 		return svcErr
 	}
