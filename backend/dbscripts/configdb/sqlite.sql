@@ -373,3 +373,18 @@ CREATE TABLE "MANAGED_RESOURCE" (
 );
 -- Every write is checked against this registry, so the lookup has to be cheap.
 CREATE INDEX idx_managed_resource_deployment ON "MANAGED_RESOURCE" (DEPLOYMENT_ID);
+-- hash of it, and ALGORITHM and PARAMETERS carry what verifying a hash needs.
+CREATE TABLE "SECRET" (
+    DEPLOYMENT_ID VARCHAR(255) NOT NULL,
+    ID            VARCHAR(36)  PRIMARY KEY,
+    NAME          VARCHAR(255) NOT NULL,
+    KIND          VARCHAR(10)  NOT NULL CHECK (KIND IN ('hash', 'value')),
+    VALUE         TEXT         NOT NULL,
+    ALGORITHM     VARCHAR(50),
+    PARAMETERS    TEXT,
+    DESCRIPTION   VARCHAR(255),
+    CREATED_AT    TEXT         DEFAULT (datetime('now')),
+    UPDATED_AT    TEXT         DEFAULT (datetime('now')),
+    CONSTRAINT unique_secret_name UNIQUE (DEPLOYMENT_ID, NAME)
+);
+CREATE INDEX idx_secret_deployment ON "SECRET" (DEPLOYMENT_ID);
