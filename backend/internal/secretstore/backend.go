@@ -58,6 +58,10 @@ const (
 	// instance of a deployment, so a credential set through one is usable by all of them, which a file
 	// beside one instance cannot manage. It is what a Data Plane defaults to.
 	ModeDB Mode = "db"
+	// ModeFile keeps secrets in a JSON file beside the server.
+	ModeFile Mode = "file"
+	// ModeKV keeps secrets in an external key vault.
+	ModeKV Mode = "kv"
 	// ModeService reads from the standalone secret provider service, which owns its own storage. No
 	// store is served in this mode, so there is no backend.
 	ModeService Mode = "service"
@@ -68,6 +72,10 @@ type Config struct {
 	// Mode selects the backend. An empty mode disables the store entirely; which mode an unset one
 	// should mean is the server's decision, not this package's, because it differs per plane.
 	Mode Mode
+	// FilePath backs ModeFile.
+	FilePath string
+	// KV backs ModeKV.
+	KV KVConfig
 	// DB backs ModeDB.
 	DB DBConfig
 }
@@ -94,6 +102,13 @@ func NewBackend(cfg Config) (Backend, error) {
 		return nil, nil
 	case ModeDB:
 		return NewDBBackend(cfg.DB.Provider, cfg.DB.Sealer, cfg.DB.DeploymentID)
+	case ModeFile:
+		if strings.TrimSpace(cfg.FilePath) == "" {
+			return nil, fmt.Errorf("secret store mode %q requires file.path", ModeFile)
+		}
+		return NewFileBackend(cfg.FilePath)
+	case ModeKV:
+		return NewKVBackend(cfg.KV)
 	default:
 		return nil, fmt.Errorf("unknown secret store mode %q, expected one of %s",
 			cfg.Mode, strings.Join(modeNames(), ", "))
@@ -102,7 +117,7 @@ func NewBackend(cfg Config) (Backend, error) {
 
 // modeNames lists the configurable modes, for an error that has to say what was expected.
 func modeNames() []string {
-	names := []string{string(ModeDB), string(ModeService)}
+	names := []string{string(ModeDB), string(ModeFile), string(ModeKV), string(ModeService)}
 	sort.Strings(names)
 	return names
 }
