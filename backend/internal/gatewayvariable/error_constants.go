@@ -64,7 +64,7 @@ var (
 		},
 		ErrorDescription: tidcommon.I18nMessage{
 			Key:          "error.gatewayvariableservice.gateway_variable_key_conflict_description",
-			DefaultValue: "An gateway variable with the same key already exists",
+			DefaultValue: "A gateway variable with the same key already exists",
 		},
 	}
 	// ErrorInternalServer is returned when an unexpected server-side error occurs.
