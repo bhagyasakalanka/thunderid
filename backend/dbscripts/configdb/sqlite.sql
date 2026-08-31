@@ -420,3 +420,31 @@ CREATE TABLE "GATEWAY_APPLY" (
         FOREIGN KEY (DEPLOYMENT_ID, GATEWAY_ID) REFERENCES "GATEWAY" (DEPLOYMENT_ID, ID)
         ON DELETE CASCADE
 );
+
+-- Rows are never deleted here. Pruning is a separate concern.
+CREATE TABLE "DATA_PLANE_JOB" (
+    DEPLOYMENT_ID VARCHAR(255) NOT NULL,
+    ID            VARCHAR(64)  NOT NULL,
+    -- The deployment this is for, as "<org>:<env>". DEPLOYMENT_ID above is the organization, so that
+    -- an organization's queue sits in one partition with its gateways.
+    DATA_PLANE_ID VARCHAR(255) NOT NULL,
+    GATEWAY_ID        VARCHAR(64),
+    -- What to do: "import" applies configuration, "secret_put" stores one credential.
+    TYPE          VARCHAR(32)  NOT NULL,
+    -- The request, as JSON. Encrypted when it carries a credential, which is what ENCRYPTED records:
+    -- a secret is held here only until it is delivered, and never in the clear.
+    PAYLOAD       TEXT         NOT NULL,
+    ENCRYPTED     CHAR(1)      DEFAULT '0' NOT NULL,
+    -- pending -> claimed -> done | failed.
+    STATUS        VARCHAR(16)  NOT NULL,
+    -- Which pod is delivering it, for diagnosing a job stuck in claimed.
+    CLAIMED_BY    VARCHAR(255),
+    -- What the Data Plane answered, as JSON, or why it could not be delivered.
+    RESULT        TEXT,
+    ERROR         TEXT,
+    ATTEMPTS      INTEGER      DEFAULT 0 NOT NULL,
+    CREATED_AT    TEXT         DEFAULT (datetime('now')),
+    UPDATED_AT    TEXT         DEFAULT (datetime('now')),
+    COMPLETED_AT  TEXT,
+    PRIMARY KEY (DEPLOYMENT_ID, ID)
+);
