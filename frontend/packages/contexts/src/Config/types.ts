@@ -328,6 +328,16 @@ export interface ProductConfig {
    * and routes are available.
    */
   plane?: Plane;
+
+  /**
+   * Optional environment manager, which provides promotion.
+   *
+   * Promotion is not part of the product: a gateway is a flat resource of the organization here, and
+   * which gateway may be promoted into which comes from the organization's own environment
+   * hierarchy, held by a service outside this one. Naming that service turns the promotion views on;
+   * omitting it leaves them out, because there would be nothing to ask.
+   */
+  env_manager?: EnvManagerConfig;
 }
 
 /**
@@ -368,3 +378,13 @@ declare global {
  * @public
  */
 export type Plane = 'cp' | 'dp' | 'hybrid';
+
+/**
+ * Where the environment manager answers.
+ *
+ * @public
+ */
+export interface EnvManagerConfig {
+  /** Base URL of the environment manager. Promotion is unavailable when this is unset. */
+  public_url?: string;
+}
