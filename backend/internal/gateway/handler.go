@@ -268,6 +268,31 @@ func (s *Server) getVersion(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, version)
 }
 
+// renameVersionRequest carries the new note. Only the note can be changed: what a version captured is
+// what a gateway running it is running.
+type renameVersionRequest struct {
+	Note string `json:"note"`
+}
+
+// renameVersion changes a version's note.
+func (s *Server) renameVersion(w http.ResponseWriter, r *http.Request) {
+	seq, ok := parseSeq(w, r.PathValue("seq"))
+	if !ok {
+		return
+	}
+	var req renameVersionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErrorStatus(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	version, err := s.svc.RenameVersion(r.Context(), seq, req.Note)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, stripVersionPayload(version))
+}
+
 // gatewayHistory lists what a gateway has run, newest first.
 func (s *Server) gatewayHistory(w http.ResponseWriter, r *http.Request) {
 	history, err := s.svc.GatewayHistory(r.Context(), r.PathValue("id"))

@@ -332,6 +332,7 @@ func InitSystemPermissions(handle string) {
 		{"GET /versions", p.Root},
 		{"POST /versions", p.Root},
 		{"GET /versions/**", p.Root},
+		{"PATCH /versions/**", p.Root},
 		{"GET /gateways", p.Root},
 		{"POST /gateways", p.Root},
 		{"GET /gateways/**", p.Root},

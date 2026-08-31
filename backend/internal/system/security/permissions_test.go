@@ -471,6 +471,10 @@ func TestGetRequiredPermissionForAPI(t *testing.T) {
 			name:   "POST a version capture",
 			method: http.MethodPost, path: "/versions", wantPerm: p.Root,
 		},
+		{
+			name:   "PATCH a version to rename it",
+			method: http.MethodPatch, path: "/versions/3", wantPerm: p.Root,
+		},
 
 		// ---- Wrong method does not match mapped path ----
 		{

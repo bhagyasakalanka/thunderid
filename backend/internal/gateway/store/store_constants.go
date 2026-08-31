@@ -71,6 +71,12 @@ var (
 		Query: `SELECT DATA FROM "VERSION" WHERE DEPLOYMENT_ID = $1 AND SEQ = $2`,
 	}
 
+	// queryUpdateVersion rewrites one version document in place, for renaming it.
+	queryUpdateVersion = dbmodel.DBQuery{
+		ID:    "EMQ-ENV-014",
+		Query: `UPDATE "VERSION" SET DATA = $3 WHERE DEPLOYMENT_ID = $1 AND SEQ = $2`,
+	}
+
 	// queryListVersions retrieves the organization's versions, newest first.
 	queryListVersions = dbmodel.DBQuery{
 		ID:    "EMQ-ENV-007",

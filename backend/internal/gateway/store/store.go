@@ -235,6 +235,34 @@ func (s *Store) GetVersion(ctx context.Context, seq int) (model.Version, error) 
 	return decodeVersion(results[0]["data"])
 }
 
+// RenameVersion replaces a version's note and returns the version as it now stands.
+//
+// Only the note changes. What was captured is left exactly as it was, because a gateway running this
+// version is running those resources: rewriting them here would make the record disagree with what is
+// deployed. A gateway's history names the sequence rather than the note, so renaming does not disturb
+// what a gateway can go back to.
+func (s *Store) RenameVersion(ctx context.Context, seq int, note string) (model.Version, error) {
+	version, err := s.GetVersion(ctx, seq)
+	if err != nil {
+		return model.Version{}, err
+	}
+	version.Note = note
+
+	raw, err := json.Marshal(version)
+	if err != nil {
+		return model.Version{}, fmt.Errorf("failed to encode version: %w", err)
+	}
+
+	dbClient, err := s.client()
+	if err != nil {
+		return model.Version{}, err
+	}
+	if _, err := dbClient.ExecuteContext(ctx, queryUpdateVersion, s.deploymentID, seq, string(raw)); err != nil {
+		return model.Version{}, fmt.Errorf("failed to rename version: %w", err)
+	}
+	return version, nil
+}
+
 // ListVersions returns version metadata (payload stripped) newest first.
 func (s *Store) ListVersions(ctx context.Context) ([]model.Version, error) {
 	dbClient, err := s.client()

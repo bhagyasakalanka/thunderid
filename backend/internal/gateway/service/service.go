@@ -66,6 +66,7 @@ type Store interface {
 	// Versions belong to the organization, so none of these names a gateway.
 	AddVersion(ctx context.Context, v model.Version) (model.Version, error)
 	GetVersion(ctx context.Context, seq int) (model.Version, error)
+	RenameVersion(ctx context.Context, seq int, note string) (model.Version, error)
 	ListVersions(ctx context.Context) ([]model.Version, error)
 	LatestSeq(ctx context.Context) (int, error)
 
@@ -508,6 +509,16 @@ func (s *Service) UploadVersion(ctx context.Context, resources string,
 // GetVersion returns a full version.
 func (s *Service) GetVersion(ctx context.Context, seq int) (model.Version, error) {
 	return s.store.GetVersion(ctx, seq)
+}
+
+// RenameVersion changes the note a version carries.
+//
+// A note is how a version is told apart in a list, and the one given at capture time is often written
+// before anyone knows what the version turned out to be. Renaming lets that be corrected without
+// capturing the configuration again, which would produce a different version and leave the original
+// still there under the wrong name.
+func (s *Service) RenameVersion(ctx context.Context, seq int, note string) (model.Version, error) {
+	return s.store.RenameVersion(ctx, seq, strings.TrimSpace(note))
 }
 
 // ListVersions returns the organization's version metadata, newest first.
