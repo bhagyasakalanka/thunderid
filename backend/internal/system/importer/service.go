@@ -323,7 +323,11 @@ func (s *importService) ImportResources(
 
 	var docs []parsedDocument
 	if request.Content != "" {
-		resolvedContent, err := resolveTemplate(request.Content, request.Variables)
+		// Placeholders the caller did not supply are filled from this server's own secret store, so a
+		// credential can stay on this side rather than traveling with the configuration.
+		variables := fillSecretPlaceholders(ctx, request.Content, request.Variables)
+
+		resolvedContent, err := resolveTemplate(request.Content, variables)
 		if err != nil {
 			log.GetLogger().Warn(ctx, "Import template resolution failed", log.String("error", err.Error()))
 			return nil, tidcommon.CustomServiceError(ErrorTemplateResolutionFailed,
