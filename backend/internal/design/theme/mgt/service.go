@@ -15,6 +15,7 @@ import (
 
 	serverconst "github.com/thunder-id/thunderid/internal/system/constants"
 	"github.com/thunder-id/thunderid/internal/system/log"
+	"github.com/thunder-id/thunderid/internal/system/managedresource"
 	"github.com/thunder-id/thunderid/internal/system/resourcedependency"
 	"github.com/thunder-id/thunderid/internal/system/utils"
 )
@@ -170,6 +171,11 @@ func (ts *themeMgtService) GetTheme(ctx context.Context, id string) (*Theme, *ti
 // UpdateTheme updates an existing theme configuration.
 func (ts *themeMgtService) UpdateTheme(
 	ctx context.Context, id string, theme UpdateThemeRequest) (*Theme, *tidcommon.ServiceError) {
+	// A resource applied from the control plane is owned there. Changing it here would last only
+	// until the next apply overwrote it, so the change is refused instead.
+	if svcErr := managedresource.Guard(ctx, managedresource.TypeTheme, id); svcErr != nil {
+		return nil, svcErr
+	}
 	ts.logger.Debug(ctx, "Updating theme", log.String("id", id))
 
 	if id == "" {
@@ -223,6 +229,11 @@ func (ts *themeMgtService) UpdateTheme(
 
 // DeleteTheme deletes a theme configuration.
 func (ts *themeMgtService) DeleteTheme(ctx context.Context, id string) *tidcommon.ServiceError {
+	// A resource applied from the control plane is owned there. Changing it here would last only
+	// until the next apply overwrote it, so the change is refused instead.
+	if svcErr := managedresource.Guard(ctx, managedresource.TypeTheme, id); svcErr != nil {
+		return svcErr
+	}
 	ts.logger.Debug(ctx, "Deleting theme", log.String("id", id))
 
 	if id == "" {
