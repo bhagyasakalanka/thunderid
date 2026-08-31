@@ -72,6 +72,7 @@ const ApplicationEditPage = lazy(() =>
 );
 const PromotionsListPage = lazy(() => import('./features/promotions/pages/PromotionsListPage'));
 const GatewayDetailPage = lazy(() => import('./features/promotions/pages/GatewayDetailPage'));
+const GatewaySecretsPage = lazy(() => import('./features/promotions/pages/GatewaySecretsPage'));
 const GatewayVariablesListPage = lazy(() => import('./features/gateway-variables/pages/GatewayVariablesListPage'));
 const GatewayVariableEditPage = lazy(() => import('./features/gateway-variables/pages/GatewayVariableEditPage'));
 const CreateGatewayVariablePage = lazy(() => import('./features/gateway-variables/pages/CreateGatewayVariablePage'));
@@ -208,6 +209,7 @@ export default function App(): JSX.Element {
                 <Route path={ROUTE_SEGMENTS.applications} element={<ApplicationsListPage />} />
                 <Route path="promotions" element={<PromotionsListPage />} />
                 <Route path="promotions/:gatewayId" element={<GatewayDetailPage />} />
+                <Route path="promotions/:gatewayId/secrets" element={<GatewaySecretsPage />} />
                 {/* A variable belongs to a gateway, so it is reached through one. */}
                 <Route path="promotions/:gatewayId/variables" element={<GatewayVariablesListPage />} />
                 <Route
