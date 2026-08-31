@@ -320,6 +320,14 @@ export interface ProductConfig {
 
   /** Optional SDK provider overrides. Values here take precedence over computed defaults. */
   sdk?: SdkConfig;
+
+  /**
+   * Deployment plane this console instance serves. "cp" is the Control Plane authoring console
+   * (create/edit declarative configuration, no runtime views); "dp" is the Data Plane runtime
+   * console; "hybrid" (the default when omitted) shows everything. Drives which navigation entries
+   * and routes are available.
+   */
+  plane?: Plane;
 }
 
 /**
@@ -353,3 +361,10 @@ declare global {
     __THUNDERID_RUNTIME_CONFIG__?: ProductConfig;
   }
 }
+
+/**
+ * Deployment plane a console instance serves.
+ *
+ * @public
+ */
+export type Plane = 'cp' | 'dp' | 'hybrid';
