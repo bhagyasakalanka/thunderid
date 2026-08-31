@@ -391,6 +391,20 @@ CREATE TABLE "MANAGED_RESOURCE" (
 -- Every write is checked against this registry, so the lookup has to be cheap.
 CREATE INDEX idx_managed_resource_deployment ON "MANAGED_RESOURCE" (DEPLOYMENT_ID);
 
+-- Registry of the workspaces provisioned on this platform. Owned by the deployment the platform
+-- itself runs as (DEPLOYMENT_ID); TENANT_ID is the provisioned workspace's own deployment id.
+CREATE TABLE "TENANT" (
+    DEPLOYMENT_ID VARCHAR(255) NOT NULL,
+    ID            VARCHAR(36)  NOT NULL,
+    TENANT_ID     VARCHAR(255) NOT NULL,
+    NAME          VARCHAR(255),
+    CREATED_AT    TIMESTAMPTZ  DEFAULT NOW(),
+    UPDATED_AT    TIMESTAMPTZ  DEFAULT NOW(),
+    PRIMARY KEY (DEPLOYMENT_ID, ID),
+    CONSTRAINT unique_tenant_id UNIQUE (DEPLOYMENT_ID, TENANT_ID)
+);
+CREATE INDEX idx_tenant_deployment ON "TENANT" (DEPLOYMENT_ID);
+
 -- The credential a data plane presents when it dials this control plane's channel.
 --
 -- Keyed by DATA_PLANE_ID alone, not by (DEPLOYMENT_ID, DATA_PLANE_ID) like the tenant-scoped tables:

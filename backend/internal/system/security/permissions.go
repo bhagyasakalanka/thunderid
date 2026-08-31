@@ -66,6 +66,8 @@ const (
 	ResourceTypeAgentType ResourceType = "agenttype"
 	// ResourceTypeGatewayVariable identifies a non-secret gateway variable resource.
 	ResourceTypeGatewayVariable ResourceType = "gatewayvariable"
+	// ResourceTypeTenant identifies a tenant resource.
+	ResourceTypeTenant ResourceType = "tenant"
 )
 
 // ---- Actions ----
@@ -141,6 +143,13 @@ const (
 	ActionDeleteGatewayVariable Action = "gatewayvariable:delete"
 	// ActionListGatewayVariables lists gateway variables.
 	ActionListGatewayVariables Action = "gatewayvariable:list"
+
+	// ActionCreateTenant provisions the caller's own workspace.
+	ActionCreateTenant Action = "tenant:create"
+	// ActionReadTenant reads the caller's own workspace.
+	ActionReadTenant Action = "tenant:read"
+	// ActionDeleteTenant deprovisions a workspace.
+	ActionDeleteTenant Action = "tenant:delete"
 )
 
 // ---- Permissions ----
@@ -162,6 +171,8 @@ type SystemPermissions struct {
 	// GatewayVar and GatewayVarView guard the per-gateway variables an apply resolves from.
 	GatewayVar     string
 	GatewayVarView string
+	Tenant         string
+	TenantView     string
 }
 
 // sysPerms holds the active system permissions, initialized by InitSystemPermissions.
@@ -197,6 +208,8 @@ func InitSystemPermissions(handle string) {
 		AgentTypeView:  buildPermission(handle, "system", "agenttype", "view"),
 		GatewayVar:     buildPermission(handle, "system", "gatewayvariable"),
 		GatewayVarView: buildPermission(handle, "system", "gatewayvariable", "view"),
+		Tenant:         buildPermission(handle, "system", "tenant"),
+		TenantView:     buildPermission(handle, "system", "tenant", "view"),
 	}
 	sysPerms = p
 
@@ -243,6 +256,11 @@ func InitSystemPermissions(handle string) {
 		ActionUpdateGatewayVariable: p.GatewayVar,
 		ActionDeleteGatewayVariable: p.GatewayVar,
 		ActionListGatewayVariables:  p.GatewayVarView,
+
+		// Tenant actions. A caller acts on its own workspace, named by its token.
+		ActionCreateTenant: p.Tenant,
+		ActionReadTenant:   p.TenantView,
+		ActionDeleteTenant: p.Tenant,
 	}
 
 	apiPermissionEntries = []apiPermissionEntry{
@@ -321,6 +339,12 @@ func InitSystemPermissions(handle string) {
 		{"PATCH /gateways/**", p.Root},
 		{"PUT /gateways/**", p.Root},
 		{"DELETE /gateways/**", p.Root},
+
+		// Workspace self-management APIs. These act on the caller's own workspace, named by the
+		// deployment claim in its token, so the scope is all there is to check.
+		{"GET /tenant", p.TenantView},
+		{"POST /tenant", p.Tenant},
+		{"DELETE /tenant", p.Tenant},
 
 		// Import APIs.
 		{"POST /import", p.Root},
