@@ -72,6 +72,9 @@ const ApplicationEditPage = lazy(() =>
 );
 const PromotionsListPage = lazy(() => import('./features/promotions/pages/PromotionsListPage'));
 const GatewayDetailPage = lazy(() => import('./features/promotions/pages/GatewayDetailPage'));
+const GatewayVariablesListPage = lazy(() => import('./features/gateway-variables/pages/GatewayVariablesListPage'));
+const GatewayVariableEditPage = lazy(() => import('./features/gateway-variables/pages/GatewayVariableEditPage'));
+const CreateGatewayVariablePage = lazy(() => import('./features/gateway-variables/pages/CreateGatewayVariablePage'));
 const ApplicationsListPage = lazy(() => import('./features/applications/pages/ApplicationsListPage'));
 const ApplicationTemplateSelectPage = lazy(() => import('./features/applications/pages/ApplicationTemplateSelectPage'));
 const DesignPage = lazy(() => import('@thunderid/configure-design').then((m) => ({default: m.DesignPage})));
@@ -205,6 +208,12 @@ export default function App(): JSX.Element {
                 <Route path={ROUTE_SEGMENTS.applications} element={<ApplicationsListPage />} />
                 <Route path="promotions" element={<PromotionsListPage />} />
                 <Route path="promotions/:gatewayId" element={<GatewayDetailPage />} />
+                {/* A variable belongs to a gateway, so it is reached through one. */}
+                <Route path="promotions/:gatewayId/variables" element={<GatewayVariablesListPage />} />
+                <Route
+                  path="promotions/:gatewayId/variables/:gatewayVariableId"
+                  element={<GatewayVariableEditPage />}
+                />
                 <Route path={`${ROUTE_SEGMENTS.applications}/:applicationId`} element={<ApplicationEditPage />} />
                 <Route path={ROUTE_SEGMENTS.agents} element={<AgentsListPage />} />
                 <Route path={`${ROUTE_SEGMENTS.agents}/:agentId`} element={<AgentEditPage />} />
@@ -518,6 +527,16 @@ export default function App(): JSX.Element {
                 }
               >
                 <Route index element={<TranslationCreatePage />} />
+              </Route>
+              <Route
+                path="/promotions/:gatewayId/variables/create"
+                element={
+                  <ProtectedRoute>
+                    <FullScreenLayout />
+                  </ProtectedRoute>
+                }
+              >
+                <Route index element={<CreateGatewayVariablePage />} />
               </Route>
               <Route
                 path={RouteConfig.translations.list()}
