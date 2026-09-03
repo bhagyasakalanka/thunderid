@@ -86,6 +86,7 @@ import (
 	"github.com/thunder-id/thunderid/internal/system/kmprovider"
 	"github.com/thunder-id/thunderid/internal/system/kmprovider/defaultkm/pki"
 	"github.com/thunder-id/thunderid/internal/system/log"
+	"github.com/thunder-id/thunderid/internal/system/managedresource"
 	"github.com/thunder-id/thunderid/internal/system/mcp"
 	"github.com/thunder-id/thunderid/internal/system/observability"
 	"github.com/thunder-id/thunderid/internal/system/resourcedependency"
@@ -95,6 +96,7 @@ import (
 	"github.com/thunder-id/thunderid/internal/user"
 	"github.com/thunder-id/thunderid/internal/vc/credential"
 	"github.com/thunder-id/thunderid/internal/vc/presentation"
+	engineconfig "github.com/thunder-id/thunderid/pkg/thunderidengine/config"
 	"github.com/thunder-id/thunderid/pkg/thunderidengine/providers"
 )
 
@@ -125,6 +127,11 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 	cmodels.SetConfigCryptoProvider(configCryptoSvc)
 
 	runtime := config.GetServerRuntime()
+	// Resources applied from a control plane are recorded as owned by it, and this deployment's
+	// management APIs then refuse to change them. Installed before any consumer package so the first
+	// request is already guarded.
+	initManagedResources(ctx, logger, mux, runtime.Config.Server)
+
 	joseCfg := joseconfig.Config{
 		Issuer:         runtime.Config.JWT.Issuer,
 		ValidityPeriod: runtime.Config.JWT.ValidityPeriod,
@@ -687,4 +694,17 @@ func buildHashConfig() (cryptolib.HashConfig, error) {
 	default:
 		return cryptolib.HashConfig{}, fmt.Errorf("unrecognized password hashing algorithm %q", cfg.Algorithm)
 	}
+}
+
+// initManagedResources installs the registry that records which resources belong to a control plane.
+// It stays inert unless this deployment is configured as control plane managed, so a standalone
+// server behaves exactly as before.
+func initManagedResources(ctx context.Context, logger *log.Logger, mux *http.ServeMux,
+	cfg engineconfig.ServerConfig) {
+	registry := managedresource.New(cfg.ControlPlaneManaged, cfg.Identifier)
+	managedresource.SetDefault(registry)
+	if registry.Enabled() {
+		logger.Info(ctx, "Resources applied from the control plane are read only on this deployment")
+	}
+	managedresource.RegisterRoutes(mux)
 }

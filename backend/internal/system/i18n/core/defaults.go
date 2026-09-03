@@ -847,6 +847,8 @@ var defaultMessages = map[string]string{
 	"error.magiclinkservice.resolving_user_description": "An error occurred while resolving the user for the recipient",
 	"error.magiclinkservice.token_generation_failed": "Token generation failed",
 	"error.magiclinkservice.token_generation_failed_description": "Failed to generate magic link token",
+	"error.managedresource.resource_is_managed": "Resource is managed by the control plane",
+	"error.managedresource.resource_is_managed_description": "The resource was applied from the control plane and can only be changed there. A change made here would be overwritten by the next promotion",
 	"error.notificationclient.unsupported_notification_provider": "Unsupported notification provider",
 	"error.notificationclient.unsupported_notification_provider.description": "The requested notification provider is not supported.",
 	"error.notificationservice.duplicate_sender_name": "Duplicate sender name",
