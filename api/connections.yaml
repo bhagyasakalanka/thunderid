@@ -938,6 +938,12 @@ components:
             type: string
             enum: [identity-provider, sms-provider]
           example: ["identity-provider"]
+        isReadOnly:
+          type: boolean
+          description: >-
+            True when this connection is owned by a control plane and applied to this
+            deployment. It can only be changed where it is authored, so an update or a
+            delete issued here is refused. Absent when the connection was created here.
 
     ConnectionInstanceSummary:
       type: object
@@ -946,6 +952,12 @@ components:
         id: { type: string, format: uuid }
         name: { type: string, example: "My Google" }
         description: { type: string }
+        isReadOnly:
+          type: boolean
+          description: >-
+            True when this connection is owned by a control plane and applied to this
+            deployment. It can only be changed where it is authored, so an update or a
+            delete issued here is refused. Absent when the connection was created here.
 
     ConnectionUsage:
       type: object

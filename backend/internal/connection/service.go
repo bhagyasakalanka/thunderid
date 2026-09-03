@@ -12,6 +12,8 @@ import (
 	"github.com/thunder-id/thunderid/internal/notification"
 	ncommon "github.com/thunder-id/thunderid/internal/notification/common"
 	serverconst "github.com/thunder-id/thunderid/internal/system/constants"
+	"github.com/thunder-id/thunderid/internal/system/log"
+	"github.com/thunder-id/thunderid/internal/system/managedresource"
 	"github.com/thunder-id/thunderid/internal/system/resourcedependency"
 	sysutils "github.com/thunder-id/thunderid/internal/system/utils"
 	tidcommon "github.com/thunder-id/thunderid/pkg/thunderidengine/common"
@@ -139,6 +141,8 @@ func (s *service) listInstances(ctx context.Context, category connectionCategory
 			})
 		}
 	}
+
+	markManagedConnections(ctx, instances)
 
 	sort.SliceStable(instances, func(i, j int) bool {
 		if instances[i].Type != instances[j].Type {
@@ -288,4 +292,43 @@ func (s *service) usagesSMSByProvider(ctx context.Context, provider ncommon.Mess
 		return nil, svcErr
 	}
 	return s.notificationService.GetSenderUsages(ctx, id)
+}
+
+// managedConnectionIDs reports the connections the control plane owns. A client renders its edit and
+// delete controls from this, so without it those controls are offered for a change the write path
+// then refuses. A lookup failure leaves them unmarked rather than failing the listing, because the
+// write path refuses the change regardless.
+func managedConnectionIDs(ctx context.Context) map[string]bool {
+	managed, err := managedresource.Default().ManagedIDs(ctx, managedresource.TypeConnection)
+	if err != nil {
+		log.GetLogger().Warn(ctx, "Failed to read which resources the control plane owns", log.Error(err))
+		return nil
+	}
+	return managed
+}
+
+// markManagedConnections reports the control plane owned entries of the flat listing as read only.
+func markManagedConnections(ctx context.Context, instances []connectionInstance) {
+	managed := managedConnectionIDs(ctx)
+	if len(managed) == 0 {
+		return
+	}
+	for i := range instances {
+		if managed[instances[i].ID] {
+			instances[i].IsReadOnly = true
+		}
+	}
+}
+
+// markManagedSummaries reports the control plane owned entries of a per-type listing as read only.
+func markManagedSummaries(ctx context.Context, summaries []connectionInstanceSummary) {
+	managed := managedConnectionIDs(ctx)
+	if len(managed) == 0 {
+		return
+	}
+	for i := range summaries {
+		if managed[summaries[i].ID] {
+			summaries[i].IsReadOnly = true
+		}
+	}
 }
