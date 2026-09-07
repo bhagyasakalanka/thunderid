@@ -420,6 +420,7 @@ func CopyDeclarativeResources(zipFilePattern string) error {
 		"connections",
 		"credential_configurations",
 		"flows",
+		"gateways",
 		"groups",
 		"layouts",
 		"organization_units",
