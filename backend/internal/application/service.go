@@ -26,6 +26,7 @@ import (
 	"github.com/thunder-id/thunderid/internal/system/cryptolib"
 	i18nmgt "github.com/thunder-id/thunderid/internal/system/i18n/mgt"
 	"github.com/thunder-id/thunderid/internal/system/log"
+	"github.com/thunder-id/thunderid/internal/system/parameterise"
 	"github.com/thunder-id/thunderid/internal/system/resourcedependency"
 	sysutils "github.com/thunder-id/thunderid/internal/system/utils"
 	tidcommon "github.com/thunder-id/thunderid/pkg/thunderidengine/common"
@@ -233,6 +234,13 @@ func (as *applicationService) ValidateApplication(ctx context.Context, app *mode
 	}
 	if nameExists {
 		return nil, nil, &ErrorApplicationAlreadyExistsWithName
+	}
+
+	// Before anything is processed or validated: on the parameterised contract the deployment-specific
+	// fields are refused and replaced with the placeholders that stand for them, so what follows
+	// validates the payload that will actually be stored.
+	if svcErr := parameteriseInboundAuth(ctx, app); svcErr != nil {
+		return nil, nil, svcErr
 	}
 
 	inboundAuthConfig, svcErr := as.processInboundAuthConfig(ctx, app, nil)
@@ -1389,42 +1397,58 @@ func (as *applicationService) validateApplicationForUpdate(
 }
 
 // validateApplicationFields validates application fields that are common to both create and update operations.
-func (as *applicationService) validateApplicationFields(
+// resolveOrganizationUnit fills the application's organization unit id from its handle and confirms
+// the unit exists.
+//
+// While a control plane authors a parameterised payload the unit may be named by a placeholder.
+// There is nothing to resolve or look up in that case, because the handle stands for a unit on
+// whichever gateway the payload is applied to. The gateway resolves it at import, against its own
+// units, and validates it there.
+func (as *applicationService) resolveOrganizationUnit(
 	ctx context.Context, app *model.ApplicationDTO) *tidcommon.ServiceError {
-	// Resolve ou_handle to an ID when the direct ID is absent.
-	// If both are provided, ou_id wins and a warning is logged.
 	if app.OUID != "" && app.OUHandle != "" {
 		as.logger.Warn(ctx, "Both ou_id and ou_handle provided for application; ou_handle ignored",
 			log.String("appID", app.ID), log.String("name", app.Name))
-	} else if app.OUID == "" && app.OUHandle != "" {
+	} else if app.OUID == "" && app.OUHandle != "" && !parameterise.Skip(ctx, app.OUHandle) {
 		ou, svcErr := as.ouService.GetOrganizationUnitByPath(ctx, app.OUHandle)
 		if svcErr != nil {
 			return &ErrorInvalidRequestFormat
 		}
 		app.OUID = ou.ID
 	}
-	// Resolve flow handles to IDs when the direct IDs are absent.
-	if err := as.inboundClientService.ResolveInboundAuthProfileHandles(ctx, &app.InboundAuthProfile); err != nil {
-		return &ErrorInvalidRequestFormat
+
+	if parameterise.Skip(ctx, app.OUHandle) {
+		return nil
 	}
-	// Validate organization unit ID.
 	if app.OUID == "" {
 		return &ErrorInvalidRequestFormat
 	}
 	if exists, err := as.ouService.IsOrganizationUnitExists(ctx, app.OUID); err != nil || !exists {
 		return &ErrorInvalidRequestFormat
 	}
+	return nil
+}
 
-	if app.URL != "" && !sysutils.IsValidURI(app.URL) {
+func (as *applicationService) validateApplicationFields(
+	ctx context.Context, app *model.ApplicationDTO) *tidcommon.ServiceError {
+	if svcErr := as.resolveOrganizationUnit(ctx, app); svcErr != nil {
+		return svcErr
+	}
+	// Resolve flow handles to IDs when the direct IDs are absent.
+	if err := as.inboundClientService.ResolveInboundAuthProfileHandles(ctx, &app.InboundAuthProfile); err != nil {
+		return &ErrorInvalidRequestFormat
+	}
+
+	if app.URL != "" && !parameterise.Skip(ctx, app.URL) && !sysutils.IsValidURI(app.URL) {
 		return &ErrorInvalidApplicationURL
 	}
-	if app.LogoURL != "" && !sysutils.IsValidLogoURI(app.LogoURL) {
+	if app.LogoURL != "" && !parameterise.Skip(ctx, app.LogoURL) && !sysutils.IsValidLogoURI(app.LogoURL) {
 		return &ErrorInvalidLogoURL
 	}
-	if app.TosURI != "" && !sysutils.IsValidURI(app.TosURI) {
+	if app.TosURI != "" && !parameterise.Skip(ctx, app.TosURI) && !sysutils.IsValidURI(app.TosURI) {
 		return &ErrorInvalidTosURI
 	}
-	if app.PolicyURI != "" && !sysutils.IsValidURI(app.PolicyURI) {
+	if app.PolicyURI != "" && !parameterise.Skip(ctx, app.PolicyURI) && !sysutils.IsValidURI(app.PolicyURI) {
 		return &ErrorInvalidPolicyURI
 	}
 	// Reject an unrecognized application type. Requiring a type (create) and enforcing

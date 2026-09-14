@@ -31,6 +31,7 @@ import (
 	syshttp "github.com/thunder-id/thunderid/internal/system/http"
 	"github.com/thunder-id/thunderid/internal/system/jose/jwe"
 	"github.com/thunder-id/thunderid/internal/system/log"
+	"github.com/thunder-id/thunderid/internal/system/parameterise"
 	"github.com/thunder-id/thunderid/internal/system/security"
 	sysutils "github.com/thunder-id/thunderid/internal/system/utils"
 )
@@ -817,7 +818,7 @@ func validateOAuthProfile(ctx context.Context, p *providers.OAuthProfile, hasCli
 	if p == nil {
 		return nil
 	}
-	if err := validateRedirectURIs(p); err != nil {
+	if err := validateRedirectURIs(ctx, p); err != nil {
 		return err
 	}
 	if err := validateGrantAndResponseTypes(p); err != nil {
@@ -1002,8 +1003,14 @@ func validateIDTokenConfig(ctx context.Context, p *providers.OAuthProfile,
 }
 
 // validateRedirectURIs validates redirect URIs and authorization_code grant requirements.
-func validateRedirectURIs(p *providers.OAuthProfile) error {
+//
+// While a control plane authors a parameterised payload a redirect URI may be a placeholder, which
+// cannot be parsed as a URL. The gateway substitutes it and validates the real value at import.
+func validateRedirectURIs(ctx context.Context, p *providers.OAuthProfile) error {
 	for _, redirectURI := range p.RedirectURIs {
+		if parameterise.Skip(ctx, redirectURI) {
+			continue
+		}
 		// Reject wildcards in the scheme before URL parsing — url.Parse may misinterpret them.
 		if idx := strings.Index(redirectURI, "://"); idx != -1 {
 			if strings.ContainsRune(redirectURI[:idx], '*') {

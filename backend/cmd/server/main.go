@@ -250,6 +250,8 @@ func createHTTPServer(ctx context.Context, logger *log.Logger, cfg *config.Confi
 	// Outside the security layer, so that every request carries the deployment id it acts for by the
 	// time any store is reached.
 	handler = middleware.DeploymentIDMiddleware(handler)
+	// Which of the two API contracts this plane serves. Set here, once, rather than in each handler.
+	handler = middleware.AuthoringMiddleware(handler)
 	handler = middleware.CorrelationIDMiddleware(handler)
 
 	// Build the server address using hostname and port from the configurations.

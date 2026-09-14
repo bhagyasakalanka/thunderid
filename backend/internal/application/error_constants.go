@@ -534,6 +534,39 @@ var (
 			DefaultValue: "The application type is set at creation and cannot be modified.",
 		},
 	}
+	// ErrorRedirectURIsNotAcceptedWhenParameterised is returned when a parameterised payload carries
+	// a redirect URI. A redirect URI belongs to the deployment the application is applied to, so it
+	// is supplied there rather than authored here.
+	ErrorRedirectURIsNotAcceptedWhenParameterised = tidcommon.ServiceError{
+		Type: tidcommon.ClientErrorType,
+		Code: "APP-1060",
+		Error: tidcommon.I18nMessage{
+			Key:          "error.applicationservice.redirect_uris_not_accepted_when_parameterised",
+			DefaultValue: "Redirect URIs are not accepted here",
+		},
+		ErrorDescription: tidcommon.I18nMessage{
+			Key: "error.applicationservice.redirect_uris_not_accepted_when_parameterised_description",
+			DefaultValue: "A redirect URI belongs to the gateway this application is applied to, " +
+				"not to the application itself. Leave it out: a placeholder is stored in its place, " +
+				"and each gateway resolves it from the value it holds.",
+		},
+	}
+	// ErrorClientSecretNotAcceptedWhenParameterised is returned when a parameterised payload carries
+	// a client secret. A credential belongs to the deployment that issued it.
+	ErrorClientSecretNotAcceptedWhenParameterised = tidcommon.ServiceError{
+		Type: tidcommon.ClientErrorType,
+		Code: "APP-1061",
+		Error: tidcommon.I18nMessage{
+			Key:          "error.applicationservice.client_secret_not_accepted_when_parameterised",
+			DefaultValue: "A client secret is not accepted here",
+		},
+		ErrorDescription: tidcommon.I18nMessage{
+			Key: "error.applicationservice.client_secret_not_accepted_when_parameterised_description",
+			DefaultValue: "A client secret belongs to the gateway this application is applied to. " +
+				"Leave it out: a reference is stored in its place, and the credential is generated " +
+				"on, or supplied to, each gateway.",
+		},
+	}
 	// ErrorApplicationTypeRequired is returned when an application is created without a type.
 	ErrorApplicationTypeRequired = tidcommon.ServiceError{
 		Type: tidcommon.ClientErrorType,

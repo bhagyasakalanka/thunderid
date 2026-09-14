@@ -122,11 +122,19 @@ type RedisConfig struct {
 
 // ServerConfig holds the server configuration details.
 type ServerConfig struct {
-	Hostname       string         `yaml:"hostname"   json:"hostname"`
-	Port           int            `yaml:"port"       json:"port"`
-	HTTPOnly       bool           `yaml:"http_only"  json:"http_only"`
-	PublicURL      string         `yaml:"public_url" json:"public_url"`
-	Identifier     string         `yaml:"identifier" json:"identifier"`
+	Hostname   string `yaml:"hostname"   json:"hostname"`
+	Port       int    `yaml:"port"       json:"port"`
+	HTTPOnly   bool   `yaml:"http_only"  json:"http_only"`
+	PublicURL  string `yaml:"public_url" json:"public_url"`
+	Identifier string `yaml:"identifier" json:"identifier"`
+	// Authoring marks a plane that designs configuration applied elsewhere rather than running it.
+	//
+	// It selects which of the two API contracts this server serves. An authoring plane does not
+	// accept the fields that belong to the deployment a resource ends up on, such as an
+	// application's redirect URIs or its client secret; it stores the placeholders that stand for
+	// them, and each gateway resolves those from what it holds. A plane with this unset serves the
+	// full contract, taking and storing those values as given, which is what a gateway does.
+	Authoring      bool           `yaml:"authoring"  json:"authoring"`
 	SecurityConfig SecurityConfig `yaml:"security"   json:"security"`
 }
 

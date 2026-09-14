@@ -27,6 +27,7 @@ import (
 	joseconfig "github.com/thunder-id/thunderid/internal/system/jose/config"
 	"github.com/thunder-id/thunderid/internal/system/jose/jwe"
 	"github.com/thunder-id/thunderid/internal/system/log"
+	"github.com/thunder-id/thunderid/internal/system/parameterise"
 	"github.com/thunder-id/thunderid/internal/system/resourcedependency"
 	"github.com/thunder-id/thunderid/internal/system/transaction"
 	"github.com/thunder-id/thunderid/tests/mocks/certmock"
@@ -993,7 +994,7 @@ func (suite *InboundClientServiceTestSuite) TestValidateRedirectURIs_WildcardInH
 		RedirectURIs: []string{"https://*.example.com/cb"},
 		GrantTypes:   []string{"authorization_code"},
 	}
-	err := validateRedirectURIs(p)
+	err := validateRedirectURIs(context.Background(), p)
 	assert.ErrorIs(suite.T(), err, ErrOAuthInvalidRedirectURI)
 }
 
@@ -1002,7 +1003,7 @@ func (suite *InboundClientServiceTestSuite) TestValidateRedirectURIs_WildcardInQ
 		RedirectURIs: []string{"https://app.example.com/cb?foo=*"},
 		GrantTypes:   []string{"authorization_code"},
 	}
-	err := validateRedirectURIs(p)
+	err := validateRedirectURIs(context.Background(), p)
 	assert.ErrorIs(suite.T(), err, ErrOAuthInvalidRedirectURI)
 }
 
@@ -1828,7 +1829,7 @@ func (suite *InboundClientServiceTestSuite) TestValidateRedirectURIs_SchemeWildc
 		RedirectURIs: []string{"htt*://app/cb"},
 		GrantTypes:   []string{"authorization_code"},
 	}
-	assert.ErrorIs(suite.T(), validateRedirectURIs(p), ErrOAuthInvalidRedirectURI)
+	assert.ErrorIs(suite.T(), validateRedirectURIs(context.Background(), p), ErrOAuthInvalidRedirectURI)
 }
 
 func (suite *InboundClientServiceTestSuite) TestValidateRedirectURIs_FragmentRejected() {
@@ -1836,7 +1837,7 @@ func (suite *InboundClientServiceTestSuite) TestValidateRedirectURIs_FragmentRej
 		RedirectURIs: []string{"https://app/cb#frag"},
 		GrantTypes:   []string{"authorization_code"},
 	}
-	assert.ErrorIs(suite.T(), validateRedirectURIs(p), ErrOAuthRedirectURIFragmentNotAllowed)
+	assert.ErrorIs(suite.T(), validateRedirectURIs(context.Background(), p), ErrOAuthRedirectURIFragmentNotAllowed)
 }
 
 func (suite *InboundClientServiceTestSuite) TestValidateRedirectURIs_HostWildcardRejected() {
@@ -1844,7 +1845,7 @@ func (suite *InboundClientServiceTestSuite) TestValidateRedirectURIs_HostWildcar
 		RedirectURIs: []string{"https://*.app.com/cb"},
 		GrantTypes:   []string{"authorization_code"},
 	}
-	assert.ErrorIs(suite.T(), validateRedirectURIs(p), ErrOAuthInvalidRedirectURI)
+	assert.ErrorIs(suite.T(), validateRedirectURIs(context.Background(), p), ErrOAuthInvalidRedirectURI)
 }
 
 func (suite *InboundClientServiceTestSuite) TestValidateRedirectURIs_QueryWildcardRejected() {
@@ -1852,7 +1853,7 @@ func (suite *InboundClientServiceTestSuite) TestValidateRedirectURIs_QueryWildca
 		RedirectURIs: []string{"https://app/cb?x=*"},
 		GrantTypes:   []string{"authorization_code"},
 	}
-	assert.ErrorIs(suite.T(), validateRedirectURIs(p), ErrOAuthInvalidRedirectURI)
+	assert.ErrorIs(suite.T(), validateRedirectURIs(context.Background(), p), ErrOAuthInvalidRedirectURI)
 }
 
 // ----- Host wildcard registration with allow_wildcard_redirect_uri = true -----
@@ -1871,7 +1872,7 @@ func (suite *InboundClientServiceTestSuite) TestValidateRedirectURIs_HostWildcar
 		GrantTypes:    []string{"authorization_code"},
 		ResponseTypes: []string{"code"},
 	}
-	assert.NoError(suite.T(), validateRedirectURIs(p))
+	assert.NoError(suite.T(), validateRedirectURIs(context.Background(), p))
 }
 
 func (suite *InboundClientServiceTestSuite) TestValidateRedirectURIs_HostWildcardSimplePattern_Accepted() {
@@ -1881,7 +1882,7 @@ func (suite *InboundClientServiceTestSuite) TestValidateRedirectURIs_HostWildcar
 		GrantTypes:    []string{"authorization_code"},
 		ResponseTypes: []string{"code"},
 	}
-	assert.NoError(suite.T(), validateRedirectURIs(p))
+	assert.NoError(suite.T(), validateRedirectURIs(context.Background(), p))
 }
 
 func (suite *InboundClientServiceTestSuite) TestValidateRedirectURIs_HostWildcardWholeLabel_Rejected() {
@@ -1890,7 +1891,7 @@ func (suite *InboundClientServiceTestSuite) TestValidateRedirectURIs_HostWildcar
 		RedirectURIs: []string{"https://*.example.com/cb"},
 		GrantTypes:   []string{"authorization_code"},
 	}
-	assert.ErrorIs(suite.T(), validateRedirectURIs(p), ErrOAuthInvalidRedirectURI)
+	assert.ErrorIs(suite.T(), validateRedirectURIs(context.Background(), p), ErrOAuthInvalidRedirectURI)
 }
 
 func (suite *InboundClientServiceTestSuite) TestValidateRedirectURIs_HostWildcardInPort_Rejected() {
@@ -1899,7 +1900,7 @@ func (suite *InboundClientServiceTestSuite) TestValidateRedirectURIs_HostWildcar
 		RedirectURIs: []string{"https://app.example.com:80*0/cb"},
 		GrantTypes:   []string{"authorization_code"},
 	}
-	assert.ErrorIs(suite.T(), validateRedirectURIs(p), ErrOAuthInvalidRedirectURI)
+	assert.ErrorIs(suite.T(), validateRedirectURIs(context.Background(), p), ErrOAuthInvalidRedirectURI)
 }
 
 func (suite *InboundClientServiceTestSuite) TestValidateRedirectURIs_HostWildcardWithPort_Accepted() {
@@ -1909,7 +1910,7 @@ func (suite *InboundClientServiceTestSuite) TestValidateRedirectURIs_HostWildcar
 		GrantTypes:    []string{"authorization_code"},
 		ResponseTypes: []string{"code"},
 	}
-	assert.NoError(suite.T(), validateRedirectURIs(p))
+	assert.NoError(suite.T(), validateRedirectURIs(context.Background(), p))
 }
 
 func (suite *InboundClientServiceTestSuite) TestValidateRedirectURIs_HostWildcardFlagOff_Rejected() {
@@ -1918,7 +1919,7 @@ func (suite *InboundClientServiceTestSuite) TestValidateRedirectURIs_HostWildcar
 		RedirectURIs: []string{"https://app-*.example.com/cb"},
 		GrantTypes:   []string{"authorization_code"},
 	}
-	assert.ErrorIs(suite.T(), validateRedirectURIs(p), ErrOAuthInvalidRedirectURI)
+	assert.ErrorIs(suite.T(), validateRedirectURIs(context.Background(), p), ErrOAuthInvalidRedirectURI)
 }
 
 func (suite *InboundClientServiceTestSuite) TestValidateRedirectURIs_HostWildcardMixedWithPath_Accepted() {
@@ -1928,7 +1929,7 @@ func (suite *InboundClientServiceTestSuite) TestValidateRedirectURIs_HostWildcar
 		GrantTypes:    []string{"authorization_code"},
 		ResponseTypes: []string{"code"},
 	}
-	assert.NoError(suite.T(), validateRedirectURIs(p))
+	assert.NoError(suite.T(), validateRedirectURIs(context.Background(), p))
 }
 
 func (suite *InboundClientServiceTestSuite) TestValidateRedirectURIs_MissingSchemeRejected() {
@@ -1936,14 +1937,14 @@ func (suite *InboundClientServiceTestSuite) TestValidateRedirectURIs_MissingSche
 		RedirectURIs: []string{"//app/cb"},
 		GrantTypes:   []string{"authorization_code"},
 	}
-	assert.ErrorIs(suite.T(), validateRedirectURIs(p), ErrOAuthInvalidRedirectURI)
+	assert.ErrorIs(suite.T(), validateRedirectURIs(context.Background(), p), ErrOAuthInvalidRedirectURI)
 }
 
 func (suite *InboundClientServiceTestSuite) TestValidateRedirectURIs_AuthCodeWithoutURIs() {
 	p := &providers.OAuthProfile{
 		GrantTypes: []string{"authorization_code"},
 	}
-	assert.ErrorIs(suite.T(), validateRedirectURIs(p), ErrOAuthAuthCodeRequiresRedirectURIs)
+	assert.ErrorIs(suite.T(), validateRedirectURIs(context.Background(), p), ErrOAuthAuthCodeRequiresRedirectURIs)
 }
 
 // ----- containsInvalidWildcardSegment -----
@@ -3696,4 +3697,32 @@ func (suite *InboundClientServiceTestSuite) TestValidateSubjectAttributeMapping_
 	assert.ErrorIs(suite.T(), svc.validateSubjectAttributeMapping(
 		context.Background(), map[string]string{"employee": "email"}, []string{"employee"}),
 		ErrUniqueAttributeLookupFailed)
+}
+
+// A control plane authors a redirect URI it cannot resolve, so a placeholder has to pass validation
+// there. The same value must still be rejected on a gateway, which is what keeps this safe.
+func (suite *InboundClientServiceTestSuite) TestValidateRedirectURIs_PlaceholderOnlyWhileAuthoring() {
+	p := &providers.OAuthProfile{
+		RedirectURIs: []string{"{{.CALLBACK_URL}}"},
+		GrantTypes:   []string{"authorization_code"},
+	}
+
+	authoring := parameterise.WithMode(context.Background())
+	assert.NoError(suite.T(), validateRedirectURIs(authoring, p),
+		"a placeholder must be accepted while authoring a parameterised payload")
+
+	assert.ErrorIs(suite.T(), validateRedirectURIs(context.Background(), p),
+		ErrOAuthInvalidRedirectURI,
+		"the same placeholder must be rejected outside authoring, so a gateway cannot store it")
+}
+
+// Authoring mode must not become a way to smuggle a genuinely malformed URI past validation.
+func (suite *InboundClientServiceTestSuite) TestValidateRedirectURIs_AuthoringStillRejectsRealGarbage() {
+	p := &providers.OAuthProfile{
+		RedirectURIs: []string{"://not-a-uri"},
+		GrantTypes:   []string{"authorization_code"},
+	}
+
+	authoring := parameterise.WithMode(context.Background())
+	assert.ErrorIs(suite.T(), validateRedirectURIs(authoring, p), ErrOAuthInvalidRedirectURI)
 }
