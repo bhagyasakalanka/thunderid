@@ -34,6 +34,7 @@ import (
 	"github.com/thunder-id/thunderid/internal/authnprovider/defaultprovider"
 	authnprovidermgr "github.com/thunder-id/thunderid/internal/authnprovider/manager"
 	"github.com/thunder-id/thunderid/internal/authnprovider/restprovider"
+	"github.com/thunder-id/thunderid/internal/authored"
 	"github.com/thunder-id/thunderid/internal/authz"
 	"github.com/thunder-id/thunderid/internal/authzen"
 	"github.com/thunder-id/thunderid/internal/cert"
@@ -93,6 +94,7 @@ import (
 
 	"github.com/thunder-id/thunderid/internal/system/mcp"
 	"github.com/thunder-id/thunderid/internal/system/observability"
+	"github.com/thunder-id/thunderid/internal/system/plane"
 	"github.com/thunder-id/thunderid/internal/system/resourcedependency"
 	"github.com/thunder-id/thunderid/internal/system/services"
 	"github.com/thunder-id/thunderid/internal/system/sysauthz"
@@ -519,6 +521,12 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 	}
 
 	// Register the health service.
+	// Configuration designed here for a gateway to run. A plane that does not author does not
+	// register it: there would be nowhere for a document to come from and nothing to do with one.
+	if currentPlane().ServesAuthoring() {
+		_ = authored.Initialize(mux)
+	}
+
 	healthSvc := healthcheckservice.Initialize(dbprovider.GetDBProvider(), dbprovider.GetRedisProvider())
 	services.NewHealthCheckService(mux, healthSvc)
 
@@ -712,4 +720,14 @@ func buildHashConfig() (cryptolib.HashConfig, error) {
 	default:
 		return cryptolib.HashConfig{}, fmt.Errorf("unrecognized password hashing algorithm %q", cfg.Algorithm)
 	}
+}
+
+// currentPlane reads which plane this server runs as, for deciding what to register. An unset or
+// unreadable configuration is the hybrid product, which registers everything.
+func currentPlane() plane.Plane {
+	if !config.IsServerRuntimeInitialized() {
+		return plane.Hybrid
+	}
+	p, _ := plane.Parse(config.GetServerRuntime().Config.Server.Mode)
+	return p
 }

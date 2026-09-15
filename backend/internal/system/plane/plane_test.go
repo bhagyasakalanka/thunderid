@@ -64,6 +64,8 @@ func TestServes(t *testing.T) {
 		{"/.well-known/openid-configuration", true, false, true},
 
 		// Authoring: configuration arrives at a data plane rather than being written there.
+		{"/authored", true, true, false},
+		{"/authored/application/Storefront", true, true, false},
 		{"/versions", true, true, false},
 		{"/versions/3/variables", true, true, false},
 		{"/gateways", true, true, false},

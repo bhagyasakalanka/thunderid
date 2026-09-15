@@ -26,6 +26,7 @@ var runtimeRoutes = []string{
 // here, the gateways they are applied to, and the values a gateway supplies. A data plane answers
 // none of them, because configuration arrives at it rather than being written there.
 var authoringRoutes = []string{
+	"/authored",
 	"/versions",
 	"/gateways",
 }
