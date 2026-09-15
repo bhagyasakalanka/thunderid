@@ -1,8 +1,7 @@
 // Copyright 2025-2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-// Package managers provides functionality for managing and registering system services.
-package main
+package server
 
 import (
 	"context"
@@ -11,15 +10,11 @@ import (
 	"strings"
 	"time"
 
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-
 	"github.com/thunder-id/thunderid/internal/actorprovider"
 	"github.com/thunder-id/thunderid/internal/agent"
 	"github.com/thunder-id/thunderid/internal/agentmgtprovider"
 	"github.com/thunder-id/thunderid/internal/application"
-	"github.com/thunder-id/thunderid/internal/attestation"
 	"github.com/thunder-id/thunderid/internal/attributecache"
-	"github.com/thunder-id/thunderid/internal/authn"
 	authnAssert "github.com/thunder-id/thunderid/internal/authn/assert"
 	authncm "github.com/thunder-id/thunderid/internal/authn/common"
 	authnConsent "github.com/thunder-id/thunderid/internal/authn/consent"
@@ -35,7 +30,6 @@ import (
 	authnprovidermgr "github.com/thunder-id/thunderid/internal/authnprovider/manager"
 	"github.com/thunder-id/thunderid/internal/authnprovider/restprovider"
 	"github.com/thunder-id/thunderid/internal/authz"
-	"github.com/thunder-id/thunderid/internal/authzen"
 	"github.com/thunder-id/thunderid/internal/cert"
 	"github.com/thunder-id/thunderid/internal/connection"
 	"github.com/thunder-id/thunderid/internal/consent"
@@ -48,7 +42,6 @@ import (
 	flowconfig "github.com/thunder-id/thunderid/internal/flow/config"
 	flowcore "github.com/thunder-id/thunderid/internal/flow/core"
 	"github.com/thunder-id/thunderid/internal/flow/executor"
-	"github.com/thunder-id/thunderid/internal/flow/flowexec"
 	"github.com/thunder-id/thunderid/internal/flow/flowmeta"
 	"github.com/thunder-id/thunderid/internal/flow/graphbuilder"
 	"github.com/thunder-id/thunderid/internal/flow/interceptor"
@@ -58,14 +51,11 @@ import (
 	"github.com/thunder-id/thunderid/internal/idp"
 	"github.com/thunder-id/thunderid/internal/inboundclient"
 	"github.com/thunder-id/thunderid/internal/notification"
-	"github.com/thunder-id/thunderid/internal/oauth"
 	oauthconfig "github.com/thunder-id/thunderid/internal/oauth/config"
-	"github.com/thunder-id/thunderid/internal/oauth/oauth2/dcr"
 	"github.com/thunder-id/thunderid/internal/oauth/oauth2/dpop"
 	"github.com/thunder-id/thunderid/internal/oauth/oauth2/jti"
 	"github.com/thunder-id/thunderid/internal/oauth/oauth2/revocation"
 	"github.com/thunder-id/thunderid/internal/oauth/oauth2/tokenservice"
-	"github.com/thunder-id/thunderid/internal/openid4vci"
 	"github.com/thunder-id/thunderid/internal/ou"
 	"github.com/thunder-id/thunderid/internal/resource"
 	"github.com/thunder-id/thunderid/internal/role"
@@ -107,14 +97,13 @@ import (
 // observabilitySvc is the observability service instance. This is used for graceful shutdown.
 var observabilitySvc observability.ObservabilityServiceInterface
 
-// registerServices registers all the services with the provided HTTP multiplexer.
-// It also returns the import service so the bootstrap subcommand can create default
-// resources in-process through the same service instances.
+// registerServices builds every service this product has and registers the surfaces that belong to
+// no single plane: the configuration management APIs, which a control plane designs with and a data
+// plane holds. It returns them so the running plane can mount the surfaces that are its own.
 // nolint:gocyclo // This is the main service registration function, so its length is expected to be proportional
 // to the number of services. Eventhough it has many branching statements, almost all are early exits so cognitive
 // complexity is low.
-func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterface) (
-	jwt.JWTServiceInterface, kmprovider.RuntimeCryptoProvider, importer.ImportServiceInterface, *mcpsdk.Server) {
+func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterface) *Services {
 	logger := log.GetLogger()
 
 	// Service registration runs during application startup, outside any request.
@@ -298,15 +287,6 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 	// Initialize authentication services.
 	authAssertGen := authnAssert.Initialize()
 	consentEnforcer := authnConsent.Initialize(jwtService)
-
-	_, directAuthGuard := authn.Initialize(mux, mcpServer, idpService, jwtService, authnProvider, authAssertGen,
-		otpCoreService, notifSenderSvc, templateService, magicLinkService, oauthAuthnService,
-		oidcAuthnService, googleAuthnService, githubAuthnService,
-		runtime.Config.Server.SecurityConfig.DirectAuthSecret)
-
-	// AuthZEN access-evaluation endpoints are Direct API endpoints, so they reuse the Direct Auth
-	// guard created by the authn service.
-	authzen.Initialize(mux, authZService, entityProvider, resourceService, directAuthGuard)
 
 	attributeCacheService := attributecache.Initialize(runtimeStoreProvider, runtimeCryptoSvc,
 		runtime.Config.AttributeCache.Encryption.Enabled)
@@ -492,48 +472,55 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 		serverConfigService,
 	)
 
-	attestationProvider := initAttestationProvider(ctx, logger, runtimeCryptoSvc)
-	flowExecService, err := flowexec.Initialize(mux, flowMgtService, actorProvider,
-		execRegistry, interceptorRegistry, observabilitySvc, runtimeCryptoSvc, attestationProvider,
-		graphBuilder, jwtService, runtimeStoreProvider, transactioner, serverConfigService, flowConfig)
-	fatalOnError(ctx, logger, err, "Failed to initialize flow execution service")
-
-	// Initialize OAuth services.
-	tokenValidator, err := oauth.Initialize(mux, actorProvider, authnProvider, jwtService, jweService,
-		flowExecService, observabilitySvc, runtimeCryptoSvc, ouService, attributeCacheService, authZService,
-		resourceServerProvider, i18nService, idpService, dpopVerifier,
-		runtimeStoreProvider, transactioner, revocationEnforcer, revocationSvc,
-		sessionService, flowMgtService, oauthCfg)
-	fatalOnError(ctx, logger, err, "Failed to initialize OAuth services")
-
-	// Initialized after the OAuth services because credential issuance validates the presented
-	// access token with the OAuth token validator and resolves the wallet application behind it.
-	_, err = openid4vci.Initialize(mux, runtimeCryptoSvc, tokenValidator, userService, dpopVerifier,
-		openid4vciCredSvc, actorProvider, runtimeStoreProvider)
-	fatalOnError(ctx, logger, err, "Failed to initialize OpenID4VCI issuer service")
-
-	if oauthCfg.OAuth.DCR.IsEnabled() {
-		// Register OAuth2 DCR service.
-		err = dcr.Initialize(mux, applicationService, ouService, i18nService, oauthCfg)
-		fatalOnError(ctx, logger, err, "Failed to initialize OAuth2 DCR service")
-	}
-
 	// Register the health service.
 	healthSvc := healthcheckservice.Initialize(dbprovider.GetDBProvider(), dbprovider.GetRedisProvider())
 	services.NewHealthCheckService(mux, healthSvc)
 
-	return jwtService, runtimeCryptoSvc, importService, mcpServer
-}
-
-// initAttestationProvider initializes the platform attestation provider, terminating server startup
-// on failure rather than running with a non-functional verifier.
-func initAttestationProvider(ctx context.Context, logger *log.Logger,
-	cryptoSvc kmprovider.RuntimeCryptoProvider) providers.AttestationProvider {
-	attestationProvider, err := attestation.Initialize(cryptoSvc)
-	if err != nil {
-		logger.Fatal(ctx, "Failed to initialize attestation provider", log.Error(err))
+	return &Services{
+		Mux:                    mux,
+		MCPServer:              mcpServer,
+		ImportService:          importService,
+		RuntimeCryptoSvc:       runtimeCryptoSvc,
+		JWTService:             jwtService,
+		JWEService:             jweService,
+		IDPService:             idpService,
+		AuthnProvider:          authnProvider,
+		AuthAssertGen:          authAssertGen,
+		OTPService:             otpCoreService,
+		NotifSenderSvc:         notifSenderSvc,
+		TemplateService:        templateService,
+		MagicLinkService:       magicLinkService,
+		OAuthAuthnService:      oauthAuthnService,
+		OIDCAuthnService:       oidcAuthnService,
+		GoogleAuthnService:     googleAuthnService,
+		GitHubAuthnService:     githubAuthnService,
+		DirectAuthSecret:       runtime.Config.Server.SecurityConfig.DirectAuthSecret,
+		AuthZService:           authZService,
+		EntityProvider:         entityProvider,
+		ResourceService:        resourceService,
+		ResourceServerProvider: resourceServerProvider,
+		OUService:              ouService,
+		UserService:            userService,
+		ApplicationService:     applicationService,
+		I18nService:            i18nService,
+		FlowMgtService:         flowMgtService,
+		ActorProvider:          actorProvider,
+		ExecRegistry:           execRegistry,
+		InterceptorRegistry:    interceptorRegistry,
+		GraphBuilder:           graphBuilder,
+		FlowConfig:             flowConfig,
+		ObservabilitySvc:       observabilitySvc,
+		ServerConfigService:    serverConfigService,
+		RuntimeStoreProvider:   runtimeStoreProvider,
+		Transactioner:          transactioner,
+		AttributeCacheService:  attributeCacheService,
+		DPoPVerifier:           dpopVerifier,
+		RevocationEnforcer:     revocationEnforcer,
+		RevocationSvc:          revocationSvc,
+		SessionService:         sessionService,
+		OpenID4VCICredSvc:      openid4vciCredSvc,
+		OAuthCfg:               oauthCfg,
 	}
-	return attestationProvider
 }
 
 // dependencyConsumers groups the services that check the dependency registry before deleting their
