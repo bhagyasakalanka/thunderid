@@ -251,6 +251,9 @@ func createHTTPServer(ctx context.Context, logger *log.Logger, cfg *config.Confi
 	// time any store is reached.
 	handler = middleware.DeploymentIDMiddleware(handler)
 	handler = middleware.CorrelationIDMiddleware(handler)
+	// Outermost, so a path this plane does not serve is refused before any other layer spends work
+	// on it.
+	handler = middleware.PlaneMiddleware(handler)
 
 	// Build the server address using hostname and port from the configurations.
 	serverAddr := fmt.Sprintf("%s:%d", cfg.Server.Hostname, cfg.Server.Port)

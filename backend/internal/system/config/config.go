@@ -18,6 +18,7 @@ import (
 
 	"github.com/thunder-id/thunderid/internal/system/log"
 	"github.com/thunder-id/thunderid/internal/system/log/rollingfile"
+	"github.com/thunder-id/thunderid/internal/system/plane"
 	"github.com/thunder-id/thunderid/internal/system/utils"
 	engineconfig "github.com/thunder-id/thunderid/pkg/thunderidengine/config"
 
@@ -740,6 +741,13 @@ func LoadConfig(configPath string, defaultPath string, serverHome string) (*Conf
 	// Derive JWT issuer from server config if not set
 	if cfg.JWT.Issuer == "" {
 		cfg.JWT.Issuer = engineconfig.GetServerURL(&cfg.Server)
+	}
+
+	// An unrecognized plane is refused rather than defaulted, because a server that quietly became a
+	// hybrid would serve a surface the deployment meant to withhold.
+	if _, ok := plane.Parse(cfg.Server.Mode); !ok {
+		return nil, fmt.Errorf("server.mode must be one of %q, %q or %q, got %q",
+			plane.Hybrid, plane.Control, plane.Data, cfg.Server.Mode)
 	}
 
 	if err := cfg.Server.SecurityConfig.Validate(); err != nil {
