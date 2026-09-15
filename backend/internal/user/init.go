@@ -33,6 +33,18 @@ func Initialize(
 		return nil, nil, nil, err
 	}
 
+	// What this resource type knows about itself, offered to whoever needs it: the rules that hold
+	// on any plane, the field that belongs to the deployment, and how its credential is made.
+	if err := registerSharedRules(); err != nil {
+		return nil, nil, nil, err
+	}
+	if err := registerDeploymentFields(); err != nil {
+		return nil, nil, nil, err
+	}
+	if err := registerSecretGenerator(); err != nil {
+		return nil, nil, nil, err
+	}
+
 	// Step 3: Load declarative resources if user store mode requires it.
 	storeMode := getUserStoreMode()
 	if storeMode == serverconst.StoreModeDeclarative || storeMode == serverconst.StoreModeComposite {

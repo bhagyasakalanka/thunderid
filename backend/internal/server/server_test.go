@@ -1,7 +1,7 @@
 // Copyright 2025-2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-package main
+package server
 
 import (
 	"context"
@@ -496,7 +496,7 @@ func TestRegisterStaticFileHandlers(t *testing.T) {
 
 	t.Run("registers handlers for existing directories", func(t *testing.T) {
 		mux := http.NewServeMux()
-		registerStaticFileHandlers(context.Background(), logger, mux, tmpDir)
+		registerStaticFileHandlers(context.Background(), logger, mux, tmpDir, []string{"gate", "console"})
 
 		// Test gate handler
 		req := httptest.NewRequest(http.MethodGet, "/gate/", nil)
@@ -518,7 +518,7 @@ func TestRegisterStaticFileHandlers(t *testing.T) {
 		requireWriteFile(t, filepath.Join(gateDir, "app.js"), jsContent)
 
 		mux := http.NewServeMux()
-		registerStaticFileHandlers(context.Background(), logger, mux, tmpDir)
+		registerStaticFileHandlers(context.Background(), logger, mux, tmpDir, []string{"gate", "console"})
 
 		req := httptest.NewRequest(http.MethodGet, "/gate/app.js", nil)
 		rr := httptest.NewRecorder()
@@ -533,7 +533,7 @@ func TestRegisterStaticFileHandlers(t *testing.T) {
 		requireWriteFile(t, filepath.Join(consoleDir, "app.js"), jsContent)
 
 		mux := http.NewServeMux()
-		registerStaticFileHandlers(context.Background(), logger, mux, tmpDir)
+		registerStaticFileHandlers(context.Background(), logger, mux, tmpDir, []string{"gate", "console"})
 
 		req := httptest.NewRequest(http.MethodGet, "/console/app.js", nil)
 		rr := httptest.NewRecorder()
@@ -548,7 +548,7 @@ func TestRegisterStaticFileHandlers(t *testing.T) {
 		requireWriteFile(t, filepath.Join(gateDir, "app.mjs"), mjsContent)
 
 		mux := http.NewServeMux()
-		registerStaticFileHandlers(context.Background(), logger, mux, tmpDir)
+		registerStaticFileHandlers(context.Background(), logger, mux, tmpDir, []string{"gate", "console"})
 
 		req := httptest.NewRequest(http.MethodGet, "/gate/app.mjs", nil)
 		rr := httptest.NewRecorder()
@@ -558,11 +558,27 @@ func TestRegisterStaticFileHandlers(t *testing.T) {
 		assert.Equal(t, "application/javascript; charset=utf-8", rr.Header().Get("Content-Type"))
 	})
 
+	t.Run("mounts only the applications the plane asked for", func(t *testing.T) {
+		mux := http.NewServeMux()
+		registerStaticFileHandlers(context.Background(), logger, mux, tmpDir, []string{"console"})
+
+		req := httptest.NewRequest(http.MethodGet, "/console/", nil)
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, req)
+		assert.Equal(t, http.StatusOK, rr.Code)
+
+		// The Gate is on disk, but this plane did not ask for it, so nothing answers for it.
+		req = httptest.NewRequest(http.MethodGet, "/gate/", nil)
+		rr = httptest.NewRecorder()
+		mux.ServeHTTP(rr, req)
+		assert.Equal(t, http.StatusNotFound, rr.Code)
+	})
+
 	t.Run("handles missing directories gracefully", func(t *testing.T) {
 		emptyTmpDir := t.TempDir()
 		mux := http.NewServeMux()
 		// Should not panic
-		registerStaticFileHandlers(context.Background(), logger, mux, emptyTmpDir)
+		registerStaticFileHandlers(context.Background(), logger, mux, emptyTmpDir, []string{"gate", "console"})
 	})
 }
 
