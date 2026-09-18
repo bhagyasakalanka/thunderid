@@ -24,6 +24,24 @@ Only settings you want to override need to be specified in `deployment.yaml`. Al
 <ProductName /> must be restarted after any configuration change.
 :::
 
+## Choosing a binary
+
+A distribution contains two servers, and which one you run decides what it serves. They read the
+same `deployment.yaml`; nothing in configuration moves a surface from one to the other.
+
+| Binary | Serves | Does not serve |
+|---|---|---|
+| `thunderid` | The management APIs, the runtime APIs (OAuth2, authentication, flow execution, credential issuance), Gate and Console | |
+| `thunderid-cp` | The management APIs and Console | Anything runtime: no logins, no token issuance, no flow execution, no credential issuance, and no Gate |
+
+Run `thunderid` unless you are deliberately separating the two. A control plane is for authoring
+configuration and promoting it to the servers that carry traffic; on its own it cannot sign anyone
+in, which is why it ships no Gate.
+
+The separation is a property of the binary rather than a setting. `thunderid-cp` does not contain
+the runtime code at all, so no configuration change can expose it, and a request to a runtime path
+is answered with a 404 rather than refused by a check that could be misconfigured.
+
 ## Server Configuration
 
 Controls the <ProductName /> server's network settings and identity.
