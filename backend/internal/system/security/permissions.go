@@ -304,6 +304,10 @@ func InitSystemPermissions(handle string) {
 		// Import APIs.
 		{"POST /import", p.Root},
 		{"POST /import/delete", p.Root},
+
+		// Promotion API. It reads one deployment and writes another, so it is held to the same
+		// permission as the import it is built from.
+		{"POST /promote", p.Root},
 	}
 }
 

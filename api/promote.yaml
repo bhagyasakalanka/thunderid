@@ -1,0 +1,199 @@
+openapi: 3.0.3
+info:
+  title: Promotion API
+  version: "1.0"
+  description: >
+    This API copies the configuration of one deployment into another. A single control plane holds
+    the configuration of every environment it administers, separated by deployment id, so promoting
+    from one environment to the next is an operation the server performs on itself.
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  - url: https://{host}:{port}
+    variables:
+      host:
+        default: "localhost"
+      port:
+        default: "8090"
+
+tags:
+  - name: Promote
+    description: Copy a deployment's configuration into another deployment.
+
+security:
+  - OAuth2: [system]
+
+paths:
+  /promote:
+    post:
+      tags:
+        - Promote
+      summary: Promote configuration between deployments
+      description: >
+        Reads every configuration resource of the source deployment and writes it to the target.
+
+
+        The source's variable values are not carried across. Deployment-owned fields, such as a
+        redirect URI or a client secret, are rendered as placeholders and filled from the target
+        deployment's own variable store, so the target keeps its own values. A placeholder the
+        target cannot fill fails that resource and is reported in `failures`, rather than the
+        source's value being inherited silently.
+
+
+        Users and groups are not promoted. They are identity data rather than configuration, and
+        promoting them would carry accounts created in one environment into another.
+      operationId: promoteConfiguration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PromoteRequest'
+      responses:
+        "200":
+          description: >
+            The promotion ran. A response with entries in `failures` means some resources were
+            refused by the target while others were written: the import is an upsert per resource
+            rather than a single transaction.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PromoteResponse'
+        "400":
+          description: The request named no source or target, named the same deployment for both, or the source holds nothing to promote.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "401":
+          description: Unauthorized.
+        "403":
+          description: The caller does not hold the required permission.
+        "500":
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  securitySchemes:
+    OAuth2:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: https://localhost:8090/oauth2/token
+          scopes:
+            system: System level access
+
+  schemas:
+    PromoteRequest:
+      type: object
+      description: The two deployments a promotion moves configuration between.
+      required: [from, to]
+      properties:
+        from:
+          type: string
+          description: Deployment id the configuration is read from.
+          example: "dev"
+        to:
+          type: string
+          description: Deployment id the configuration is written to.
+          example: "staging"
+        dryRun:
+          type: boolean
+          description: Report what would be written without writing it.
+          default: false
+        resources:
+          type: array
+          description: >
+            Narrows the promotion to the resources named. Omit to promote every configuration
+            resource the source holds, which is the ordinary case. Naming them is for a caller
+            that has shown someone a diff and is carrying their answer, so that holding one
+            resource back does not mean holding the whole environment back.
+          items:
+            $ref: '#/components/schemas/ResourceRef' 
+
+    ResourceRef:
+      type: object
+      description: One resource to promote.
+      required: [type, id]
+      properties:
+        type:
+          type: string
+          description: Resource type as the declarative resources name it. A type a promotion does not carry, such as `user`, is refused.
+          example: "application"
+        id:
+          type: string
+          description: Identifies the resource within its type.
+          example: "app-a"
+
+    PromoteResponse:
+      type: object
+      description: What a promotion did.
+      required: [from, to, dryRun, resources]
+      properties:
+        from:
+          type: string
+          example: "dev"
+        to:
+          type: string
+          example: "staging"
+        dryRun:
+          type: boolean
+          description: Repeats what was asked, so a caller reading only the response can tell whether the target was written.
+          example: false
+        resources:
+          type: integer
+          description: How many resource documents were carried across.
+          example: 12
+        failures:
+          type: array
+          description: Resources the target refused, named so a caller knows what did not arrive.
+          items:
+            $ref: '#/components/schemas/PromoteFailure'
+
+    PromoteFailure:
+      type: object
+      description: One resource the target refused.
+      required: [resourceType, reason]
+      properties:
+        resourceType:
+          type: string
+          example: "application"
+        name:
+          type: string
+          example: "My App"
+        reason:
+          type: string
+          example: "APPLICATION_MY_APP_REDIRECT_URI is not set in the target deployment"
+
+    Error:
+      type: object
+      description: Standard error response.
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: "Error code. Codes follow the PRM-XXXX convention."
+          example: "PRM-1001"
+        message:
+          $ref: '#/components/schemas/I18nMessage'
+        description:
+          $ref: '#/components/schemas/I18nMessage'
+
+    I18nMessage:
+      type: object
+      description: Internationalized message with translation key and default value.
+      required:
+        - key
+        - defaultValue
+      properties:
+        key:
+          type: string
+          description: Translation key for fetching localized message.
+        defaultValue:
+          type: string
+          description: Default message in English (fallback).
