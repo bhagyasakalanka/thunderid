@@ -251,7 +251,6 @@ components:
   schemas:
     ImportRequest:
       type: object
-      required: [content]
       description: >
         Request payload for importing declarative resources.
         The content should contain one or more YAML documents separated by `---`.
@@ -282,8 +281,44 @@ components:
           description: >
             When true, validates the import content and returns expected outcomes
             without persisting any changes to the system.
+        deletions:
+          type: array
+          description: >
+            Resources to remove. The declarative payload in `content` can create and update but
+            never remove, so a resource dropped from a configuration would otherwise linger on
+            every deployment that configuration was applied to.
+
+
+            Removals run after the upserts, so a resource this same request moved or replaced is in
+            place before its predecessor is pruned, and they are ordered as the reverse of the
+            import dependency order so a dependent goes before what it depends on. Deleting
+            something already absent is reported as success, which is what makes re-applying the
+            same configuration a no-op. A request may carry deletions and no `content`.
+          items:
+            $ref: '#/components/schemas/ResourceDeletion'
         options:
           $ref: '#/components/schemas/ImportOptions'
+
+    ResourceDeletion:
+      type: object
+      description: Identifies a runtime resource to remove during an import.
+      required: [resourceType, id]
+      properties:
+        resourceType:
+          type: string
+          description: >
+            Type of the resource to remove. A type with no runtime delete operation, such as
+            `translation` or `server_config`, is reported as an unsupported outcome rather than
+            silently skipped.
+          example: "application"
+        id:
+          type: string
+          description: Identifier of the resource to remove.
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        category:
+          type: string
+          description: Scopes a `user_type` deletion. Defaults to the user category when omitted.
+          example: "user"
 
     ImportOptions:
       type: object
@@ -332,6 +367,10 @@ components:
           type: integer
           description: Total number of YAML documents processed.
           example: 5
+        deleted:
+          type: integer
+          description: Number of resources removed via the request's deletions.
+          example: 1
         imported:
           type: integer
           description: Number of documents successfully imported or validated.
