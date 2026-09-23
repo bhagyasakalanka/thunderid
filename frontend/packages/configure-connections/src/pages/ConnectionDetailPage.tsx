@@ -65,7 +65,25 @@ function canonicalAttr(config: AttributeConfiguration | undefined): string {
   });
 }
 
-export default function ConnectionDetailPage(): JSX.Element | null {
+/**
+ * Props for {@link ConnectionDetailPage}.
+ */
+export interface ConnectionDetailPageProps {
+  /**
+   * The redirect URI shown for this connection, when it is not this console's own gate.
+   *
+   * An operator copies this value into the provider's allowed-redirect list, so it has to name the
+   * deployment that will actually receive the callback. A console whose server answers that
+   * callback omits it. One that does not, because the gate belongs elsewhere, passes the address
+   * that does, since pointing a provider at a host that serves no gate fails at sign-in time with
+   * nothing here to explain why.
+   */
+  redirectUri?: string;
+}
+
+export default function ConnectionDetailPage({
+  redirectUri: redirectUriOverride = undefined,
+}: ConnectionDetailPageProps = {}): JSX.Element | null {
   const {t} = useTranslation('connections');
   const navigate = useNavigate();
   const routes = useConnectionRoutes();
@@ -108,7 +126,7 @@ export default function ConnectionDetailPage(): JSX.Element | null {
   }, [meta, navigate, routes]);
 
   const fields = useMemo(() => (meta ? CONNECTION_FORM_FIELDS[connectionType] : []), [meta, connectionType]);
-  const redirectUri = getGateCallbackUrl();
+  const redirectUri = redirectUriOverride ?? getGateCallbackUrl();
   const data = connectionQuery.data;
 
   const baseline = useMemo<ConnectionFormValues>(

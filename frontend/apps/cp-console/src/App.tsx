@@ -117,13 +117,13 @@ const ConnectionsListPage = lazy(() =>
   import('@thunderid/configure-connections').then((m) => ({default: m.ConnectionsListPage})),
 );
 const ConnectionDetailPage = lazy(() =>
-  import('@thunderid/configure-connections').then((m) => ({default: m.ConnectionDetailPage})),
+  import('./connections/ConnectionRoutes').then((m) => ({default: m.ConnectionDetailRoute})),
 );
 const ConnectionConfigureWizardPage = lazy(() =>
-  import('@thunderid/configure-connections').then((m) => ({default: m.ConnectionConfigureWizardPage})),
+  import('./connections/ConnectionRoutes').then((m) => ({default: m.ConnectionConfigureRoute})),
 );
 const ConnectionCreateWizardPage = lazy(() =>
-  import('@thunderid/configure-connections').then((m) => ({default: m.ConnectionCreateWizardPage})),
+  import('./connections/ConnectionRoutes').then((m) => ({default: m.ConnectionCreateRoute})),
 );
 const PromotionsListPage = lazy(() => import('@console/features/promotions/pages/PromotionsListPage'));
 const GatewayDetailPage = lazy(() => import('@console/features/promotions/pages/GatewayDetailPage'));
