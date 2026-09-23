@@ -8,10 +8,24 @@ export type VersionOrigin = 'captured' | 'uploaded';
 export type ChangeType = 'added' | 'updated' | 'deleted' | 'unchanged';
 
 /** An gateway in the promotion chain. */
+/**
+ * Where a gateway's data plane serves.
+ *
+ * The data plane is named rather than addressed: it dials the control plane and is reached over
+ * that connection, so `baseUrl` is not how the control plane talks to it. It records where the
+ * deployment answers, which is what an integration guide needs to print.
+ */
+export interface GatewayTarget {
+  dataPlaneId: string;
+  baseUrl?: string;
+}
+
 export interface Gateway {
   id: string;
   name: string;
   appliedSeq: number;
+  /** Where this gateway's data plane serves. */
+  target?: GatewayTarget;
   /**
    * Resource keys a user chose not to promote into this gateway. The choice is remembered, so a
    * later promotion holds them back by default until they are deliberately selected again.
