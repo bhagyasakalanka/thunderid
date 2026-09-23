@@ -2,7 +2,7 @@
   "private": true,
   "name": "@thunderid/console",
   "version": "0.0.0",
-  "description": "⚡️ ThunderID Console Application - The main control center to configure ThunderID system.",
+  "description": "\u26a1\ufe0f ThunderID Console Application - The main control center to configure ThunderID system.",
   "keywords": [
     "thunderid",
     "console",
@@ -24,7 +24,7 @@
     "analyze": "ANALYZE=true vite build",
     "build": "tsc -b && vite build",
     "clean": "pnpm clean:dist && pnpm clean:node_modules",
-    "clean:dist": "rimraf dist",
+    "clean:dist": "rimraf dist dist-cp",
     "clean:node_modules": "rimraf node_modules",
     "dev": "vite",
     "lint": "eslint .",
@@ -32,7 +32,9 @@
     "preview": "vite preview",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "build:cp": "BUILD_PLANE=cp vite build",
+    "dev:cp": "BUILD_PLANE=cp vite --port 5192"
   },
   "dependencies": {
     "@thunderid/react": "catalog:",

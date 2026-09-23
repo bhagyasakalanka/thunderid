@@ -2,7 +2,7 @@
   "private": true,
   "name": "@thunderid/frontend",
   "version": "0.0.0",
-  "description": "Frontend workspace for ⚡️ ThunderID",
+  "description": "Frontend workspace for \u26a1\ufe0f ThunderID",
   "author": "The ThunderID Authors",
   "license": "Apache-2.0",
   "type": "module",
@@ -20,7 +20,7 @@
     "workspace"
   ],
   "scripts": {
-    "build:apps": "turbo run build --filter=./apps/*",
+    "build:apps": "turbo run build --filter=./apps/* && turbo run build:cp --filter=@thunderid/console",
     "build:packages": "turbo run build --filter=./packages/*",
     "clean": "pnpm clean:node_modules",
     "clean:node_modules": "rimraf node_modules",

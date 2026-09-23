@@ -6,6 +6,7 @@ import type {ApplicationListResponse} from '@thunderid/configure-applications';
 import {waitFor, renderHook} from '@thunderid/test-utils';
 import {describe, it, expect, beforeEach, afterEach, vi} from 'vitest';
 import useDeleteApplication from '../useDeleteApplication';
+import dataPlaneAdministrationActions from '@/features/administration/dataPlaneAdministrationActions';
 
 // Mock the dependencies
 vi.mock('@thunderid/react', () => ({
@@ -16,13 +17,14 @@ vi.mock('@thunderid/contexts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@thunderid/contexts')>();
   return {
     ...actual,
+    useAdministrationActions: vi.fn(),
     useConfig: vi.fn(),
     useToast: vi.fn(),
   };
 });
 
 const {useThunderID} = await import('@thunderid/react');
-const {useConfig, useToast} = await import('@thunderid/contexts');
+const {useAdministrationActions, useConfig, useToast} = await import('@thunderid/contexts');
 
 const FLOW_ID = '01900000-0000-7000-8000-000000000079';
 const FLOW_HANDLE = 'default-application-deletion-flow';
@@ -70,6 +72,10 @@ describe('useDeleteApplication', () => {
     vi.mocked(useToast).mockReturnValue({
       showToast: mockShowToast,
     } as unknown as ReturnType<typeof useToast>);
+
+    // These cases describe a Data Plane console, which is the one that installs the flow-backed
+    // actions. A Control Plane console installs none; that path is covered separately below.
+    vi.mocked(useAdministrationActions).mockReturnValue(dataPlaneAdministrationActions);
   });
 
   afterEach(() => {
@@ -223,10 +229,17 @@ describe('useDeleteApplication', () => {
   });
 
   it('should set pending state during deletion', async () => {
+    // The request finishes when this test says so, not after a wall-clock delay. A real timer makes
+    // the pending state a race: on a loaded machine the request can complete before the assertion
+    // first runs, and the budget for the success assertion can expire before the timer fires.
+    // Replaced synchronously by the promise below; this stands in only so the type is not nullable.
+    let finishRequest: (value: unknown) => void = () => {
+      throw new Error('the request was released before it was started');
+    };
     mockFlowDeletion({
       '/flow/execute': () =>
         new Promise((resolve) => {
-          setTimeout(() => resolve({data: {flowStatus: 'COMPLETE'}}), 100);
+          finishRequest = resolve;
         }),
     });
 
@@ -239,12 +252,11 @@ describe('useDeleteApplication', () => {
       expect(result.current.isPending).toBe(true);
     });
 
-    await waitFor(
-      () => {
-        expect(result.current.isSuccess).toBe(true);
-      },
-      {timeout: 200},
-    );
+    finishRequest({data: {flowStatus: 'COMPLETE'}});
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
 
     expect(result.current.isPending).toBe(false);
   });
@@ -587,4 +599,47 @@ describe('useDeleteApplication', () => {
     expect(result.current.error).toEqual(serverError);
     expect(result.current.error?.message).toBe('Application has active users and cannot be deleted');
   });
+
+  // A Control Plane console installs no administration actions. It serves no runtime, so there are
+  // no tokens to revoke and no sessions to detach, and there is no /flow/execute for it to call
+  // even if there were. The deletion is the write, and nothing reaches a flow.
+  describe('on a control plane console', () => {
+    beforeEach(() => {
+      vi.mocked(useAdministrationActions).mockReturnValue({});
+    });
+
+    it('deletes through the applications API', async () => {
+      routeHttp({'/applications/': {}});
+
+      const applicationId = '550e8400-e29b-41d4-a716-446655440000';
+      const {result} = renderHook(() => useDeleteApplication());
+
+      result.current.mutate(applicationId);
+
+      await waitFor(() => {
+        expect(result.current.isSuccess).toBe(true);
+      });
+
+      const deletions = requestsTo(`/applications/${applicationId}`);
+      expect(deletions).toHaveLength(1);
+      expect(deletions[0].method).toBe('DELETE');
+    });
+
+    it('executes no flow and does not read the flow configuration', async () => {
+      routeHttp({'/applications/': {}});
+
+      const {result} = renderHook(() => useDeleteApplication());
+
+      result.current.mutate('550e8400-e29b-41d4-a716-446655440000');
+
+      await waitFor(() => {
+        expect(result.current.isSuccess).toBe(true);
+      });
+
+      expect(requestsTo('/flow/execute')).toHaveLength(0);
+      expect(requestsTo('/server-config/flow')).toHaveLength(0);
+      expect(requestsTo('/flows')).toHaveLength(0);
+    });
+  });
+
 });

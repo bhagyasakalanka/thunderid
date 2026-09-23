@@ -1,9 +1,16 @@
 // Copyright 2025-2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {PageLoadingAnimation, QueryErrorNotice, ResourceAvatar, UnsavedChangesBar} from '@thunderid/components';
+import {
+  ManagedResourceNotice,
+  PageLoadingAnimation,
+  QueryErrorNotice,
+  ResourceAvatar,
+  UnsavedChangesBar,
+} from '@thunderid/components';
 import {OAuth2GrantTypes, TokenEndpointAuthMethods, useGetApplication} from '@thunderid/configure-applications';
 import type {Application, OAuth2Config} from '@thunderid/configure-applications';
+import {useIsManagedResource} from '@thunderid/contexts';
 import {useLogger} from '@thunderid/logger/react';
 import {isEqualIgnoringEmpty} from '@thunderid/utils';
 import {
@@ -23,7 +30,7 @@ import {
   DialogContent,
 } from '@wso2/oxygen-ui';
 import {ArrowLeft, Edit} from '@wso2/oxygen-ui-icons-react';
-import {useState, useCallback, useMemo, type SyntheticEvent} from 'react';
+import {useState, useCallback, useMemo, type JSX, type SyntheticEvent} from 'react';
 import {useTranslation} from 'react-i18next';
 import {Link, useLocation, useNavigate, useParams} from 'react-router';
 import RouteConfig from '../../../configs/RouteConfig';
@@ -35,7 +42,7 @@ import EditAdvancedSettings from '../components/edit-application/advanced-settin
 import EditCredentialsSettings from '../components/edit-application/credentials/EditCredentialsSettings';
 import EditCustomizationSettings from '../components/edit-application/customization-settings/EditCustomizationSettings';
 import EditFlowsSettings from '../components/edit-application/flows-settings/EditFlowsSettings';
-import IntegrationGuides from '../components/edit-application/integration-guides/IntegrationGuides';
+import type {IntegrationGuidesProps} from '../components/edit-application/integration-guides/IntegrationGuides';
 import McpConnectTab from '../components/edit-application/mcp/McpConnectTab';
 import EditTokenSettings from '../components/edit-application/token-settings/EditTokenSettings';
 import EditTokenSettingsTabs from '../components/edit-application/token-settings/EditTokenSettingsTabs';
@@ -84,14 +91,40 @@ function TabPanel({children = null, value, index, ...other}: TabPanelProps) {
   );
 }
 
-export default function ApplicationEditPage() {
+/**
+ * Props for {@link ApplicationEditPage}.
+ */
+export interface ApplicationEditPageProps {
+  /**
+   * Renders the Overview tab, which tells a developer how to integrate against this application.
+   *
+   * Supplied by the console rather than imported here, because that tab advertises the endpoints a
+   * client calls at runtime: the authorization, token, userinfo, JWKS, flow and passkey paths. Only
+   * a Data Plane serves those. A Control Plane console supplies nothing and the tab is absent, since
+   * every URL it would print is one that plane does not answer on.
+   */
+  renderIntegrationGuides?: (props: IntegrationGuidesProps) => JSX.Element;
+}
+
+export default function ApplicationEditPage({renderIntegrationGuides}: ApplicationEditPageProps = {}) {
   const logger = useLogger('ApplicationEditPage');
   const {t} = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const {applicationId} = useParams<{applicationId: string}>();
+  // A application applied from the control plane can only be changed there, so this view is read
+  // only for it in the same way a declarative resource is.
+  const isManagedApplication = useIsManagedResource('application');
+  const isManaged: boolean = isManagedApplication(applicationId ?? '');
 
-  const {data: application, isLoading, error, refetch} = useGetApplication(applicationId ?? '');
+  const {data: fetchedApplication, isLoading, error, refetch} = useGetApplication(applicationId ?? '');
+  // A resource the control plane owns is read only here, and saying so on the object
+  // itself is what makes every section of this page and its children treat it that way,
+  // rather than each one having to learn about ownership separately.
+  const application = useMemo(
+    () => (isManaged && fetchedApplication ? {...fetchedApplication, isReadOnly: true} : fetchedApplication),
+    [fetchedApplication, isManaged],
+  );
   const updateApplication = useUpdateApplication();
 
   // Resolves an error through the `applications` catalog. `t` defaults to the `common` namespace,
@@ -299,7 +332,7 @@ export default function ApplicationEditPage() {
                 application={application}
                 oauth2Config={oauth2Config}
                 onFieldChange={handleFieldChange}
-                isReadOnly={application.isReadOnly === true}
+                isReadOnly={application.isReadOnly === true || isManaged}
                 onValidationChange={setMcpAccessInvalid}
                 sectionResetKey={sectionResetKey}
               />
@@ -374,36 +407,41 @@ export default function ApplicationEditPage() {
 
   const mcpTabs: TabConfig[] = isMcpClient
     ? [
-        {
-          key: 'overview',
-          label: t('applications:edit.page.tabs.overview'),
-          panel: (
-            <IntegrationGuides
-              application={application}
-              oauth2Config={oauth2Config}
-              onGoToFlows={mcpFlowsTabIndex >= 0 ? () => setActiveTabKey('flows') : undefined}
-              onGoToCustomization={mcpCustomizationTabIndex >= 0 ? () => setActiveTabKey('customization') : undefined}
-            />
-          ),
-        },
+        ...(renderIntegrationGuides
+          ? [
+              {
+                key: 'overview',
+                label: t('applications:edit.page.tabs.overview'),
+                panel: renderIntegrationGuides({
+                  application,
+                  oauth2Config,
+                  onGoToCustomization:
+                    mcpCustomizationTabIndex >= 0 ? () => setActiveTabKey('customization') : undefined,
+                  onGoToFlows: mcpFlowsTabIndex >= 0 ? () => setActiveTabKey('flows') : undefined,
+                }),
+              },
+            ]
+          : []),
         ...baseMcpTabs,
       ]
     : [];
 
   const standardTabs: TabConfig[] = !isMcpClient
     ? [
-        {
-          key: 'overview',
-          label: t('applications:edit.page.tabs.overview'),
-          panel: (
-            <IntegrationGuides
-              application={application}
-              oauth2Config={oauth2Config}
-              onGoToFlows={() => setActiveTabKey('flows')}
-              onGoToCustomization={() => setActiveTabKey('customization')}
-            />
-          ),
-        },
+        ...(renderIntegrationGuides
+          ? [
+              {
+                key: 'overview',
+                label: t('applications:edit.page.tabs.overview'),
+                panel: renderIntegrationGuides({
+                  application,
+                  oauth2Config,
+                  onGoToCustomization: () => setActiveTabKey('customization'),
+                  onGoToFlows: () => setActiveTabKey('flows'),
+                }),
+              },
+            ]
+          : []),
         {
           key: 'access',
           label: t('applications:edit.page.tabs.access', 'Access'),
@@ -504,7 +542,9 @@ export default function ApplicationEditPage() {
 
   return (
     <PageContent>
-      {application.isReadOnly && (
+      {/* A managed resource says where it can be changed; a declarative one has no such place. */}
+      {isManaged && <ManagedResourceNotice />}
+      {application.isReadOnly && !isManaged && (
         <Alert severity="info" sx={{mb: 2}}>
           {t('common:messages.readOnlyResource', 'This resource is read-only and cannot be modified.')}
         </Alert>
@@ -519,7 +559,7 @@ export default function ApplicationEditPage() {
             size={55}
             variant="rounded"
             supportedShapes={['rounded']}
-            editable={!application.isReadOnly}
+            editable={!(application.isReadOnly === true || isManaged)}
             value={editedApp.logoUrl ?? application.logoUrl}
             fallback={ApplicationConstants.DEFAULT_AVATAR}
             editAriaLabel={t('applications:edit.page.logoUpdate.label', 'Update Logo')}
@@ -562,7 +602,7 @@ export default function ApplicationEditPage() {
             ) : (
               <>
                 <Typography variant="h3">{editedApp.name ?? application.name}</Typography>
-                {!application.isReadOnly && (
+                {!(application.isReadOnly === true || isManaged || isManaged) && (
                   <IconButton
                     size="small"
                     onClick={() => {
@@ -624,7 +664,7 @@ export default function ApplicationEditPage() {
                 <Typography variant="body2" color="text.secondary">
                   {editedApp.description ?? application.description ?? t('applications:edit.page.description.empty')}
                 </Typography>
-                {!application.isReadOnly && (
+                {!(application.isReadOnly === true || isManaged || isManaged) && (
                   <IconButton
                     size="small"
                     onClick={() => {
@@ -700,7 +740,8 @@ export default function ApplicationEditPage() {
             credentialsSettingsInvalid ||
             isMissingRedirectUri ||
             isMissingCertificate ||
-            application.isReadOnly === true
+            application.isReadOnly === true ||
+            isManaged
           }
           error={
             updateApplication.error

@@ -28,7 +28,7 @@ const formatUserLabel = (user: {id: string; display?: string; attributes?: Recor
 /**
  * Props for the {@link AgentOverview} component.
  */
-interface AgentOverviewProps {
+export interface AgentOverviewProps {
   /**
    * The agent to show the overview for.
    */
@@ -41,6 +41,15 @@ interface AgentOverviewProps {
    * Navigates to the agent's Advanced tab, where Delegated mode and allowed user types live.
    */
   onGoToAdvanced?: () => void;
+  /**
+   * The base URL the endpoints below are built from, when it is not this console's own server.
+   *
+   * A Data Plane console omits it: the server it talks to is the one that serves these paths. A
+   * Control Plane console passes its default gateway's URL, because the agent is authored here and
+   * answered there, so printing this console's own address would send a developer to a host that
+   * serves none of them.
+   */
+  runtimeBaseUrl?: string;
 }
 
 /** A small rounded, tinted square behind a card's leading icon. */
@@ -133,13 +142,14 @@ export default function AgentOverview({
   agent,
   oauth2Config = undefined,
   onGoToAdvanced = undefined,
+  runtimeBaseUrl = undefined,
 }: AgentOverviewProps): JSX.Element {
   const {t} = useTranslation();
   const {getServerUrl, getDocumentationLink} = useConfig();
   const externalLinkConfirmation = useExternalLinkConfirmation();
   const {data: usersData} = useGetUsers({limit: 100, offset: 0});
 
-  const serverUrl = getServerUrl();
+  const serverUrl = runtimeBaseUrl ?? getServerUrl();
   const quickstartDocsUrl = getDocumentationLink('agents.quickstarts.langchain.docs');
 
   const ownerLabel = useMemo(() => {

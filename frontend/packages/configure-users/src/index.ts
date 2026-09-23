@@ -30,7 +30,11 @@ export {default as UserQueryKeys} from './constants/user-query-keys';
 export * from './models/users';
 
 // Pages
-export {default as UserAddPage} from './pages/UserAddPage';
+// UserAddPage picks by plane: a form on a Control Plane, which runs no flows, and the flow-driven
+// journey on a Data Plane, which does.
+export {default as UserAddPage} from './pages/UserAddRoute';
+export {default as UserAddFlowPage} from './pages/UserAddPage';
+export {default as UserAddFormPage} from './pages/UserAddFormPage';
 export {default as UserCreatePage} from './pages/UserCreatePage';
 export {default as UserEditPage} from './pages/UserEditPage';
 export {default as UsersListPage} from './pages/UsersListPage';
@@ -43,3 +47,7 @@ export {defaultUserRoutePaths, default as useUserRoutes} from './hooks/useUserRo
 export {default as renderSchemaField} from './utils/renderSchemaField';
 export * from './utils/dropNonConformingAttributes';
 export {default as getUserErrorMessage} from './utils/getUserErrorMessage';
+
+// The flow-backed deletion, exported so a console that runs flows can install it as its
+// administration action. A console that does not install it deletes through the users API.
+export {default as deleteUserViaFlow} from './utils/deleteUserViaFlow';

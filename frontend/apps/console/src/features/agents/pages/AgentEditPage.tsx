@@ -1,9 +1,16 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {PageLoadingAnimation, QueryErrorNotice, ResourceAvatar, UnsavedChangesBar} from '@thunderid/components';
+import {
+  ManagedResourceNotice,
+  PageLoadingAnimation,
+  QueryErrorNotice,
+  ResourceAvatar,
+  UnsavedChangesBar,
+} from '@thunderid/components';
 import {useGetAgentType, useGetAgentTypes} from '@thunderid/configure-agent-types';
 import {dropNonConformingOptionalAttributes} from '@thunderid/configure-users';
+import {useIsManagedResource} from '@thunderid/contexts';
 import {useLogger} from '@thunderid/logger/react';
 import {getErrorMessage, isEqualIgnoringEmpty} from '@thunderid/utils';
 import {
@@ -34,7 +41,7 @@ import EditAdvancedSettings from '../components/edit-agent/advanced-settings/Edi
 import EditAgentAttributes from '../components/edit-agent/attributes/EditAgentAttributes';
 import EditCredentialsSettings from '../components/edit-agent/credentials/EditCredentialsSettings';
 import EditFlowsSettings from '../components/edit-agent/flows/EditFlowsSettings';
-import AgentOverview from '../components/edit-agent/overview/AgentOverview';
+import type {AgentOverviewProps} from '../components/edit-agent/overview/AgentOverview';
 import EditTokensSettings from '../components/edit-agent/tokens/EditTokensSettings';
 import AgentConstants from '../constants/agent-constants';
 import type {Agent, OAuthAgentConfig} from '../models/agent';
@@ -65,14 +72,39 @@ function TabPanel({children = null, value, index, ...other}: TabPanelProps) {
   );
 }
 
-export default function AgentEditPage(): JSX.Element {
+/**
+ * Props for {@link AgentEditPage}.
+ */
+export interface AgentEditPageProps {
+  /**
+   * Renders the Overview tab, which tells a developer how to integrate against this agent.
+   *
+   * Supplied by the console rather than imported here, for the reason the application edit page
+   * gives: the tab prints the OAuth endpoints a client calls at runtime, and only a Data Plane
+   * serves them. A Control Plane console supplies nothing and the tab is absent.
+   */
+  renderAgentOverview?: (props: AgentOverviewProps) => JSX.Element;
+}
+
+export default function AgentEditPage({renderAgentOverview}: AgentEditPageProps = {}): JSX.Element {
   const {t} = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const logger = useLogger('AgentEditPage');
   const {agentId} = useParams<{agentId: string}>();
+  // A agent applied from the control plane can only be changed there, so this view is read
+  // only for it in the same way a declarative resource is.
+  const isManagedAgent = useIsManagedResource('agent');
+  const isManaged: boolean = isManagedAgent(agentId ?? '');
 
-  const {data: agent, isLoading, error, refetch} = useGetAgent(agentId ?? '');
+  const {data: fetchedAgent, isLoading, error, refetch} = useGetAgent(agentId ?? '');
+  // A resource the control plane owns is read only here, and saying so on the object
+  // itself is what makes every section of this page and its children treat it that way,
+  // rather than each one having to learn about ownership separately.
+  const agent = useMemo(
+    () => (isManaged && fetchedAgent ? {...fetchedAgent, isReadOnly: true} : fetchedAgent),
+    [fetchedAgent, isManaged],
+  );
   const updateAgent = useUpdateAgent();
 
   // Resolves an error through the `agents` catalog. `t` defaults to the `common` namespace, so
@@ -275,17 +307,20 @@ export default function AgentEditPage(): JSX.Element {
   }
 
   const tabs: TabConfig[] = [
-    {
-      key: 'overview',
-      label: t('agents:edit.page.tabs.overview', 'Overview'),
-      render: () => (
-        <AgentOverview
-          agent={agent}
-          oauth2Config={oauth2Config}
-          onGoToAdvanced={() => handleNavigateToTab('advanced')}
-        />
-      ),
-    },
+    ...(renderAgentOverview
+      ? [
+          {
+            key: 'overview',
+            label: t('agents:edit.page.tabs.overview', 'Overview'),
+            render: () =>
+              renderAgentOverview({
+                agent,
+                oauth2Config,
+                onGoToAdvanced: () => handleNavigateToTab('advanced'),
+              }),
+          },
+        ]
+      : []),
     {
       key: 'attributes',
       label: t('agents:edit.page.tabs.attributes', 'Attributes'),
@@ -384,7 +419,9 @@ export default function AgentEditPage(): JSX.Element {
 
   return (
     <PageContent>
-      {agent.isReadOnly && (
+      {/* A managed resource says where it can be changed; a declarative one has no such place. */}
+      {isManaged && <ManagedResourceNotice />}
+      {agent.isReadOnly && !isManaged && (
         <Alert severity="info" sx={{mb: 2}}>
           {t('common:messages.readOnlyResource', 'This resource is read-only and cannot be modified.')}
         </Alert>
@@ -447,7 +484,7 @@ export default function AgentEditPage(): JSX.Element {
             ) : (
               <>
                 <Typography variant="h3">{editedAgent.name ?? agent.name}</Typography>
-                {!agent.isReadOnly && (
+                {!(agent.isReadOnly === true || isManaged || isManaged) && (
                   <IconButton
                     size="small"
                     onClick={() => {
@@ -494,7 +531,7 @@ export default function AgentEditPage(): JSX.Element {
                     agent.description ??
                     t('agents:edit.page.description.empty', 'No description')}
                 </Typography>
-                {!agent.isReadOnly && (
+                {!(agent.isReadOnly === true || isManaged || isManaged) && (
                   <IconButton
                     size="small"
                     onClick={() => {
@@ -537,7 +574,6 @@ export default function AgentEditPage(): JSX.Element {
           saveLabel={t('agents:edit.page.save', 'Save')}
           savingLabel={t('agents:edit.page.saving', 'Saving…')}
           isSaving={updateAgent.isPending}
-          saveDisabled={hasAnyValidationError || agent.isReadOnly === true}
           error={
             updateAgent.error
               ? getErrorMessage(
@@ -548,6 +584,7 @@ export default function AgentEditPage(): JSX.Element {
                 )
               : undefined
           }
+          saveDisabled={hasAnyValidationError || agent.isReadOnly === true || isManaged}
           onReset={() => {
             if (updateAgent.isError) {
               updateAgent.reset(); // a save error is stale once the form resets

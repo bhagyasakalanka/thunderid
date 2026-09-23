@@ -2,7 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Export types
-export type {ProductConfig, ServerConfig, TrustedIssuerConfig, BrandConfig, SdkConfig} from './Config/types';
+export type {
+  ProductConfig,
+  ServerConfig,
+  TrustedIssuerConfig,
+  BrandConfig,
+  SdkConfig,
+  Plane,
+  EnvManagerConfig,
+} from './Config/types';
 export type {ToastContextType, ToastSeverity} from './Toast/ToastContext';
 export type {RoutePaths} from './Routes/RoutesContext';
 
@@ -16,3 +24,22 @@ export {default as useToast} from './Toast/useToast';
 export {default as RoutesContext} from './Routes/RoutesContext';
 export {default as RoutesProvider, type RoutesProviderProps} from './Routes/RoutesProvider';
 export {default as useRoutes} from './Routes/useRoutes';
+
+// Managed resources: which resources this deployment does not own, because a control plane applied
+// them. Lives here so every configure-* package can ask, rather than only the console.
+export {useManagedResources, useIsManagedResource} from './ManagedResources';
+export type {ManagedResourceType, ManagedResourcesResponse} from './ManagedResources';
+
+// Administration actions: how this console carries out the operations a plane may perform
+// differently. A console that installs none takes the plain management path, which is what a
+// Control Plane does, because it runs no flows.
+export {
+  AdministrationActionsContext,
+  AdministrationActionsProvider,
+  useAdministrationActions,
+} from './AdministrationActions';
+export type {
+  AdministrationActions,
+  AdministrationActionsProviderProps,
+  AdministrationHttpLike,
+} from './AdministrationActions';

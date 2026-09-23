@@ -1,7 +1,7 @@
 // Copyright 2025-2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {readFileSync, copyFileSync, existsSync, writeFileSync} from 'fs';
+import {readFileSync, copyFileSync, existsSync, writeFileSync, renameSync, rmSync} from 'fs';
 import {resolve, dirname} from 'path';
 import {fileURLToPath} from 'url';
 import {codecovVitePlugin} from '@codecov/vite-plugin';
@@ -17,6 +17,51 @@ const currentDir = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT ? Number(process.env.PORT) : 5191;
 const HOST = process.env.HOST ?? 'localhost';
 const BASE_URL = process.env.BASE_URL ?? '/console';
+
+// Which plane this build serves. The two consoles are the same application: they share this
+// package, its dependencies, its public assets and the whole of src/. They differ in one thing,
+// which route tree they mount, and that is a build-time choice rather than a setting, so a console
+// links the pages it can serve and nothing else.
+//
+//   pnpm build            -> the data plane console, dist/
+//   BUILD_PLANE=cp pnpm build -> the control plane console, dist-cp/
+const BUILD_PLANE = process.env.BUILD_PLANE === 'cp' ? 'cp' : 'dp';
+const IS_CP = BUILD_PLANE === 'cp';
+// Each plane has its own entry document, which is what keeps the other plane's route tree out of
+// this bundle: the graph starts at one main.tsx, so the pages the other console mounts are never
+// reached and never linked.
+const ENTRY_HTML = IS_CP ? 'index.cp.html' : 'index.html';
+const OUT_DIR = IS_CP ? 'dist-cp' : 'dist';
+
+/**
+ * Finishes a control plane build so its output is served exactly like the data plane's.
+ *
+ * Two things differ on disk and neither is worth a second package. The entry document is named for
+ * the plane while building, so it is renamed back to index.html, which is what a server looks for.
+ * And config.js is the one file whose contents are per plane, so the control plane's replaces the
+ * data plane's after the shared public directory has been copied.
+ */
+function finishControlPlaneBuild() {
+  return {
+    name: 'thunderid-finish-cp-build',
+    apply: 'build' as const,
+    closeBundle() {
+      if (!IS_CP) {
+        return;
+      }
+      const out = resolve(currentDir, OUT_DIR);
+      const entry = resolve(out, 'index.cp.html');
+      if (existsSync(entry)) {
+        rmSync(resolve(out, 'index.html'), {force: true});
+        renameSync(entry, resolve(out, 'index.html'));
+      }
+      const cpConfig = resolve(currentDir, 'config.cp.js');
+      if (existsSync(cpConfig)) {
+        copyFileSync(cpConfig, resolve(out, 'config.js'));
+      }
+    },
+  };
+}
 
 // Copy version.txt from monorepo root into public/ so it is served at runtime
 // and included in the build output, then read the local copy for the build constant.
@@ -46,7 +91,9 @@ const DEV_GATE_URL = process.env.THUNDERID_DEV_GATE_URL?.trim();
 export default defineConfig(({command}) => ({
   base: BASE_URL,
   build: {
+    outDir: OUT_DIR,
     rollupOptions: {
+      input: resolve(currentDir, ENTRY_HTML),
       output: {
         manualChunks(id) {
           if (id.includes('node_modules/@mui/x-data-grid') || id.includes('node_modules/@mui/x-virtualizer')) {
@@ -90,6 +137,7 @@ export default defineConfig(({command}) => ({
     ),
   },
   plugins: [
+    finishControlPlaneBuild(),
     linkWorkspaceSource(),
     prismjsInjectCore(),
     basicSsl(),

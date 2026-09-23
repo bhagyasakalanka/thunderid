@@ -8,10 +8,11 @@ import {OrganizationUnitProvider} from '@thunderid/configure-organization-units'
 import {RoleCreateProvider} from '@thunderid/configure-roles';
 import {TranslationCreateProvider} from '@thunderid/configure-translations';
 import {UserTypeCreateProvider} from '@thunderid/configure-user-types';
-import {RoutesProvider, ToastProvider} from '@thunderid/contexts';
+import {AdministrationActionsProvider, RoutesProvider, ToastProvider} from '@thunderid/contexts';
 import {ProtectedRoute} from '@thunderid/react-router';
 import {lazy, Suspense, type JSX} from 'react';
 import {BrowserRouter, Navigate, Outlet, Route, Routes} from 'react-router';
+import PlaneRouteGuard from './components/PlaneRouteGuard';
 import RouteConfig, {ROUTE_SEGMENTS} from './configs/RouteConfig';
 import AgentCreateProvider from './features/agents/contexts/AgentCreate/AgentCreateProvider';
 import ApplicationCreateProvider from './features/applications/contexts/ApplicationCreate/ApplicationCreateProvider';
@@ -23,6 +24,10 @@ import TryoutSecuringApplicationPage from './features/welcome/pages/TryoutSecuri
 import TryoutSecuringMCPPage from './features/welcome/pages/TryoutSecuringMCPPage';
 import DashboardLayout from './layouts/DashboardLayout';
 import FullScreenLayout from './layouts/FullScreenLayout';
+import dataPlaneAdministrationActions from '@/features/administration/dataPlaneAdministrationActions';
+import renderAgentOverview from '@/features/administration/renderAgentOverview';
+import renderCredentialOffer from '@/features/administration/renderCredentialOffer';
+import renderIntegrationGuides from '@/features/administration/renderIntegrationGuides';
 
 const ViewAgentTypePage = lazy(() =>
   import('@thunderid/configure-agent-types').then((m) => ({default: m.ViewAgentTypePage})),
@@ -117,6 +122,13 @@ const ConnectionConfigureWizardPage = lazy(() =>
 const ConnectionCreateWizardPage = lazy(() =>
   import('@thunderid/configure-connections').then((m) => ({default: m.ConnectionCreateWizardPage})),
 );
+const PromotionsListPage = lazy(() => import('./features/promotions/pages/PromotionsListPage'));
+const GatewayDetailPage = lazy(() => import('./features/promotions/pages/GatewayDetailPage'));
+const GatewaySecretsPage = lazy(() => import('./features/promotions/pages/GatewaySecretsPage'));
+const PromotePage = lazy(() => import('./features/promotions/pages/PromotePage'));
+const GatewayVariablesListPage = lazy(() => import('./features/gateway-variables/pages/GatewayVariablesListPage'));
+const GatewayVariableEditPage = lazy(() => import('./features/gateway-variables/pages/GatewayVariableEditPage'));
+const CreateGatewayVariablePage = lazy(() => import('./features/gateway-variables/pages/CreateGatewayVariablePage'));
 const FlowBuilderPage = lazy(() => import('./features/flows/pages/FlowBuilderPage'));
 const CreateRolePage = lazy(() => import('@thunderid/configure-roles').then((m) => ({default: m.CreateRolePage})));
 const RoleEditPage = lazy(() => import('@thunderid/configure-roles').then((m) => ({default: m.RoleEditPage})));
@@ -159,8 +171,12 @@ export default function App(): JSX.Element {
   return (
     <BrowserRouter basename={import.meta.env.BASE_URL}>
       <RoutesProvider paths={RouteConfig}>
+        {/* This plane runs flows, so the administrative operations that need one are installed
+            here. The Control Plane console installs nothing and writes directly. */}
+        <AdministrationActionsProvider actions={dataPlaneAdministrationActions}>
         <ToastProvider>
           <WelcomeRedirect />
+          <PlaneRouteGuard />
           <Suspense fallback={<PageLoader />}>
             <Routes>
               <Route
@@ -195,15 +211,24 @@ export default function App(): JSX.Element {
                   path={`${ROUTE_SEGMENTS.verifiablePresentations}/:vpId`}
                   element={<VerifiablePresentationEditPage />}
                 />
-                <Route path={ROUTE_SEGMENTS.verifiableCredentials} element={<VerifiableCredentialsListPage />} />
+                <Route
+                  path={ROUTE_SEGMENTS.verifiableCredentials}
+                  element={<VerifiableCredentialsListPage renderOffer={renderCredentialOffer} />}
+                />
                 <Route
                   path={`${ROUTE_SEGMENTS.verifiableCredentials}/:vcId`}
                   element={<VerifiableCredentialEditPage />}
                 />
                 <Route path={ROUTE_SEGMENTS.applications} element={<ApplicationsListPage />} />
-                <Route path={`${ROUTE_SEGMENTS.applications}/:applicationId`} element={<ApplicationEditPage />} />
+                <Route
+                  path={`${ROUTE_SEGMENTS.applications}/:applicationId`}
+                  element={<ApplicationEditPage renderIntegrationGuides={renderIntegrationGuides} />}
+                />
                 <Route path={ROUTE_SEGMENTS.agents} element={<AgentsListPage />} />
-                <Route path={`${ROUTE_SEGMENTS.agents}/:agentId`} element={<AgentEditPage />} />
+                <Route
+                  path={`${ROUTE_SEGMENTS.agents}/:agentId`}
+                  element={<AgentEditPage renderAgentOverview={renderAgentOverview} />}
+                />
                 <Route path={ROUTE_SEGMENTS.flows} element={<FlowsListPage />} />
                 <Route path={ROUTE_SEGMENTS.resourceServers} element={<ResourceServersListPage />} />
                 <Route
@@ -211,6 +236,16 @@ export default function App(): JSX.Element {
                   element={<ResourceServerEditPage />}
                 />
                 <Route path={ROUTE_SEGMENTS.settings} element={<SettingsPage />} />
+                <Route path="promotions" element={<PromotionsListPage />} />
+                <Route path="promotions/:gatewayId" element={<GatewayDetailPage />} />
+                <Route path="promotions/:gatewayId/secrets" element={<GatewaySecretsPage />} />
+                <Route path="promotions/:gatewayId/promote" element={<PromotePage />} />
+                {/* A variable belongs to a gateway, so it is reached through one. */}
+                <Route path="promotions/:gatewayId/variables" element={<GatewayVariablesListPage />} />
+                <Route
+                  path="promotions/:gatewayId/variables/:gatewayVariableId"
+                  element={<GatewayVariableEditPage />}
+                />
               </Route>
               {/* Organization Units - wrapped in OrganizationUnitProvider to preserve tree state across navigation */}
               <Route
@@ -516,6 +551,16 @@ export default function App(): JSX.Element {
                 <Route index element={<TranslationCreatePage />} />
               </Route>
               <Route
+                path="/promotions/:gatewayId/variables/create"
+                element={
+                  <ProtectedRoute>
+                    <FullScreenLayout />
+                  </ProtectedRoute>
+                }
+              >
+                <Route index element={<CreateGatewayVariablePage />} />
+              </Route>
+              <Route
                 path={RouteConfig.translations.list()}
                 element={
                   <ProtectedRoute>
@@ -529,6 +574,7 @@ export default function App(): JSX.Element {
             </Routes>
           </Suspense>
         </ToastProvider>
+        </AdministrationActionsProvider>
       </RoutesProvider>
     </BrowserRouter>
   );
