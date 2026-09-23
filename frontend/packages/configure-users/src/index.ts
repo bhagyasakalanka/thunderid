@@ -43,3 +43,7 @@ export {defaultUserRoutePaths, default as useUserRoutes} from './hooks/useUserRo
 export {default as renderSchemaField} from './utils/renderSchemaField';
 export * from './utils/dropNonConformingAttributes';
 export {default as getUserErrorMessage} from './utils/getUserErrorMessage';
+
+// The flow-backed deletion, exported so a console that runs flows can install it as its
+// administration action. A console that does not install it deletes through the users API.
+export {default as deleteUserViaFlow} from './utils/deleteUserViaFlow';
