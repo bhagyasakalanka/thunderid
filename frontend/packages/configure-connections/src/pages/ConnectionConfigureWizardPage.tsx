@@ -26,7 +26,25 @@ import {
  * Full-screen wizard for configuring a branded catalog vendor: a single credentials step. The
  * connection name is fixed to the vendor display name.
  */
-export default function ConnectionConfigureWizardPage(): JSX.Element | null {
+/**
+ * Props for {@link ConnectionConfigureWizardPage}.
+ */
+export interface ConnectionConfigureWizardPageProps {
+  /**
+   * The redirect URI shown for this connection, when it is not this console's own gate.
+   *
+   * An operator copies this value into the provider's allowed-redirect list, so it has to name the
+   * deployment that will actually receive the callback. A console whose server answers that
+   * callback omits it. One that does not, because the gate belongs elsewhere, passes the address
+   * that does, since pointing a provider at a host that serves no gate fails at sign-in time with
+   * nothing here to explain why.
+   */
+  redirectUri?: string;
+}
+
+export default function ConnectionConfigureWizardPage({
+  redirectUri: redirectUriOverride = undefined,
+}: ConnectionConfigureWizardPageProps = {}): JSX.Element | null {
   const {t} = useTranslation('connections');
   const navigate = useNavigate();
   const routes = useConnectionRoutes();
@@ -48,7 +66,7 @@ export default function ConnectionConfigureWizardPage(): JSX.Element | null {
   }, [meta, navigate, routes]);
 
   const fields = useMemo(() => (meta ? CONNECTION_FORM_FIELDS[connectionType] : []), [meta, connectionType]);
-  const redirectUri = getGateCallbackUrl();
+  const redirectUri = redirectUriOverride ?? getGateCallbackUrl();
   const emptyValues = useMemo(() => emptyFormValues(fields, redirectUri), [fields, redirectUri]);
 
   if (!meta) {
