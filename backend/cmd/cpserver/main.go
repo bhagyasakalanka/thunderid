@@ -209,12 +209,65 @@ func initThunderConfigurations(ctx context.Context, logger *log.Logger, serverHo
 		logger.Fatal(ctx, "Failed to load configurations", log.Error(err))
 	}
 
+	// Declarative resources are not a mode this plane offers, so the configuration that would
+	// select one is overridden before anything reads it.
+	forceMutableStores(ctx, logger, cfg)
+
 	// Initialize runtime configurations.
 	if err := config.InitializeServerRuntime(serverHome, cfg); err != nil {
 		logger.Fatal(ctx, "Failed to initialize server runtime", log.Error(err))
 	}
 
 	return cfg
+}
+
+// forceMutableStores puts every resource type in mutable mode, so the Control Plane reads and
+// writes the database alone and never a declarative file.
+//
+// This plane authors configuration: every resource it holds has to be writable through the
+// management API, and a declarative or composite store makes its own resources read-only. It runs
+// before InitializeServerRuntime, which is what publishes the configuration the rest of the
+// process reads, so no service can observe the value a deployment.yaml asked for.
+//
+// Each resource type resolves its own mode and falls back to declarative_resources.enabled only
+// when its own store is unset, so clearing the global switch alone would leave any explicit
+// per-type store in force. Both layers are overridden for that reason.
+//
+// Whatever a deployment.yaml asked for is logged rather than silently dropped: the request was
+// legitimate to make, and an operator who made it is owed the reason it did not take effect.
+func forceMutableStores(ctx context.Context, logger *log.Logger, cfg *config.Config) {
+	if cfg.DeclarativeResources.Enabled {
+		logger.Warn(ctx, "Ignoring declarative_resources.enabled: this plane runs its stores in mutable mode")
+		cfg.DeclarativeResources.Enabled = false
+	}
+
+	stores := map[string]*string{
+		"user":              &cfg.User.Store,
+		"flow":              &cfg.Flow.Store,
+		"resource":          &cfg.Resource.Store,
+		"openid4vp":         &cfg.OpenID4VP.Store,
+		"openid4vci":        &cfg.OpenID4VCI.Store,
+		"organization_unit": &cfg.OrganizationUnit.Store,
+		"identity_provider": &cfg.IdentityProvider.Store,
+		"application":       &cfg.Application.Store,
+		"server_config":     &cfg.ServerConfig.Store,
+		"agent":             &cfg.Agent.Store,
+		"user_type":         &cfg.EntityType.Store,
+		"group":             &cfg.Group.Store,
+		"role":              &cfg.Role.Store,
+		"theme":             &cfg.Theme.Store,
+		"layout":            &cfg.Layout.Store,
+		"translation":       &cfg.Translation.Store,
+	}
+
+	mutable := string(constants.StoreModeMutable)
+	for name, store := range stores {
+		if *store != "" && !strings.EqualFold(strings.TrimSpace(*store), mutable) {
+			logger.Warn(ctx, "Ignoring a configured store mode: this plane runs its stores in mutable mode",
+				log.String("resource", name), log.String("configured", *store))
+		}
+		*store = mutable
+	}
 }
 
 // loadCertConfig loads the TLS material via the runtime crypto provider.
