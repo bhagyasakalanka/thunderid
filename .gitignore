@@ -151,3 +151,4 @@ backend/cmd/server/bootstrap/03-dev-server-configurations.yaml
 THUNDERID_INTERNALS_GUIDE.md
 
 backend/cmd/server/apps/
+backend/cmd/cpserver/apps/
