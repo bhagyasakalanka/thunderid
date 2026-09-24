@@ -40,9 +40,20 @@ type Gateway struct {
 	// publicly-issued certificate verifies against the system roots with nothing configured here.
 	// Naming the one certificate keeps verification on for that gateway, rather than a switch that
 	// turns it off.
-	CACertificate string    `json:"caCertificate,omitempty"`
-	CreatedAt     time.Time `json:"createdAt"`
-	UpdatedAt     time.Time `json:"updatedAt"`
+	CACertificate string `json:"caCertificate,omitempty"`
+	// ManagedByControlPlane marks the one data plane this control plane administers directly, rather
+	// than only applies configuration to.
+	//
+	// It decides where a value created here is placed. A credential is created once, and each data
+	// plane holds its own, so writing one everywhere would put a credential made while developing
+	// into production. It goes to this gateway alone; the others receive theirs when a configuration
+	// is applied to them deliberately.
+	//
+	// Exactly one gateway holds it. The first one registered takes it, and it can be moved
+	// afterwards by marking another.
+	ManagedByControlPlane bool      `json:"managedByControlPlane,omitempty"`
+	CreatedAt             time.Time `json:"createdAt"`
+	UpdatedAt             time.Time `json:"updatedAt"`
 }
 
 // KeyConfigured reports whether a key is held, which is all a read of one discloses.

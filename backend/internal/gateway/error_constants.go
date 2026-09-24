@@ -108,4 +108,19 @@ var (
 			DefaultValue: "The request body is not valid JSON",
 		},
 	}
+	// ErrorNoManagedGateway is returned when a value has to be written to a data plane and no gateway
+	// is marked as the one this control plane administers.
+	ErrorNoManagedGateway = tidcommon.ServiceError{
+		Type: tidcommon.ClientErrorType,
+		Code: "GTW-1009",
+		Error: tidcommon.I18nMessage{
+			Key:          "error.gateway.no_managed_gateway",
+			DefaultValue: "No data plane is administered by this control plane",
+		},
+		ErrorDescription: tidcommon.I18nMessage{
+			Key: "error.gateway.no_managed_gateway.description",
+			DefaultValue: "Register a data plane, or mark one of the registered gateways as the one " +
+				"this control plane administers, before creating a resource that holds a value.",
+		},
+	}
 )

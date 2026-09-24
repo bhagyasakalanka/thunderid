@@ -41,6 +41,12 @@ type ServiceInterface interface {
 	// Adopt registers a gateway declared in a file, or updates the one already registered under
 	// that name. It is what makes reading those files on every start idempotent.
 	Adopt(ctx context.Context, req RegisterRequest) *tidcommon.ServiceError
+	// Managed returns the data plane this control plane administers directly, with its key opened
+	// ready to present. It is where a value created here is written.
+	//
+	// It refuses when no gateway holds the mark rather than choosing one: writing a credential to a
+	// data plane nobody nominated is how a value made while developing reaches production.
+	Managed(ctx context.Context) (*Gateway, *tidcommon.ServiceError)
 }
 
 type service struct {
@@ -158,6 +164,10 @@ func (s *service) Register(ctx context.Context,
 		BaseURL:       baseURL,
 		Key:           stored,
 		CACertificate: strings.TrimSpace(req.CACertificate),
+		// The first gateway registered is the one this control plane administers directly, because a
+		// control plane with one data plane has no other candidate and should not need an extra call
+		// to say so. A later one is marked deliberately.
+		ManagedByControlPlane: count == 0,
 	}
 	// The insert carries the capacity check and returns the row it wrote, so what comes back is what
 	// is stored, timestamps included. No row means the limit refused it.
@@ -428,4 +438,45 @@ func (s *service) protect(ctx context.Context, secret string) (string, *tidcommo
 		return "", &tidcommon.InternalServerError
 	}
 	return stored, nil
+}
+
+// reveal opens a stored management token for presenting to its data plane.
+func (s *service) reveal(ctx context.Context, stored string) (string, *tidcommon.ServiceError) {
+	properties, err := cmodels.DeserializePropertiesFromJSON(stored)
+	if err != nil || len(properties) == 0 {
+		s.logger.Error(ctx, "Failed to open the gateway credential", log.Error(err))
+		return "", &tidcommon.InternalServerError
+	}
+	key, err := properties[0].GetValue()
+	if err != nil {
+		s.logger.Error(ctx, "Failed to open the gateway credential", log.Error(err))
+		return "", &tidcommon.InternalServerError
+	}
+	return key, nil
+}
+
+// Managed returns the gateway this control plane administers directly.
+//
+// The key comes back opened, because the only reason to ask for this gateway is to call it. Reads
+// that are shown to an operator go through List and Get, which leave it sealed.
+func (s *service) Managed(ctx context.Context) (*Gateway, *tidcommon.ServiceError) {
+	gateways, err := s.store.List(ctx)
+	if err != nil {
+		s.logger.Error(ctx, "Failed to list the gateways", log.Error(err))
+		return nil, &tidcommon.InternalServerError
+	}
+
+	for i := range gateways {
+		if !gateways[i].ManagedByControlPlane {
+			continue
+		}
+		managed := gateways[i]
+		key, svcErr := s.reveal(ctx, managed.Key)
+		if svcErr != nil {
+			return nil, svcErr
+		}
+		managed.Key = key
+		return &managed, nil
+	}
+	return nil, &ErrorNoManagedGateway
 }
