@@ -12,6 +12,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/thunder-id/thunderid/internal/dataplane"
+	"github.com/thunder-id/thunderid/internal/system/valueref"
+
 	"github.com/thunder-id/thunderid/internal/application/model"
 	"github.com/thunder-id/thunderid/internal/cert"
 	"github.com/thunder-id/thunderid/internal/entity"
@@ -142,6 +145,14 @@ func (as *applicationService) CreateApplication(ctx context.Context, app *model.
 	if inboundAuthConfig != nil && inboundAuthConfig.OAuthConfig != nil {
 		clientID = inboundAuthConfig.OAuthConfig.ClientID
 		clientSecret = inboundAuthConfig.OAuthConfig.ClientSecret
+	}
+
+	// The credentials belong to the deployment that serves this application, not to the deployment
+	// that authored it. Where this process places them elsewhere, what is stored here is the
+	// reference naming them; where it does not, these are unchanged.
+	clientID, clientSecret, svcErr = as.placeClientCredentials(ctx, app.Name, clientID, clientSecret)
+	if svcErr != nil {
+		return nil, svcErr
 	}
 
 	// Issue an Flow Secret only to applications that can initiate a flow directly via the Flow
@@ -2479,4 +2490,33 @@ func (as *applicationService) syncPasskeyOriginsToCORS(ctx context.Context, orig
 		as.logger.Warn(ctx, "Failed to update CORS config with passkey allowed origins",
 			log.String("error", svcErr.ErrorDescription.DefaultValue))
 	}
+}
+
+// placeClientCredentials puts an application's OAuth credentials where this process keeps values and
+// returns what to store in their place.
+//
+// The client id is an ordinary value and the secret is a credential, so they go to different
+// collections: one is read back and the other never is. Both are placed before anything is stored,
+// so an application is never written referring to a value that was not placed.
+func (as *applicationService) placeClientCredentials(ctx context.Context,
+	appName, clientID, clientSecret string) (string, string, *tidcommon.ServiceError) {
+	values := dataplane.Default()
+
+	if clientID != "" {
+		placed, svcErr := values.Place(ctx, valueref.CollectionVariable,
+			resourceTypeApplication, appName, "ClientId", clientID)
+		if svcErr != nil {
+			return "", "", svcErr
+		}
+		clientID = placed
+	}
+	if clientSecret != "" {
+		placed, svcErr := values.Place(ctx, valueref.CollectionSecret,
+			resourceTypeApplication, appName, "ClientSecret", clientSecret)
+		if svcErr != nil {
+			return "", "", svcErr
+		}
+		clientSecret = placed
+	}
+	return clientID, clientSecret, nil
 }

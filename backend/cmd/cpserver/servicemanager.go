@@ -21,6 +21,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/thunder-id/thunderid/internal/dataplane"
+	"github.com/thunder-id/thunderid/internal/gateway"
+
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/thunder-id/thunderid/internal/agent"
@@ -309,6 +312,16 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 	// This plane authors configuration and does not hold the values it refers to, so an export
 	// carries references naming where each value lives rather than the values themselves.
 	_ = export.Initialize(mux, exporters, export.ValueReferences)
+
+	// The data planes this control plane administers. Registration is bounded by
+	// server.max_gateways, which is one unless a deployment raises it.
+	gatewayService, gatewayErr := gateway.Initialize(mux)
+	fatalOnError(ctx, logger, gatewayErr, "Failed to initialize gateway service")
+
+	// From here on, a value a resource carries is placed in the data plane this plane administers
+	// and only its reference is stored. Nothing installs this on a data plane, which is why the same
+	// service code stores a value there and a reference here.
+	dataplane.SetDefault(dataplane.NewValues(gatewayService))
 
 	// Initialize import service
 	importService := importer.Initialize(

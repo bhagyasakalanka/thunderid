@@ -8,6 +8,10 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/thunder-id/thunderid/internal/dataplane"
+	"github.com/thunder-id/thunderid/internal/system/cmodels"
+	"github.com/thunder-id/thunderid/internal/system/valueref"
+
 	"github.com/thunder-id/thunderid/internal/idp"
 	"github.com/thunder-id/thunderid/internal/notification"
 	ncommon "github.com/thunder-id/thunderid/internal/notification/common"
@@ -190,7 +194,43 @@ func (s *service) getByType(ctx context.Context, idpType providers.IDPType, id s
 
 // create delegates creation to the identity-provider service.
 func (s *service) create(ctx context.Context, dto *providers.IDPDTO) (*providers.IDPDTO, *tidcommon.ServiceError) {
+	// A connection's credentials are replayed to a third party by whatever serves the login, so
+	// they belong to that deployment rather than this one. Placed before anything is stored.
+	if svcErr := placeSecretProperties(ctx, resourceTypeConnection, dto.Name, dto.Properties); svcErr != nil {
+		return nil, svcErr
+	}
 	return s.idpService.CreateIdentityProvider(ctx, dto)
+}
+
+// placeSecretProperties puts every property marked as a credential where this process keeps values,
+// replacing the value in place with the reference naming it.
+//
+// Only the properties that say they are secrets move. A property carries that on itself, so nothing
+// here needs a list of field names to keep in step with the ones a connection type defines.
+func placeSecretProperties(ctx context.Context, resourceType, resourceName string,
+	properties []cmodels.Property) *tidcommon.ServiceError {
+	values := dataplane.Default()
+
+	for i := range properties {
+		if !properties[i].IsSecret() {
+			continue
+		}
+		value, err := properties[i].GetValue()
+		if err != nil || value == "" {
+			continue
+		}
+		placed, svcErr := values.Place(ctx, valueref.CollectionSecret,
+			resourceType, resourceName, properties[i].GetName(), value)
+		if svcErr != nil {
+			return svcErr
+		}
+		replacement, err := cmodels.NewProperty(properties[i].GetName(), placed, true)
+		if err != nil {
+			return &tidcommon.InternalServerError
+		}
+		properties[i] = *replacement
+	}
+	return nil
 }
 
 // update verifies the instance is of the expected type, preserves any secret the request
@@ -246,6 +286,11 @@ func (s *service) getSMSByProvider(ctx context.Context, provider ncommon.Notific
 // createSMS delegates creation to the notification-sender service.
 func (s *service) createSMS(ctx context.Context, dto ncommon.NotificationSenderDTO) (
 	*ncommon.NotificationSenderDTO, *tidcommon.ServiceError) {
+	// A sender's credential is presented to the gateway that carries the message, which is the
+	// deployment serving the login rather than this one.
+	if svcErr := placeSecretProperties(ctx, resourceTypeConnection, dto.Name, dto.Properties); svcErr != nil {
+		return nil, svcErr
+	}
 	return s.notificationService.CreateSender(ctx, dto)
 }
 

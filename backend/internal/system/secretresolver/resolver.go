@@ -21,27 +21,28 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/thunder-id/thunderid/internal/system/valueref"
 )
 
-// The prefixes that mark a configuration value as a reference rather than the value itself. They
-// name the collection the value is held in, which is what tells the two apart: the same name may
-// exist in both, so a reference that did not say which it meant would be ambiguous.
+// The reference syntax is valueref's. One shape of reference is read by both planes and written by
+// a control plane, so it belongs to neither this package nor the one that places them.
 const (
 	// PrefixSecret refers to a credential, whose value is never read back by a listing.
-	PrefixSecret = "sec:"
+	PrefixSecret = valueref.PrefixSecret
 	// PrefixVariable refers to an ordinary value, which is read back as it is.
-	PrefixVariable = "var:"
+	PrefixVariable = valueref.PrefixVariable
 )
 
 // Collection is one of the two sets of named values a provider holds. Its value is the path segment
 // the provider serves it under.
-type Collection string
+type Collection = valueref.Collection
 
 const (
 	// CollectionSecret holds credentials.
-	CollectionSecret Collection = "secrets"
+	CollectionSecret = valueref.CollectionSecret
 	// CollectionVariable holds ordinary values.
-	CollectionVariable Collection = "variables"
+	CollectionVariable = valueref.CollectionVariable
 )
 
 // minRefreshInterval throttles single-name refreshes, so a reference that the provider does not hold
@@ -74,14 +75,7 @@ func ReferenceCollection(value string) (Collection, bool) {
 
 // parseReference splits a reference into the collection it names and the name within it.
 func parseReference(value string) (Collection, string, bool) {
-	switch {
-	case strings.HasPrefix(value, PrefixSecret):
-		return CollectionSecret, strings.TrimPrefix(value, PrefixSecret), true
-	case strings.HasPrefix(value, PrefixVariable):
-		return CollectionVariable, strings.TrimPrefix(value, PrefixVariable), true
-	default:
-		return "", value, false
-	}
+	return valueref.Parse(value)
 }
 
 // ref identifies one held value. The collection is part of the key because the same name may exist

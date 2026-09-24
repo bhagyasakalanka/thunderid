@@ -11,6 +11,9 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/thunder-id/thunderid/internal/dataplane"
+	"github.com/thunder-id/thunderid/internal/system/valueref"
+
 	tidcommon "github.com/thunder-id/thunderid/pkg/thunderidengine/common"
 	"github.com/thunder-id/thunderid/pkg/thunderidengine/providers"
 
@@ -775,6 +778,14 @@ func (s *agentService) ValidateAgent(ctx context.Context, agent *providers.Agent
 		} else {
 			clientSecret = oauthCfg.ClientSecret
 		}
+	}
+
+	// The credentials belong to the deployment that serves this agent, not the one that authored
+	// it. Placed before anything is stored, so an agent never refers to a value that was not placed.
+	// The secret goes out as it stands: it is hashed by whatever holds it, not before it travels.
+	clientID, clientSecret, svcErr = s.placeClientCredentials(ctx, agent.Name, clientID, clientSecret)
+	if svcErr != nil {
+		return "", "", inboundmodel.InboundClient{}, svcErr
 	}
 
 	if err := s.inboundClientService.ResolveInboundAuthProfileHandles(ctx, &agent.InboundAuthProfile); err != nil {
@@ -2023,4 +2034,30 @@ func (s *agentService) translateCertOperationError(
 		Key:          key,
 		DefaultValue: prefix + err.Underlying.ErrorDescription.DefaultValue,
 	})
+}
+
+// placeClientCredentials puts an agent's OAuth credentials where this process keeps values and
+// returns what to store in their place. The id is an ordinary value and the secret is a credential,
+// so they go to collections that differ in whether a read gives the value back.
+func (s *agentService) placeClientCredentials(ctx context.Context,
+	agentName, clientID, clientSecret string) (string, string, *tidcommon.ServiceError) {
+	values := dataplane.Default()
+
+	if clientID != "" {
+		placed, svcErr := values.Place(ctx, valueref.CollectionVariable,
+			resourceTypeAgent, agentName, "ClientId", clientID)
+		if svcErr != nil {
+			return "", "", svcErr
+		}
+		clientID = placed
+	}
+	if clientSecret != "" {
+		placed, svcErr := values.Place(ctx, valueref.CollectionSecret,
+			resourceTypeAgent, agentName, "ClientSecret", clientSecret)
+		if svcErr != nil {
+			return "", "", svcErr
+		}
+		clientSecret = placed
+	}
+	return clientID, clientSecret, nil
 }

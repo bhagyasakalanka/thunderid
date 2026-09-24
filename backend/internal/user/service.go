@@ -13,6 +13,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/thunder-id/thunderid/internal/dataplane"
+	"github.com/thunder-id/thunderid/internal/system/valueref"
+
 	tidcommon "github.com/thunder-id/thunderid/pkg/thunderidengine/common"
 	"github.com/thunder-id/thunderid/pkg/thunderidengine/providers"
 
@@ -763,6 +766,18 @@ func (us *userService) UpdateUserCredentials(
 		plaintextCreds[credTypeStr] = stringValue
 	}
 
+	// A credential is verified by the deployment the user signs in to, which is not this one where
+	// this process administers a data plane. It goes out as it stands and is hashed by whatever
+	// holds it; what stays here is the reference naming it.
+	for credType, value := range plaintextCreds {
+		placed, svcErr := dataplane.Default().Place(ctx, valueref.CollectionSecret,
+			resourceTypeUser, usernameOf(existingUser), credType, value)
+		if svcErr != nil {
+			return svcErr
+		}
+		plaintextCreds[credType] = placed
+	}
+
 	plaintextJSON, err := json.Marshal(plaintextCreds)
 	if err != nil {
 		return logErrorAndReturnServerError(ctx, logger, "Failed to marshal credentials", err,
@@ -1272,4 +1287,19 @@ func (us *userService) ResolveUserOUHandle(
 		user.OUID = ou.ID
 	}
 	return nil
+}
+
+// usernameOf reads the username a user is known by, which is what qualifies the names its
+// credentials are placed under. It matches how an export derives the same name, so a credential
+// placed here and one referenced by an exported document agree.
+func usernameOf(user providers.User) string {
+	var attributes map[string]interface{}
+	if len(user.Attributes) == 0 {
+		return ""
+	}
+	if err := json.Unmarshal(user.Attributes, &attributes); err != nil {
+		return ""
+	}
+	username, _ := attributes["username"].(string)
+	return username
 }
