@@ -80,6 +80,7 @@ fileGroupNames:
   i18n.yaml: ~                   # Languages claimed by Branding & Localization
   import.yaml: ~                 # Import claimed by System
   gateway.yaml: ~                # Gateways claimed by System
+  variable-store.yaml: ~         # Variables and Secrets claimed by System
   oauth2.yaml: ~                 # all tags claimed by OAuth2 / OIDC
   ou.yaml: ~                     # Organization Units claimed by Identities
   registration.yaml: ~           # Passkeys (registration) claimed by Authentication
@@ -157,6 +158,8 @@ explicitSubGroups:
       - Import
       - Health
       - Gateways
+      - Variables
+      - Secrets
 
 # Defines the display order of all sidebar groups (explicit and auto-derived).
 # Groups not listed here are appended alphabetically after all ordered entries.
