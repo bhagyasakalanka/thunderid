@@ -1229,12 +1229,12 @@ type MockParameterizer struct {
 
 func (m *MockParameterizer) ToParameterizedYAML(_ context.Context, obj interface{},
 	resourceType string, resourceName string,
-	rules *declarativeresource.ResourceRules) (string, map[string]string, error) {
+	rules *declarativeresource.ResourceRules) (string, map[string]string, map[string]bool, error) {
 	if m.shouldFail {
-		return "", nil, fmt.Errorf("%s", m.errorMsg)
+		return "", nil, nil, fmt.Errorf("%s", m.errorMsg)
 	}
 	// Return minimal valid YAML
-	return "id: test\nname: test\n", nil, nil
+	return "id: test\nname: test\n", nil, nil, nil
 }
 
 func (m *MockParameterizer) VarPrefix(resourceName string) string {

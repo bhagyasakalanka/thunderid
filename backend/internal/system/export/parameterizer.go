@@ -29,6 +29,7 @@ type templatingRules struct {
 type resourceRules struct {
 	Variables             []string `yaml:"Variables,omitempty"`
 	ArrayVariables        []string `yaml:"ArrayVariables,omitempty"`
+	SecretVariables       []string `yaml:"SecretVariables,omitempty"`
 	DynamicPropertyFields []string `yaml:"DynamicPropertyFields,omitempty"`
 }
 
@@ -44,6 +45,9 @@ type parameterizer struct {
 	// set per call on a copy rather than on the shared instance, so concurrent exports of different
 	// resource types cannot read each other's value.
 	resourceType string
+	// secrets collects the variable names this call emitted for a credential. It lives on the
+	// per-call copy for the same reason resourceType does.
+	secrets map[string]bool
 }
 
 // newParameterizer creates a new Parameterizer instance with the given templating rules
@@ -56,14 +60,27 @@ func newParameterizer(rules templatingRules) *parameterizer {
 func (p *parameterizer) forResourceType(resourceType string) *parameterizer {
 	clone := *p
 	clone.resourceType = resourceType
+	clone.secrets = map[string]bool{}
 	return &clone
 }
 
+// markSecret records that a variable name holds a credential.
+func (p *parameterizer) markSecret(name string) {
+	if p.secrets == nil {
+		p.secrets = map[string]bool{}
+	}
+	p.secrets[name] = true
+}
+
 // ToParameterizedYAML converts an object directly to parameterized YAML.
-// It returns the template string and a map of variable names to their original values.
+//
+// It returns the template string, a map of variable names to their original values, and the subset
+// of those names whose value is a credential. The third is what lets a caller put a credential
+// where a read cannot return it: the values map alone cannot be told apart, and the isSecret marker
+// the template carries is only readable by parsing the text back.
 func (p *parameterizer) ToParameterizedYAML(ctx context.Context, obj interface{},
 	resourceType string, resourceName string,
-	rules *declarativeresource.ResourceRules) (string, map[string]string, error) {
+	rules *declarativeresource.ResourceRules) (string, map[string]string, map[string]bool, error) {
 	// Every variable name this call emits is qualified by the resource type.
 	p = p.forResourceType(resourceType)
 
@@ -73,6 +90,7 @@ func (p *parameterizer) ToParameterizedYAML(ctx context.Context, obj interface{}
 		localRules = &resourceRules{
 			Variables:             rules.Variables,
 			ArrayVariables:        rules.ArrayVariables,
+			SecretVariables:       rules.SecretVariables,
 			DynamicPropertyFields: rules.DynamicPropertyFields,
 		}
 	}
@@ -81,7 +99,7 @@ func (p *parameterizer) ToParameterizedYAML(ctx context.Context, obj interface{}
 	// Pass rules so fields in parameterization rules bypass omitempty
 	var node yaml.Node
 	if err := p.structToNodeIgnoringOmitempty(obj, &node, localRules, "", resourceName); err != nil {
-		return "", nil, fmt.Errorf("failed to convert object to node: %w", err)
+		return "", nil, nil, fmt.Errorf("failed to convert object to node: %w", err)
 	}
 
 	if localRules == nil {
@@ -90,13 +108,13 @@ func (p *parameterizer) ToParameterizedYAML(ctx context.Context, obj interface{}
 		encoder := yaml.NewEncoder(&buf)
 		encoder.SetIndent(2)
 		if err := encoder.Encode(&node); err != nil {
-			return "", nil, fmt.Errorf("failed to marshal data: %w", err)
+			return "", nil, nil, fmt.Errorf("failed to marshal data: %w", err)
 		}
 		err := encoder.Close()
 		if err != nil {
-			return "", nil, fmt.Errorf("failed to close encoder: %w", err)
+			return "", nil, nil, fmt.Errorf("failed to close encoder: %w", err)
 		}
-		return buf.String(), nil, nil
+		return buf.String(), nil, nil, nil
 	}
 
 	// Convert struct field paths to YAML field paths
@@ -112,17 +130,17 @@ func (p *parameterizer) ToParameterizedYAML(ctx context.Context, obj interface{}
 
 	// Apply parameterization to the node tree
 	if err := p.parameterizeNode(&node, rulesWithYAMLPaths, resourceName); err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
 
 	// Marshal back to YAML with preserved indentation
 	// Use custom renderer to handle template syntax properly
 	var buf bytes.Buffer
 	if err := p.renderNode(&buf, &node, 0); err != nil {
-		return "", nil, fmt.Errorf("failed to render parameterized YAML: %w", err)
+		return "", nil, nil, fmt.Errorf("failed to render parameterized YAML: %w", err)
 	}
 
-	return buf.String(), variableValues, nil
+	return buf.String(), variableValues, p.secrets, nil
 }
 
 // extractValuesFromNode reads the original values of parameterization variables from the node
@@ -138,6 +156,16 @@ func (p *parameterizer) extractValuesFromNode(
 
 	for _, path := range rules.Variables {
 		varName := p.pathToVariableName(resourceName, path)
+		if val := p.getScalarFromNode(root, path); val != "" {
+			values[varName] = val
+		}
+	}
+
+	// A secret variable is read exactly as an ordinary one. What differs is that it is reported as
+	// a credential, so a caller places it where a read cannot return it.
+	for _, path := range rules.SecretVariables {
+		varName := p.pathToVariableName(resourceName, path)
+		p.markSecret(varName)
 		if val := p.getScalarFromNode(root, path); val != "" {
 			values[varName] = val
 		}
@@ -539,6 +567,14 @@ func (p *parameterizer) isFieldInRules(rules *resourceRules, fieldPath string) b
 		}
 	}
 
+	// Check SecretVariables, which are parameterized the same way
+	for _, varPath := range rules.SecretVariables {
+		normalizedVarPath := strings.ToLower(strings.ReplaceAll(varPath, "[]", ""))
+		if normalizedVarPath == normalizedPath {
+			return true
+		}
+	}
+
 	// Check ArrayVariables
 	for _, arrPath := range rules.ArrayVariables {
 		normalizedArrPath := strings.ToLower(strings.ReplaceAll(arrPath, "[]", ""))
@@ -627,7 +663,11 @@ func (p *parameterizer) propertyToYAMLNode(propValue reflect.Value, resourceName
 	}
 
 	// Generate template variable name
-	propValueStr := fmt.Sprintf("{{.%s}}", p.generatePropertyVarName(resourceName, propName))
+	propVarName := p.generatePropertyVarName(resourceName, propName)
+	if isSecret {
+		p.markSecret(propVarName)
+	}
+	propValueStr := fmt.Sprintf("{{.%s}}", propVarName)
 
 	// Build the YAML node: {name: "...", value: "...", isSecret: true/false}
 	// Add name
@@ -1033,8 +1073,9 @@ func (p *parameterizer) convertStructPathsToYAMLPaths(
 	logger := log.GetLogger().With(log.String("component", "Parameterizer"))
 
 	converted := &resourceRules{
-		Variables:      make([]string, len(rules.Variables)),
-		ArrayVariables: make([]string, len(rules.ArrayVariables)),
+		Variables:       make([]string, len(rules.Variables)),
+		ArrayVariables:  make([]string, len(rules.ArrayVariables)),
+		SecretVariables: make([]string, len(rules.SecretVariables)),
 	}
 
 	objType := reflect.TypeOf(obj)
@@ -1047,6 +1088,14 @@ func (p *parameterizer) convertStructPathsToYAMLPaths(
 		converted.Variables[i] = yamlPath
 		// Debug log to help troubleshoot path resolution
 		logger.Debug(ctx, "Converted variable path",
+			log.String("original", path),
+			log.String("yaml", yamlPath))
+	}
+
+	for i, path := range rules.SecretVariables {
+		yamlPath := p.convertPathToYAMLPath(objType, path)
+		converted.SecretVariables[i] = yamlPath
+		logger.Debug(ctx, "Converted secret variable path",
 			log.String("original", path),
 			log.String("yaml", yamlPath))
 	}
@@ -1137,6 +1186,15 @@ func (p *parameterizer) parameterizeNode(node *yaml.Node, rules *resourceRules, 
 
 	// Process simple variables
 	for _, path := range rules.Variables {
+		varName := p.pathToVariableName(resourceName, path)
+		if err := p.replaceNodeValue(root, path, fmt.Sprintf("{{.%s}}", varName)); err != nil {
+			return err
+		}
+	}
+
+	// Secret variables are replaced the same way. What makes one a secret is how it is reported,
+	// not how the document carries it: leaving it out here would leave the credential in the clear.
+	for _, path := range rules.SecretVariables {
 		varName := p.pathToVariableName(resourceName, path)
 		if err := p.replaceNodeValue(root, path, fmt.Sprintf("{{.%s}}", varName)); err != nil {
 			return err
