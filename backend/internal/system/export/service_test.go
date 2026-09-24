@@ -95,7 +95,7 @@ func (suite *ExportServiceTestSuite) SetupTest() {
 	}
 
 	// Create parameterizer instance
-	parameterizer := newParameterizer(templatingRules{})
+	parameterizer := newParameterizer(templatingRules{}, TemplatePlaceholders)
 
 	suite.exportService = newExportService(exporters, parameterizer)
 }
@@ -1238,7 +1238,7 @@ func (m *MockParameterizer) ToParameterizedYAML(_ context.Context, obj interface
 }
 
 func (m *MockParameterizer) VarPrefix(resourceName string) string {
-	return newParameterizer(templatingRules{}).VarPrefix(resourceName)
+	return newParameterizer(templatingRules{}, TemplatePlaceholders).VarPrefix(resourceName)
 }
 
 // TestExportResources_TemplateGenerationError tests the error path in generateTemplateFromStruct.

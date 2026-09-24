@@ -38,9 +38,31 @@ const (
 	yamlTagInline    = "inline"
 )
 
+// PlaceholderStyle decides what an exported document carries where a value was.
+type PlaceholderStyle int
+
+const (
+	// TemplatePlaceholders writes a Go template placeholder and reports the values alongside, for a
+	// deployment that holds its own configuration. This is what a data plane exports.
+	TemplatePlaceholders PlaceholderStyle = iota
+	// ValueReferences writes a reference naming where the value is held, and reports no values. This
+	// is what a control plane exports: it authors configuration but does not hold what the
+	// configuration refers to, so there is nothing for it to put beside the document.
+	ValueReferences
+)
+
+// The prefixes a reference carries. They name the collection the value is held in, which is what
+// tells a credential apart from an ordinary value: a read returns one and never the other.
+const (
+	referencePrefixSecret   = "sec:"
+	referencePrefixVariable = "var:"
+)
+
 // Parameterizer handles the templating logic
 type parameterizer struct {
 	rules templatingRules
+	// style decides whether a placeholder is a template or a reference. It is set once, per plane.
+	style PlaceholderStyle
 	// resourceType qualifies the variable names emitted for the resource being parameterized. It is
 	// set per call on a copy rather than on the shared instance, so concurrent exports of different
 	// resource types cannot read each other's value.
@@ -51,8 +73,19 @@ type parameterizer struct {
 }
 
 // newParameterizer creates a new Parameterizer instance with the given templating rules
-func newParameterizer(rules templatingRules) *parameterizer {
-	return &parameterizer{rules: rules}
+func newParameterizer(rules templatingRules, style PlaceholderStyle) *parameterizer {
+	return &parameterizer{rules: rules, style: style}
+}
+
+// placeholder is what stands in the document where a value was.
+func (p *parameterizer) placeholder(varName string, isSecret bool) string {
+	if p.style != ValueReferences {
+		return fmt.Sprintf("{{.%s}}", varName)
+	}
+	if isSecret {
+		return referencePrefixSecret + varName
+	}
+	return referencePrefixVariable + varName
 }
 
 // forResourceType returns a copy bound to the given resource type, leaving the shared instance
@@ -667,7 +700,7 @@ func (p *parameterizer) propertyToYAMLNode(propValue reflect.Value, resourceName
 	if isSecret {
 		p.markSecret(propVarName)
 	}
-	propValueStr := fmt.Sprintf("{{.%s}}", propVarName)
+	propValueStr := p.placeholder(propVarName, isSecret)
 
 	// Build the YAML node: {name: "...", value: "...", isSecret: true/false}
 	// Add name
@@ -1187,21 +1220,28 @@ func (p *parameterizer) parameterizeNode(node *yaml.Node, rules *resourceRules, 
 	// Process simple variables
 	for _, path := range rules.Variables {
 		varName := p.pathToVariableName(resourceName, path)
-		if err := p.replaceNodeValue(root, path, fmt.Sprintf("{{.%s}}", varName)); err != nil {
+		if err := p.replaceNodeValue(root, path, p.placeholder(varName, false)); err != nil {
 			return err
 		}
 	}
 
-	// Secret variables are replaced the same way. What makes one a secret is how it is reported,
-	// not how the document carries it: leaving it out here would leave the credential in the clear.
+	// Secret variables are replaced the same way. What makes one a secret is how it is written and
+	// reported, not whether it is replaced: leaving it out would leave the credential in the clear.
 	for _, path := range rules.SecretVariables {
 		varName := p.pathToVariableName(resourceName, path)
-		if err := p.replaceNodeValue(root, path, fmt.Sprintf("{{.%s}}", varName)); err != nil {
+		if err := p.replaceNodeValue(root, path, p.placeholder(varName, true)); err != nil {
 			return err
 		}
 	}
 
-	// Process array variables
+	// Process array variables.
+	//
+	// A reference names one held value, and there is no form of it that expands into list items, so
+	// in reference style the list is left as it is rather than written as something that cannot be
+	// resolved. Nothing here is a credential: what is parameterized as an array is an address list.
+	if p.style == ValueReferences {
+		return nil
+	}
 	for _, path := range rules.ArrayVariables {
 		varName := p.pathToVariableName(resourceName, path)
 		if err := p.replaceArrayNode(root, path, varName); err != nil {
