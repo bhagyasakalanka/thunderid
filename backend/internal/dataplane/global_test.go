@@ -12,8 +12,12 @@ import (
 	"github.com/thunder-id/thunderid/internal/system/valueref"
 )
 
-// clientSecretReference is what an application's client secret is stored as once placed.
-const clientSecretReference = "sec:APPLICATION_MY_APP_CLIENT_SECRET"
+const (
+	// clientSecretReference is what an application's client secret is stored as once placed.
+	clientSecretReference = "sec:APPLICATION_MY_APP_CLIENT_SECRET"
+	// clientIDValue stands in for an ordinary value, which is read back as it is.
+	clientIDValue = "the-id"
+)
 
 // A deployment that installs nothing keeps its values. This is what a data plane is, and it is why
 // the same service code stores a value there and a reference on a control plane.
@@ -70,12 +74,12 @@ func TestClearingThePlacerKeepsValuesAgain(t *testing.T) {
 	SetDefault(nil)
 
 	stored, svcErr := Default().Place(context.Background(), valueref.CollectionVariable,
-		"application", "My App", "ClientId", "the-id")
+		"application", "My App", "ClientId", clientIDValue)
 
 	if svcErr != nil {
 		t.Fatalf("placing failed: %v", svcErr)
 	}
-	if stored != "the-id" {
+	if stored != clientIDValue {
 		t.Fatalf("stored %q, want the value itself", stored)
 	}
 }

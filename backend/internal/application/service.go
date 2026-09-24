@@ -2085,6 +2085,33 @@ func (as *applicationService) enrichApplicationWithCertificate(
 		}
 	}
 
+	return as.resolveClientCredentials(ctx, application)
+}
+
+// resolveClientCredentials replaces a reference with what it names, for the values that may be read
+// back.
+//
+// It runs after the certificate lookup rather than before it. A certificate is keyed by whatever the
+// client id was stored as, so resolving first would look one up under a value the store has never
+// seen.
+//
+// The secret is left as it stands. Wherever it is held will not give the value back, so the
+// reference is what there is to show, and on a deployment that holds its own values there is no
+// reference here at all and nothing changes.
+func (as *applicationService) resolveClientCredentials(ctx context.Context,
+	application *providers.Application) (*providers.Application, *tidcommon.ServiceError) {
+	values := dataplane.Default()
+
+	for i, inboundAuthConfig := range application.InboundAuthConfig {
+		if inboundAuthConfig.OAuthConfig == nil {
+			continue
+		}
+		resolved, svcErr := values.Resolve(ctx, inboundAuthConfig.OAuthConfig.ClientID)
+		if svcErr != nil {
+			return nil, svcErr
+		}
+		application.InboundAuthConfig[i].OAuthConfig.ClientID = resolved
+	}
 	return application, nil
 }
 

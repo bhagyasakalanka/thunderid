@@ -74,7 +74,7 @@ func TestPlacingAValueStoresAVariableReference(t *testing.T) {
 
 	v := NewValues(managedAt(srv.URL))
 	stored, svcErr := v.Place(context.Background(), valueref.CollectionVariable,
-		"application", "My App", "ClientId", "the-id")
+		"application", "My App", "ClientId", clientIDValue)
 
 	if svcErr != nil {
 		t.Fatalf("placing failed: %v", svcErr)
@@ -226,4 +226,64 @@ func indexOf(haystack, needle string) int {
 		}
 	}
 	return -1
+}
+
+// What a create places, a read gives back. A variable comes back as its value and a secret comes
+// back as the reference, which is the whole difference between the two collections.
+func TestAPlacedValueComesBackAndAPlacedSecretDoesNot(t *testing.T) {
+	held := map[string]string{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			buf := make([]byte, r.ContentLength)
+			_, _ = r.Body.Read(buf)
+			held[r.URL.Path] = string(buf)
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		// A read of a variable returns its value. A secret is never read: the test asserts that.
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"name":"x","value":"` + clientIDValue + `"}`))
+	}))
+	defer srv.Close()
+
+	v := NewValues(managedAt(srv.URL))
+	ctx := context.Background()
+
+	variableRef, svcErr := v.Place(ctx, valueref.CollectionVariable,
+		"application", "My App", "ClientId", clientIDValue)
+	if svcErr != nil {
+		t.Fatalf("placing the variable failed: %v", svcErr)
+	}
+	secretRef, svcErr := v.Place(ctx, valueref.CollectionSecret,
+		"application", "My App", "ClientSecret", "the-secret")
+	if svcErr != nil {
+		t.Fatalf("placing the secret failed: %v", svcErr)
+	}
+
+	// Both reached the data plane, each in its own collection.
+	if _, ok := held["/variables/APPLICATION_MY_APP_CLIENT_ID"]; !ok {
+		t.Fatalf("the variable was not placed: %v", held)
+	}
+	if _, ok := held["/secrets/APPLICATION_MY_APP_CLIENT_SECRET"]; !ok {
+		t.Fatalf("the secret was not placed: %v", held)
+	}
+
+	gotVariable, svcErr := v.Resolve(ctx, variableRef)
+	if svcErr != nil {
+		t.Fatalf("resolving the variable failed: %v", svcErr)
+	}
+	gotSecret, svcErr := v.Resolve(ctx, secretRef)
+	if svcErr != nil {
+		t.Fatalf("resolving the secret failed: %v", svcErr)
+	}
+
+	if gotVariable != clientIDValue {
+		t.Errorf("the variable came back as %q, want its value", gotVariable)
+	}
+	if gotSecret != secretRef {
+		t.Errorf("the secret came back as %q, want the reference unchanged", gotSecret)
+	}
+	if gotSecret == "the-secret" {
+		t.Error("a secret's value was given back")
+	}
 }

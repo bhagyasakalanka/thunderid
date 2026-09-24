@@ -1126,6 +1126,13 @@ func (s *agentService) composeGetResponse(ctx context.Context, e *providers.Enti
 	*model.AgentGetResponse, *tidcommon.ServiceError) {
 	name, description, owner, clientID := readSystemAttributes(e.SystemAttributes)
 
+	// The client id may be a reference to a value held by the deployment that serves this agent.
+	// Where it is, this is what turns it back into the value; where it is not, it is unchanged.
+	clientID, svcErr := dataplane.Default().Resolve(ctx, clientID)
+	if svcErr != nil {
+		return nil, svcErr
+	}
+
 	resp := &model.AgentGetResponse{
 		ID:          e.ID,
 		OUID:        e.OUID,
