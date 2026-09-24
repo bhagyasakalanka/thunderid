@@ -15,6 +15,7 @@ import (
 
 	declarativeresource "github.com/thunder-id/thunderid/internal/system/declarative_resource"
 	"github.com/thunder-id/thunderid/internal/system/log"
+	"github.com/thunder-id/thunderid/internal/system/valueref"
 	"github.com/thunder-id/thunderid/internal/system/varname"
 )
 
@@ -51,13 +52,6 @@ const (
 	ValueReferences
 )
 
-// The prefixes a reference carries. They name the collection the value is held in, which is what
-// tells a credential apart from an ordinary value: a read returns one and never the other.
-const (
-	referencePrefixSecret   = "sec:"
-	referencePrefixVariable = "var:"
-)
-
 // Parameterizer handles the templating logic
 type parameterizer struct {
 	rules templatingRules
@@ -83,9 +77,9 @@ func (p *parameterizer) placeholder(varName string, isSecret bool) string {
 		return fmt.Sprintf("{{.%s}}", varName)
 	}
 	if isSecret {
-		return referencePrefixSecret + varName
+		return valueref.Secret(varName)
 	}
-	return referencePrefixVariable + varName
+	return valueref.Variable(varName)
 }
 
 // forResourceType returns a copy bound to the given resource type, leaving the shared instance
