@@ -8,7 +8,6 @@
 # needs it, and what stays behind is a "kv:NAME" reference. That is why there is no secret_provider
 # section below: nothing on this side resolves one.
 server:
-  mode: "cp"
   hostname: "localhost"
   port: 8095
 
