@@ -2313,3 +2313,63 @@ func TestAReferenceExportReportsNoEnvFile(t *testing.T) {
 
 	assert.Nil(t, envFile, "a reference export produced a .env")
 }
+
+// A value already held as a reference is written out as it stands, not derived again.
+//
+// The name in a reference is where the value actually went. Deriving a new one from the resource as
+// it is now would rewrite that name after a rename, and the document would then point at a value the
+// data plane has never held.
+func TestAStoredReferenceSurvivesARename(t *testing.T) {
+	type oauth struct {
+		ClientID     string `yaml:"clientId"`
+		ClientSecret string `yaml:"clientSecret"`
+	}
+	type app struct {
+		Name  string `yaml:"name"`
+		OAuth *oauth `yaml:"oauth"`
+	}
+
+	// Placed while the application was called "Old Name", and renamed since.
+	stored := &app{Name: "New Name", OAuth: &oauth{
+		ClientID:     "var:APPLICATION_OLD_NAME_CLIENT_ID",
+		ClientSecret: "sec:APPLICATION_OLD_NAME_CLIENT_SECRET",
+	}}
+	rules := &declarativeresource.ResourceRules{
+		Variables:       []string{"OAuth.ClientID"},
+		SecretVariables: []string{"OAuth.ClientSecret"},
+	}
+
+	doc, _, secrets, err := newParameterizer(templatingRules{}, ValueReferences).
+		ToParameterizedYAML(context.Background(), stored, "Application", "New Name", rules)
+	require.NoError(t, err)
+
+	assert.Contains(t, doc, "var:APPLICATION_OLD_NAME_CLIENT_ID")
+	assert.Contains(t, doc, "sec:APPLICATION_OLD_NAME_CLIENT_SECRET")
+	assert.NotContains(t, doc, "NEW_NAME", "a stored reference was re-derived from the current name")
+
+	// The credential is still reported as one, under the name it is actually held by.
+	assert.True(t, secrets["APPLICATION_OLD_NAME_CLIENT_SECRET"],
+		"the stored credential was not reported as one")
+}
+
+// A value that is not yet a reference is still parameterized, so this only preserves what was
+// already placed rather than stopping anything from being placed.
+func TestAValueThatIsNotAReferenceIsStillParameterized(t *testing.T) {
+	type oauth struct {
+		ClientSecret string `yaml:"clientSecret"`
+	}
+	type app struct {
+		Name  string `yaml:"name"`
+		OAuth *oauth `yaml:"oauth"`
+	}
+
+	doc, _, _, err := newParameterizer(templatingRules{}, ValueReferences).
+		ToParameterizedYAML(context.Background(),
+			&app{Name: "My App", OAuth: &oauth{ClientSecret: "a-literal-secret"}},
+			"Application", "My App",
+			&declarativeresource.ResourceRules{SecretVariables: []string{"OAuth.ClientSecret"}})
+	require.NoError(t, err)
+
+	assert.Contains(t, doc, "sec:APPLICATION_MY_APP_CLIENT_SECRET")
+	assert.NotContains(t, doc, "a-literal-secret")
+}

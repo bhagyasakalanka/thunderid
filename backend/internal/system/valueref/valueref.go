@@ -65,3 +65,10 @@ func IsSecret(stored string) bool {
 	collection, _, isReference := Parse(stored)
 	return isReference && collection == CollectionSecret
 }
+
+// Name returns the name a reference points at, without its prefix. A value that is not a reference
+// is returned unchanged.
+func Name(stored string) string {
+	_, name, _ := Parse(stored)
+	return name
+}

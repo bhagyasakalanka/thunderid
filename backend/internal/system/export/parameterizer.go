@@ -71,6 +71,22 @@ func newParameterizer(rules templatingRules, style PlaceholderStyle) *parameteri
 	return &parameterizer{rules: rules, style: style}
 }
 
+// keepsStoredReference reports whether the value already held at path is a reference that must be
+// written out as it stands.
+//
+// A reference names where the value actually went. Deriving a new one from the resource as it is now
+// would rewrite that name whenever anything it is derived from has changed since, a rename most
+// obviously, and the document would then name a value the data plane has never held.
+//
+// It applies only in reference style. A template placeholder is regenerated every export by design,
+// and its value travels in the .env beside it.
+func (p *parameterizer) keepsStoredReference(root *yaml.Node, path string) bool {
+	if p.style != ValueReferences {
+		return false
+	}
+	return valueref.Is(p.getScalarFromNode(root, path))
+}
+
 // placeholder is what stands in the document where a value was.
 func (p *parameterizer) placeholder(varName string, isSecret bool) string {
 	if p.style != ValueReferences {
@@ -695,6 +711,16 @@ func (p *parameterizer) propertyToYAMLNode(propValue reflect.Value, resourceName
 		p.markSecret(propVarName)
 	}
 	propValueStr := p.placeholder(propVarName, isSecret)
+	// A property already holding a reference keeps it, for the same reason a named field does: it
+	// names where the value went, and a derived name need not still agree with it.
+	if p.style == ValueReferences {
+		if current := propertyValue(propValue); valueref.Is(current) {
+			propValueStr = current
+			if valueref.IsSecret(current) {
+				p.markSecret(valueref.Name(current))
+			}
+		}
+	}
 
 	// Build the YAML node: {name: "...", value: "...", isSecret: true/false}
 	// Add name
@@ -1213,6 +1239,9 @@ func (p *parameterizer) parameterizeNode(node *yaml.Node, rules *resourceRules, 
 
 	// Process simple variables
 	for _, path := range rules.Variables {
+		if p.keepsStoredReference(root, path) {
+			continue
+		}
 		varName := p.pathToVariableName(resourceName, path)
 		if err := p.replaceNodeValue(root, path, p.placeholder(varName, false)); err != nil {
 			return err
@@ -1222,6 +1251,10 @@ func (p *parameterizer) parameterizeNode(node *yaml.Node, rules *resourceRules, 
 	// Secret variables are replaced the same way. What makes one a secret is how it is written and
 	// reported, not whether it is replaced: leaving it out would leave the credential in the clear.
 	for _, path := range rules.SecretVariables {
+		if p.keepsStoredReference(root, path) {
+			p.markSecret(valueref.Name(p.getScalarFromNode(root, path)))
+			continue
+		}
 		varName := p.pathToVariableName(resourceName, path)
 		if err := p.replaceNodeValue(root, path, p.placeholder(varName, true)); err != nil {
 			return err
@@ -1644,4 +1677,18 @@ func (p *parameterizer) renderNode(buf *bytes.Buffer, node *yaml.Node, indent in
 		buf.WriteString(node.Value)
 	}
 	return nil
+}
+
+// propertyValue reads a dynamic property's stored value, empty when it cannot be read.
+func propertyValue(propValue reflect.Value) string {
+	method := propValue.MethodByName("GetValue")
+	if !method.IsValid() {
+		return ""
+	}
+	results := method.Call(nil)
+	if len(results) == 0 {
+		return ""
+	}
+	value, _ := results[0].Interface().(string)
+	return value
 }
