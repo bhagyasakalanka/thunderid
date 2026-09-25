@@ -39,6 +39,7 @@ import (
 	"github.com/thunder-id/thunderid/internal/flow/graphbuilder"
 	"github.com/thunder-id/thunderid/internal/flow/interceptor"
 	flowmgt "github.com/thunder-id/thunderid/internal/flow/mgt"
+	"github.com/thunder-id/thunderid/internal/gateway"
 	"github.com/thunder-id/thunderid/internal/group"
 	"github.com/thunder-id/thunderid/internal/idp"
 	"github.com/thunder-id/thunderid/internal/inboundclient"
@@ -314,6 +315,13 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 	// This plane authors configuration and does not hold the values it refers to, so an export
 	// carries references naming where each value lives rather than the values themselves.
 	_ = export.Initialize(mux, exporters, export.ValueReferences)
+
+	// The gateways this control plane administers, and the seam that keeps a resource's values out
+	// of this plane's database. Installing it is what makes every service store a reference here
+	// and the value itself on the gateway; a deployment that installs nothing keeps both together.
+	gatewayService, err := gateway.Initialize(mux)
+	fatalOnError(ctx, logger, err, "Failed to initialize gateway service")
+	gateway.SetValues(gateway.NewValues(gatewayService))
 
 	// Initialize import service
 	importService := importer.Initialize(

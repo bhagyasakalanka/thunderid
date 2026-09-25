@@ -139,4 +139,53 @@ var (
 				"this control plane administers.",
 		},
 	}
+
+	// ErrorGatewayUnreachable is returned when a value could not be written to or read from the
+	// managed gateway. It is reported as a server error rather than a client one: nothing about the
+	// request was wrong, and the caller can retry the same request once the gateway is reachable.
+	ErrorGatewayUnreachable = tidcommon.ServiceError{
+		Type: tidcommon.ServerErrorType,
+		Code: "GTW-5001",
+		Error: tidcommon.I18nMessage{
+			Key:          "error.gatewayvalues.unreachable",
+			DefaultValue: "The gateway could not be reached",
+		},
+		ErrorDescription: tidcommon.I18nMessage{
+			Key: "error.gatewayvalues.unreachable.description",
+			DefaultValue: "The value this resource refers to is held by the gateway this control " +
+				"plane administers, and it did not answer.",
+		},
+	}
+
+	// ErrorGatewayRefusedTheKey is returned when the managed gateway rejects the key registered for
+	// it. Retrying cannot help, so it is reported separately from an unreachable gateway: the key the
+	// control plane holds and the one the gateway expects have diverged.
+	ErrorGatewayRefusedTheKey = tidcommon.ServiceError{
+		Type: tidcommon.ServerErrorType,
+		Code: "GTW-5002",
+		Error: tidcommon.I18nMessage{
+			Key:          "error.gatewayvalues.key_refused",
+			DefaultValue: "The gateway refused this control plane's key",
+		},
+		ErrorDescription: tidcommon.I18nMessage{
+			Key:          "error.gatewayvalues.key_refused.description",
+			DefaultValue: "Set the gateway's key to the value it expects, or register it again.",
+		},
+	}
+
+	// ErrorGatewayUnusable is returned when the managed gateway's registration cannot be turned into
+	// a client, because the address or the certificate authority recorded for it is not usable.
+	ErrorGatewayUnusable = tidcommon.ServiceError{
+		Type: tidcommon.ServerErrorType,
+		Code: "GTW-5003",
+		Error: tidcommon.I18nMessage{
+			Key:          "error.gatewayvalues.unusable",
+			DefaultValue: "The gateway's registration cannot be used",
+		},
+		ErrorDescription: tidcommon.I18nMessage{
+			Key: "error.gatewayvalues.unusable.description",
+			DefaultValue: "Check the base URL and certificate authority recorded for the gateway this " +
+				"control plane administers.",
+		},
+	}
 )
