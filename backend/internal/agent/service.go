@@ -26,12 +26,13 @@ import (
 	"github.com/thunder-id/thunderid/internal/system/log"
 	"github.com/thunder-id/thunderid/internal/system/resourcedependency"
 	"github.com/thunder-id/thunderid/internal/system/security"
+	"github.com/thunder-id/thunderid/internal/system/sysauthz"
 	sysutils "github.com/thunder-id/thunderid/internal/system/utils"
 )
 
 // AgentServiceInterface defines the operations exposed by the agent service.
 type AgentServiceInterface interface {
-	CreateAgent(ctx context.Context, agent *model.Agent) (*model.AgentCompleteResponse,
+	CreateAgent(ctx context.Context, agent *providers.Agent) (*model.AgentCompleteResponse,
 		*tidcommon.ServiceError)
 	GetAgent(ctx context.Context, agentID string, includeDisplay bool) (*model.AgentGetResponse,
 		*tidcommon.ServiceError)
@@ -44,7 +45,7 @@ type AgentServiceInterface interface {
 		*model.AgentGroupListResponse, *tidcommon.ServiceError)
 	GetAgentRoles(ctx context.Context, agentID string, limit, offset int) (
 		*model.AgentRoleListResponse, *tidcommon.ServiceError)
-	ValidateAgent(ctx context.Context, agent *model.Agent, excludeID string) (
+	ValidateAgent(ctx context.Context, agent *providers.Agent, excludeID string) (
 		clientID, clientSecret string, client inboundmodel.InboundClient, svcErr *tidcommon.ServiceError)
 	GetResourceDependencies(
 		ctx context.Context, resourceType, id string) ([]resourcedependency.ResourceDependency, error)
@@ -53,6 +54,7 @@ type AgentServiceInterface interface {
 
 type agentService struct {
 	logger               *log.Logger
+	authzService         sysauthz.SystemAuthorizationServiceInterface
 	entityService        entity.EntityServiceInterface
 	inboundClientService inboundclient.InboundClientServiceInterface
 	ouService            oupkg.OrganizationUnitServiceInterface
@@ -61,6 +63,7 @@ type agentService struct {
 }
 
 func newAgentService(
+	authzService sysauthz.SystemAuthorizationServiceInterface,
 	entityService entity.EntityServiceInterface,
 	inboundClientService inboundclient.InboundClientServiceInterface,
 	ouService oupkg.OrganizationUnitServiceInterface,
@@ -68,6 +71,7 @@ func newAgentService(
 ) AgentServiceInterface {
 	return &agentService{
 		logger:               log.GetLogger().With(log.String(log.LoggerKeyComponentName, "AgentService")),
+		authzService:         authzService,
 		entityService:        entityService,
 		inboundClientService: inboundClientService,
 		ouService:            ouService,
@@ -76,15 +80,22 @@ func newAgentService(
 }
 
 // CreateAgent creates an agent entity with optional inbound auth profile.
-func (s *agentService) CreateAgent(ctx context.Context, agent *model.Agent) (
+func (s *agentService) CreateAgent(ctx context.Context, agent *providers.Agent) (
 	*model.AgentCompleteResponse, *tidcommon.ServiceError) {
 	if agent == nil {
 		return nil, &ErrorInvalidRequestFormat
 	}
 	normalizeLoginConsent(agent.LoginConsent)
 
+	// ValidateAgent resolves ouHandle to an OU ID, so the authz check runs after it to evaluate
+	// against the resolved target OU.
 	clientID, clientSecret, _, svcErr := s.ValidateAgent(ctx, agent, "")
 	if svcErr != nil {
+		return nil, svcErr
+	}
+
+	// Check if caller is authorized to create agents in the target OU.
+	if svcErr := s.checkAgentAccess(ctx, security.ActionCreateAgent, agent.OUID, ""); svcErr != nil {
 		return nil, svcErr
 	}
 
@@ -148,7 +159,7 @@ func (s *agentService) CreateAgent(ctx context.Context, agent *model.Agent) (
 		agent.Type, agent.Name, agent.Description, agent.LogoURL, createdEntity.Attributes,
 		authFlowID, regFlowID, agent.IsRegistrationFlowEnabled,
 		agent.ThemeID, agent.LayoutID, assertion, loginConsent,
-		agent.AllowedUserTypes, inboundConfigs)
+		agent.AllowedUserTypes, agent.AllowedAgentTypes, inboundConfigs)
 	resp.OUID = agent.OUID
 	s.populateOUHandleForComplete(ctx, resp)
 	return resp, nil
@@ -174,6 +185,11 @@ func (s *agentService) GetAgent(ctx context.Context, agentID string, includeDisp
 		return nil, &ErrorAgentNotFound
 	}
 
+	// Check authz using the agent's OU ID (fetched from store).
+	if svcErr := s.checkAgentAccess(ctx, security.ActionReadAgent, e.OUID, agentID); svcErr != nil {
+		return nil, svcErr
+	}
+
 	resp, svcErr := s.composeGetResponse(ctx, e)
 	if svcErr != nil {
 		return nil, svcErr
@@ -197,6 +213,28 @@ func (s *agentService) GetAgentList(ctx context.Context, limit, offset int,
 		limit = 30
 	}
 
+	// Resolve the set of organization units the caller is authorized to list agents from.
+	accessible, svcErr := s.authzService.GetAccessibleResources(
+		ctx, security.ActionListAgents, security.ResourceTypeOU)
+	if svcErr != nil {
+		s.logger.Error(ctx, "Failed to resolve accessible resources for listing agents",
+			log.Any("error", svcErr))
+		return nil, &tidcommon.InternalServerError
+	}
+
+	// Unfiltered path: system-level caller — return all agents.
+	if accessible.AllAllowed {
+		return s.listAllAgents(ctx, limit, offset, filters, includeDisplay)
+	}
+
+	// Filtered path: return agents belonging to the accessible OUs.
+	return s.listAgentsByOUIDs(ctx, accessible.IDs, limit, offset, filters, includeDisplay)
+}
+
+// listAllAgents retrieves agents without OU filtering.
+func (s *agentService) listAllAgents(ctx context.Context, limit, offset int,
+	filters map[string]interface{}, includeDisplay bool) (
+	*model.AgentListResponse, *tidcommon.ServiceError) {
 	totalCount, err := s.entityService.GetEntityListCount(ctx, providers.EntityCategoryAgent, filters)
 	if err != nil {
 		s.logger.Error(ctx, "Failed to get agent list count", log.Error(err))
@@ -204,6 +242,32 @@ func (s *agentService) GetAgentList(ctx context.Context, limit, offset int,
 	}
 
 	entities, err := s.entityService.GetEntityList(ctx, providers.EntityCategoryAgent, limit, offset, filters)
+	if err != nil {
+		s.logger.Error(ctx, "Failed to get agent list", log.Error(err))
+		return nil, &tidcommon.InternalServerError
+	}
+
+	return s.buildListResponse(ctx, entities, totalCount, limit, offset, includeDisplay), nil
+}
+
+// listAgentsByOUIDs retrieves agents scoped to the given organization unit IDs. The OU filter is
+// applied at the store layer so that page sizes and total counts remain correct.
+func (s *agentService) listAgentsByOUIDs(ctx context.Context, ouIDs []string, limit, offset int,
+	filters map[string]interface{}, includeDisplay bool) (
+	*model.AgentListResponse, *tidcommon.ServiceError) {
+	if len(ouIDs) == 0 {
+		return s.buildListResponse(ctx, []providers.Entity{}, 0, limit, offset, includeDisplay), nil
+	}
+
+	totalCount, err := s.entityService.GetEntityListCountByOUIDs(
+		ctx, providers.EntityCategoryAgent, ouIDs, filters)
+	if err != nil {
+		s.logger.Error(ctx, "Failed to get agent list count", log.Error(err))
+		return nil, &tidcommon.InternalServerError
+	}
+
+	entities, err := s.entityService.GetEntityListByOUIDs(
+		ctx, providers.EntityCategoryAgent, ouIDs, limit, offset, filters)
 	if err != nil {
 		s.logger.Error(ctx, "Failed to get agent list", log.Error(err))
 		return nil, &tidcommon.InternalServerError
@@ -243,6 +307,12 @@ func (s *agentService) UpdateAgent(ctx context.Context, agentID string,
 		return nil, &ErrorCannotModifyDeclarativeResource
 	}
 
+	// Check authz using the existing agent's OU ID.
+	if svcErr := s.checkAgentAccess(
+		ctx, security.ActionUpdateAgent, existing.OUID, agentID); svcErr != nil {
+		return nil, svcErr
+	}
+
 	currentName, _, currentOwner, currentClientID := readSystemAttributes(existing.SystemAttributes)
 	if req.Name != currentName {
 		if svcErr := s.validateNameUnique(ctx, req.Name, agentID); svcErr != nil {
@@ -277,6 +347,16 @@ func (s *agentService) UpdateAgent(ctx context.Context, agentID string,
 	ouID, svcErr := s.resolveUpdateOUID(ctx, req, existing.OUID)
 	if svcErr != nil {
 		return nil, svcErr
+	}
+
+	// If the agent is moving to a different OU, require authorization for the destination OU as
+	// well. Checked here rather than beside the check above because resolveUpdateOUID resolves
+	// ouHandle to an OU ID; both checks still precede every mutation below.
+	if ouID != existing.OUID {
+		if svcErr := s.checkAgentAccess(
+			ctx, security.ActionUpdateAgent, ouID, agentID); svcErr != nil {
+			return nil, svcErr
+		}
 	}
 
 	resolvedClient, resolvedOAuth, svcErr := s.reconcileInboundForUpdate(
@@ -340,7 +420,7 @@ func (s *agentService) UpdateAgent(ctx context.Context, agentID string,
 		req.Type, req.Name, req.Description, req.LogoURL, req.Attributes,
 		authFlowID, regFlowID, resolvedClient.IsRegistrationFlowEnabled,
 		req.ThemeID, req.LayoutID, assertion, loginConsent,
-		req.AllowedUserTypes, inboundConfigs)
+		req.AllowedUserTypes, req.AllowedAgentTypes, inboundConfigs)
 	resp.OUID = ouID
 	s.populateOUHandleForComplete(ctx, resp)
 	return resp, nil
@@ -372,6 +452,12 @@ func (s *agentService) DeleteAgent(ctx context.Context, agentID string) *tidcomm
 	}
 	if existing.IsReadOnly {
 		return &ErrorCannotModifyDeclarativeResource
+	}
+
+	// Check authz before the cascade below, which is not transactional with the entity delete.
+	if svcErr := s.checkAgentAccess(
+		ctx, security.ActionDeleteAgent, existing.OUID, agentID); svcErr != nil {
+		return svcErr
 	}
 
 	// Remove dependents that must be deleted with the agent (e.g. its role assignments and group
@@ -513,6 +599,12 @@ func (s *agentService) GetAgentGroups(ctx context.Context, agentID string, limit
 		return nil, &ErrorAgentNotFound
 	}
 
+	// Check authz using the agent's OU ID.
+	if svcErr := s.checkAgentAccess(
+		ctx, security.ActionReadAgent, existing.OUID, agentID); svcErr != nil {
+		return nil, svcErr
+	}
+
 	totalCount, err := s.entityService.GetGroupCountForEntity(ctx, agentID)
 	if err != nil {
 		s.logger.Error(ctx, "Failed to get agent group count",
@@ -569,6 +661,12 @@ func (s *agentService) GetAgentRoles(ctx context.Context, agentID string, limit,
 		return nil, &ErrorAgentNotFound
 	}
 
+	// Check authz using the agent's OU ID.
+	if svcErr := s.checkAgentAccess(
+		ctx, security.ActionReadAgent, existing.OUID, agentID); svcErr != nil {
+		return nil, svcErr
+	}
+
 	groupCount, err := s.entityService.GetGroupCountForEntity(ctx, agentID)
 	if err != nil {
 		s.logger.Error(ctx, "Failed to get agent group count",
@@ -618,7 +716,7 @@ func (s *agentService) GetAgentRoles(ctx context.Context, agentID string, limit,
 
 // ValidateAgent validates an Agent without persisting. It resolves OAuth credentials
 // using the entity ID (excludeID) for exclusion, allowing declarative reload of an existing agent.
-func (s *agentService) ValidateAgent(ctx context.Context, agent *model.Agent, excludeID string) (
+func (s *agentService) ValidateAgent(ctx context.Context, agent *providers.Agent, excludeID string) (
 	string, string, inboundmodel.InboundClient, *tidcommon.ServiceError) {
 	if agent == nil {
 		return "", "", inboundmodel.InboundClient{}, &ErrorInvalidRequestFormat
@@ -689,7 +787,7 @@ func (s *agentService) ValidateAgent(ctx context.Context, agent *model.Agent, ex
 
 	client := buildInboundClientRecord("", agent.AuthFlowID, agent.RegistrationFlowID,
 		agent.IsRegistrationFlowEnabled, agent.ThemeID, agent.LayoutID, agent.Assertion,
-		agent.LoginConsent, agent.AllowedUserTypes, agent.SubjectAttribute)
+		agent.LoginConsent, agent.AllowedUserTypes, agent.AllowedAgentTypes, agent.SubjectAttribute)
 
 	if needsInboundClient(agent) {
 		oauthProfile := buildOAuthProfile(agent.InboundAuthConfig)
@@ -712,6 +810,23 @@ func (s *agentService) deleteEntityCompensation(ctx context.Context, agentID str
 		s.logger.Error(ctx, "Failed to delete entity during compensation",
 			log.String("agentID", agentID), log.Error(err))
 	}
+}
+
+// checkAgentAccess validates that the caller is authorized to perform the given action on an agent.
+func (s *agentService) checkAgentAccess(
+	ctx context.Context, action security.Action, ouID string, resourceID string,
+) *tidcommon.ServiceError {
+	allowed, svcErr := s.authzService.IsActionAllowed(ctx, action,
+		&sysauthz.ActionContext{ResourceType: security.ResourceTypeAgent, OUID: ouID, ResourceID: resourceID})
+	if svcErr != nil {
+		s.logger.Error(ctx, "Failed to check authorization for action",
+			log.String("action", string(action)), log.Any("error", svcErr))
+		return &tidcommon.InternalServerError
+	}
+	if !allowed {
+		return &tidcommon.ErrorUnauthorized
+	}
+	return nil
 }
 
 // validateOUExists returns an error if the given OU is empty or does not exist.
@@ -898,11 +1013,11 @@ func (s *agentService) isClientIDTaken(
 
 // createInboundForAgent creates the inbound client row; applies server defaults via CreateInboundClient.
 func (s *agentService) createInboundForAgent(ctx context.Context, agentID string,
-	agent *model.Agent, clientSecret string) (
+	agent *providers.Agent, clientSecret string) (
 	inboundmodel.InboundClient, *providers.OAuthProfile, *tidcommon.ServiceError) {
 	client := buildInboundClientRecord(agentID, agent.AuthFlowID, agent.RegistrationFlowID,
 		agent.IsRegistrationFlowEnabled, agent.ThemeID, agent.LayoutID, agent.Assertion,
-		agent.LoginConsent, agent.AllowedUserTypes, agent.SubjectAttribute)
+		agent.LoginConsent, agent.AllowedUserTypes, agent.AllowedAgentTypes, agent.SubjectAttribute)
 	setLogoProperty(&client, agent.LogoURL)
 
 	seedClientSubTypeAttribute(agent.InboundAuthConfig)
@@ -966,7 +1081,7 @@ func (s *agentService) reconcileInboundForUpdate(ctx context.Context, agentID st
 
 	client := buildInboundClientRecord(agentID, profile.AuthFlowID, profile.RegistrationFlowID,
 		req.IsRegistrationFlowEnabled, req.ThemeID, req.LayoutID, req.Assertion,
-		req.LoginConsent, req.AllowedUserTypes, nil)
+		req.LoginConsent, req.AllowedUserTypes, req.AllowedAgentTypes, nil)
 	setLogoProperty(&client, req.LogoURL)
 	oauthProfile := buildOAuthProfile(req.InboundAuthConfig)
 	hasSecret := clientSecret != ""
@@ -1030,6 +1145,7 @@ func (s *agentService) composeGetResponse(ctx context.Context, e *providers.Enti
 	resp.Assertion = inbound.Assertion
 	resp.LoginConsent = inbound.LoginConsent
 	resp.AllowedUserTypes = inbound.AllowedUserTypes
+	resp.AllowedAgentTypes = inbound.AllowedAgentTypes
 	resp.LogoURL = logoURLFromProperties(inbound.Properties)
 
 	oauth, oauthErr := s.inboundClientService.GetOAuthProfileByEntityID(ctx, e.ID)
@@ -1158,7 +1274,7 @@ func (s *agentService) populateOUHandlesForList(ctx context.Context, agents []mo
 }
 
 // needsInboundClient reports whether any inbound auth field in the create request requires an inbound client row.
-func needsInboundClient(agent *model.Agent) bool {
+func needsInboundClient(agent *providers.Agent) bool {
 	if agent == nil {
 		return false
 	}
@@ -1170,6 +1286,7 @@ func needsInboundClient(agent *model.Agent) bool {
 		agent.Assertion != nil ||
 		agent.LoginConsent != nil ||
 		len(agent.AllowedUserTypes) > 0 ||
+		len(agent.AllowedAgentTypes) > 0 ||
 		len(agent.InboundAuthConfig) > 0
 }
 
@@ -1188,6 +1305,7 @@ func updateNeedsInboundClient(req *model.UpdateAgentRequest) bool {
 		req.Assertion != nil ||
 		req.LoginConsent != nil ||
 		len(req.AllowedUserTypes) > 0 ||
+		len(req.AllowedAgentTypes) > 0 ||
 		len(req.InboundAuthConfig) > 0
 }
 
@@ -1356,7 +1474,7 @@ func readSystemAttributes(raw json.RawMessage) (name, description, owner, client
 // buildInboundClientRecord constructs an InboundClient record from the agent's identity and inbound auth fields.
 func buildInboundClientRecord(agentID, authFlowID, regFlowID string, isRegEnabled bool,
 	themeID, layoutID string, assertion *inboundmodel.AssertionConfig,
-	loginConsent *inboundmodel.LoginConsentConfig, allowedUserTypes []string,
+	loginConsent *inboundmodel.LoginConsentConfig, allowedUserTypes, allowedAgentTypes []string,
 	subjectAttribute map[string]string) inboundmodel.InboundClient {
 	return inboundmodel.InboundClient{
 		ID:                        agentID,
@@ -1368,6 +1486,7 @@ func buildInboundClientRecord(agentID, authFlowID, regFlowID string, isRegEnable
 		Assertion:                 assertion,
 		LoginConsent:              loginConsent,
 		AllowedUserTypes:          allowedUserTypes,
+		AllowedAgentTypes:         allowedAgentTypes,
 		SubjectAttribute:          subjectAttribute,
 	}
 }
@@ -1513,7 +1632,7 @@ func convertGrantAndResponseTypes(
 func buildCompleteResponse(agentID, owner, clientID, clientSecret, agentType, name, description, logoURL string,
 	attributes json.RawMessage, authFlowID, regFlowID string, isRegEnabled bool,
 	themeID, layoutID string, assertion *inboundmodel.AssertionConfig,
-	loginConsent *inboundmodel.LoginConsentConfig, allowedUserTypes []string,
+	loginConsent *inboundmodel.LoginConsentConfig, allowedUserTypes, allowedAgentTypes []string,
 	inboundAuthConfig []providers.InboundAuthConfigWithSecret,
 ) *model.AgentCompleteResponse {
 	resp := &model.AgentCompleteResponse{
@@ -1533,6 +1652,7 @@ func buildCompleteResponse(agentID, owner, clientID, clientSecret, agentType, na
 			Assertion:                 assertion,
 			LoginConsent:              loginConsent,
 			AllowedUserTypes:          allowedUserTypes,
+			AllowedAgentTypes:         allowedAgentTypes,
 		},
 	}
 	if len(inboundAuthConfig) > 0 {
@@ -1772,6 +1892,11 @@ func translateUserInfoValidationError(err error) *tidcommon.ServiceError {
 // translateIDTokenValidationError maps OAuth ID token validation errors to agent-service errors.
 func translateIDTokenValidationError(err error) *tidcommon.ServiceError {
 	switch {
+	case errors.Is(err, inboundclient.ErrOAuthIDTokenUnsupportedSigningAlg):
+		return tidcommon.CustomServiceError(ErrorInvalidOAuthConfiguration, tidcommon.I18nMessage{
+			Key:          "error.agentservice.idtoken_unsupported_signing_alg_description",
+			DefaultValue: "idToken signing algorithm is not supported",
+		})
 	case errors.Is(err, inboundclient.ErrOAuthIDTokenEncryptionFieldsNotAllowed):
 		return tidcommon.CustomServiceError(ErrorInvalidOAuthConfiguration, tidcommon.I18nMessage{
 			Key:          "error.agentservice.idtoken_encryption_fields_not_allowed_description",
@@ -1833,7 +1958,11 @@ func translateInboundClientFKError(err error) *tidcommon.ServiceError {
 		return &ErrorLayoutNotFound
 	case errors.Is(err, inboundclient.ErrFKInvalidUserType):
 		return &ErrorInvalidUserType
+	case errors.Is(err, inboundclient.ErrFKInvalidAgentType):
+		return &ErrorInvalidAllowedAgentType
 	case errors.Is(err, inboundclient.ErrUserSchemaLookupFailed):
+		return &tidcommon.InternalServerError
+	case errors.Is(err, inboundclient.ErrAgentSchemaLookupFailed):
 		return &tidcommon.InternalServerError
 	case errors.Is(err, inboundclient.ErrUniqueAttributeLookupFailed):
 		return &tidcommon.InternalServerError

@@ -276,19 +276,19 @@ type userDeclarativeResource struct {
 
 // parseToUser parses YAML data into a User and its Credentials. The ou_handle from YAML is
 // populated onto User.OUHandle so callers can resolve it to an ou_id via the user service.
-func parseToUser(data []byte) (User, Credentials, error) {
+func parseToUser(data []byte) (providers.User, Credentials, error) {
 	var userRes userDeclarativeResource
 	if err := yaml.Unmarshal(data, &userRes); err != nil {
-		return User{}, nil, err
+		return providers.User{}, nil, err
 	}
 
 	// Convert attributes map to JSON
 	attributesJSON, err := json.Marshal(userRes.Attributes)
 	if err != nil {
-		return User{}, nil, fmt.Errorf("failed to marshal attributes: %w", err)
+		return providers.User{}, nil, fmt.Errorf("failed to marshal attributes: %w", err)
 	}
 
-	user := User{
+	user := providers.User{
 		ID:         userRes.ID,
 		Type:       userRes.Type,
 		OUID:       userRes.OUID,
@@ -299,7 +299,7 @@ func parseToUser(data []byte) (User, Credentials, error) {
 	// Parse and hash credentials
 	credentials, err := parseCredentials(userRes.Credentials)
 	if err != nil {
-		return User{}, nil, fmt.Errorf("failed to parse credentials: %w", err)
+		return providers.User{}, nil, fmt.Errorf("failed to parse credentials: %w", err)
 	}
 
 	return user, credentials, nil
@@ -457,6 +457,8 @@ func parseCredentialObject(
 	}
 
 	iterations, _ := paramsMap["iterations"].(int)
+	parallelism, _ := paramsMap["parallelism"].(int)
+	memory, _ := paramsMap["memory"].(int)
 	keySize, _ := paramsMap["keySize"].(int)
 	salt, _ := paramsMap["salt"].(string)
 
@@ -464,9 +466,11 @@ func parseCredentialObject(
 		StorageType: storageType,
 		StorageAlgo: cryptolib.CredAlgorithm(storageAlgo),
 		StorageAlgoParams: cryptolib.CredParameters{
-			Iterations: iterations,
-			KeySize:    keySize,
-			Salt:       salt,
+			Iterations:  iterations,
+			Parallelism: parallelism,
+			Memory:      memory,
+			KeySize:     keySize,
+			Salt:        salt,
 		},
 		Value: value,
 	}, nil
