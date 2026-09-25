@@ -132,7 +132,7 @@ func (s *StoreTestSuite) TestCountReadsTheTotal() {
 func (s *StoreTestSuite) TestCreateReturnsTheStoredRow() {
 	s.expectDBClient()
 	s.dbClientMock.On("QueryContext", mock.Anything, queryInsertGateway,
-		"gw-1", "production", "https://dp.test", "sealed", "",
+		"gw-1", "production", "https://dp.test", "sealed", "", false,
 		storeDeploymentID, storeDeploymentID, 5).
 		Return([]map[string]interface{}{
 			{"id": "gw-1", "name": "production",
@@ -154,7 +154,7 @@ func (s *StoreTestSuite) TestCreateReturnsTheStoredRow() {
 func (s *StoreTestSuite) TestCreateReturnsNilWhenTheLimitRefusesIt() {
 	s.expectDBClient()
 	s.dbClientMock.On("QueryContext", mock.Anything, queryInsertGateway,
-		mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything,
+		mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything,
 		storeDeploymentID, storeDeploymentID, 1).
 		Return([]map[string]interface{}{}, nil).Once()
 
@@ -167,7 +167,7 @@ func (s *StoreTestSuite) TestCreateReturnsNilWhenTheLimitRefusesIt() {
 func (s *StoreTestSuite) TestUpdateIsDeploymentScoped() {
 	s.expectDBClient()
 	s.dbClientMock.On("ExecuteContext", mock.Anything, queryUpdateGateway,
-		"gw-1", "production", "https://dp.test", "sealed", "", storeDeploymentID).
+		"gw-1", "production", "https://dp.test", "sealed", "", false, storeDeploymentID).
 		Return(int64(1), nil).Once()
 
 	err := s.store.Update(context.Background(), &Gateway{
@@ -275,7 +275,7 @@ func (s *StoreTestSuite) TestWritesReportFailures() {
 		s.SetupTest()
 		s.expectDBClient()
 		s.dbClientMock.On("QueryContext", mock.Anything, queryInsertGateway,
-			mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything,
+			mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything,
 			storeDeploymentID, storeDeploymentID, 5).Return(nil, failure).Once()
 
 		_, err := s.store.Create(context.Background(), &Gateway{ID: "gw-1"}, 5)
@@ -287,7 +287,7 @@ func (s *StoreTestSuite) TestWritesReportFailures() {
 		s.SetupTest()
 		s.expectDBClient()
 		s.dbClientMock.On("ExecuteContext", mock.Anything, queryUpdateGateway,
-			mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything,
+			mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything,
 			storeDeploymentID).Return(int64(0), failure).Once()
 
 		s.Require().Error(s.store.Update(context.Background(), &Gateway{ID: "gw-1"}))

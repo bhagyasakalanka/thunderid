@@ -756,3 +756,106 @@ func TestUpdateWithAKeyReplacesIt(t *testing.T) {
 		t.Fatal("an edit returned a key")
 	}
 }
+
+// The first gateway registered is the one this control plane administers. A control plane with a
+// single data plane has no other candidate, so it should not take a second call to say so.
+func TestTheFirstGatewayRegisteredIsTheManagedOne(t *testing.T) {
+	allowSeveralGateways(t)
+	cmodels.SetConfigCryptoProvider(reversingCrypto{})
+	t.Cleanup(func() { cmodels.SetConfigCryptoProvider(nil) })
+
+	store := &fakeStore{}
+	svc := newService(store)
+	ctx := context.Background()
+
+	if _, svcErr := svc.Register(ctx, RegisterRequest{
+		Name: "first", BaseURL: "https://first.test",
+	}); svcErr != nil {
+		t.Fatalf("first registration: %v", svcErr)
+	}
+	if _, svcErr := svc.Register(ctx, RegisterRequest{
+		Name: "second", BaseURL: "https://second.test",
+	}); svcErr != nil {
+		t.Fatalf("second registration: %v", svcErr)
+	}
+
+	if !store.gateways[0].ManagedByControlPlane {
+		t.Fatal("the first gateway was not marked as the managed one")
+	}
+	if store.gateways[1].ManagedByControlPlane {
+		t.Fatal("a second gateway took the mark as well")
+	}
+}
+
+// Managed returns that gateway with its key opened, because the only reason to ask for it is to
+// call the data plane it names.
+func TestManagedReturnsTheGatewayWithItsKeyOpened(t *testing.T) {
+	allowSeveralGateways(t)
+	cmodels.SetConfigCryptoProvider(reversingCrypto{})
+	t.Cleanup(func() { cmodels.SetConfigCryptoProvider(nil) })
+
+	store := &fakeStore{}
+	svc := newService(store)
+	ctx := context.Background()
+
+	registered, svcErr := svc.Register(ctx, RegisterRequest{
+		Name: "first", BaseURL: "https://first.test", Key: "the-key",
+	})
+	if svcErr != nil {
+		t.Fatalf("register: %v", svcErr)
+	}
+
+	managed, svcErr := svc.Managed(ctx)
+	if svcErr != nil {
+		t.Fatalf("managed: %v", svcErr)
+	}
+
+	if managed.ID != registered.ID {
+		t.Fatalf("managed returned %q, want %q", managed.ID, registered.ID)
+	}
+	if managed.Key != "the-key" {
+		t.Fatalf("the key came back as %q rather than opened", managed.Key)
+	}
+	if managed.Key == store.gateways[0].Key {
+		t.Fatal("the key was returned exactly as stored, so it was never sealed")
+	}
+}
+
+// A read shown to an operator still leaves the key sealed. Only Managed opens one.
+func TestAReadStillLeavesTheKeySealed(t *testing.T) {
+	allowSeveralGateways(t)
+	cmodels.SetConfigCryptoProvider(reversingCrypto{})
+	t.Cleanup(func() { cmodels.SetConfigCryptoProvider(nil) })
+
+	store := &fakeStore{}
+	svc := newService(store)
+	ctx := context.Background()
+
+	registered, svcErr := svc.Register(ctx, RegisterRequest{
+		Name: "first", BaseURL: "https://first.test", Key: "the-key",
+	})
+	if svcErr != nil {
+		t.Fatalf("register: %v", svcErr)
+	}
+
+	read, svcErr := svc.Get(ctx, registered.ID)
+	if svcErr != nil {
+		t.Fatalf("get: %v", svcErr)
+	}
+	if read.Key == "the-key" {
+		t.Fatal("a read returned the key in the clear")
+	}
+}
+
+// Nothing is chosen when no gateway holds the mark. Writing a credential to a data plane nobody
+// nominated is how a value made while developing reaches production.
+func TestManagedRefusesWhenNothingHoldsTheMark(t *testing.T) {
+	allowSeveralGateways(t)
+	store := &fakeStore{}
+	svc := newService(store)
+
+	if _, svcErr := svc.Managed(context.Background()); svcErr == nil ||
+		svcErr.Code != ErrorNoManagedGateway.Code {
+		t.Fatalf("managed gave %v, want %s", svcErr, ErrorNoManagedGateway.Code)
+	}
+}

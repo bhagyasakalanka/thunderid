@@ -726,6 +726,8 @@ var defaultMessages = map[string]string{
 	"error.gateway.data_plane_already_registered_description": "Another gateway is already registered at that address",
 	"error.gateway.key_required": "A key cannot be empty",
 	"error.gateway.key_required.description": "Omit the key to keep the one this gateway already holds, or send the value the data plane expects.",
+	"error.gateway.no_managed_gateway": "No data plane is administered by this control plane",
+	"error.gateway.no_managed_gateway.description": "Register a data plane, or mark one of the registered gateways as the one this control plane administers.",
 	"error.gatewayservice.connection_required": "A base URL is required to reach the gateway",
 	"error.gatewayservice.gateway_not_found": "Gateway not found",
 	"error.gatewayservice.invalid_base_url": "Invalid base URL",

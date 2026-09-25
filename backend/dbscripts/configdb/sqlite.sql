@@ -388,9 +388,18 @@ CREATE TABLE "GATEWAY" (
     BASE_URL TEXT NOT NULL,
     MANAGEMENT_KEY TEXT NOT NULL,
     CA_CERTIFICATE TEXT,
+    -- Exactly one gateway of a deployment holds this: the data plane a value created here is
+    -- written to. A partial unique index enforces the one, not a constraint on the column.
+    MANAGED_BY_CONTROL_PLANE INTEGER NOT NULL DEFAULT 0,
     CREATED_AT TEXT DEFAULT (datetime('now')),
     UPDATED_AT TEXT DEFAULT (datetime('now')),
     UNIQUE (NAME, DEPLOYMENT_ID),
     -- One data plane registers once, and its address is what says which one it is.
     UNIQUE (BASE_URL, DEPLOYMENT_ID)
 );
+
+-- Exactly one gateway of a deployment is the managed one. A partial index rather than a table
+-- constraint, because the rule is about the rows that hold it, not about the column.
+CREATE UNIQUE INDEX idx_gateway_managed_deployment
+    ON "GATEWAY" (DEPLOYMENT_ID)
+    WHERE MANAGED_BY_CONTROL_PLANE = 1;

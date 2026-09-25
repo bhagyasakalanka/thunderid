@@ -6,6 +6,7 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/thunder-id/thunderid/internal/system/config"
@@ -135,7 +136,7 @@ func (s *store) Create(ctx context.Context, gw *Gateway, limit int) (*Gateway, e
 	// The statement returns the row it wrote, so a caller never reads back what it just inserted and
 	// cannot fail once the write is committed. No row means the capacity check refused it.
 	rows, err := dbClient.QueryContext(ctx, queryInsertGateway,
-		gw.ID, gw.Name, gw.BaseURL, gw.Key, gw.CACertificate,
+		gw.ID, gw.Name, gw.BaseURL, gw.Key, gw.CACertificate, gw.ManagedByControlPlane,
 		s.deploymentID, s.deploymentID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to register the gateway: %w", err)
@@ -152,7 +153,8 @@ func (s *store) Update(ctx context.Context, gw *Gateway) error {
 		return fmt.Errorf("failed to get database client: %w", err)
 	}
 	_, err = dbClient.ExecuteContext(ctx, queryUpdateGateway,
-		gw.ID, gw.Name, gw.BaseURL, gw.Key, gw.CACertificate, s.deploymentID)
+		gw.ID, gw.Name, gw.BaseURL, gw.Key, gw.CACertificate, gw.ManagedByControlPlane,
+		s.deploymentID)
 	if err != nil {
 		return fmt.Errorf("failed to update the gateway: %w", err)
 	}
@@ -179,6 +181,8 @@ func gatewayFromRow(row map[string]interface{}) (*Gateway, error) {
 		BaseURL:       asString(row["base_url"]),
 		Key:           asString(row["management_key"]),
 		CACertificate: asString(row["ca_certificate"]),
+
+		ManagedByControlPlane: asBool(row["managed_by_control_plane"]),
 	}
 	if gw.ID == "" {
 		return nil, fmt.Errorf("a gateway row carries no id")
@@ -186,6 +190,24 @@ func gatewayFromRow(row map[string]interface{}) (*Gateway, error) {
 	gw.CreatedAt = asTime(row["created_at"])
 	gw.UpdatedAt = asTime(row["updated_at"])
 	return gw, nil
+}
+
+// asBool reads a flag stored as a boolean by PostgreSQL and as an integer by SQLite.
+func asBool(v interface{}) bool {
+	switch value := v.(type) {
+	case bool:
+		return value
+	case int64:
+		return value != 0
+	case int:
+		return value != 0
+	case []byte:
+		return len(value) == 1 && value[0] != '0'
+	case string:
+		return value == "1" || strings.EqualFold(value, "true")
+	default:
+		return false
+	}
 }
 
 func asString(v interface{}) string {

@@ -358,6 +358,12 @@ components:
           type: string
         caCertificate:
           type: string
+        managedByControlPlane:
+          type: boolean
+          description: >
+            Whether this is the data plane the control plane administers directly, rather than only
+            applies configuration to. Exactly one registered gateway holds it, and it is where a
+            value created on the control plane is written. The first gateway registered takes it.
         createdAt:
           type: string
           format: date-time
