@@ -110,7 +110,7 @@ WAYFINDER_SAMPLE_APP_DIR=$SAMPLE_BASE_DIR/apps/wayfinder-sample
 QUICKSTART_SAMPLE_BUNDLES=(
     "wayfinder:$WAYFINDER_SAMPLE_APP_DIR/thunderid-config"
 )
-QUICKSTART_BUNDLE_STAGE_DIR="$FRONTEND_CONSOLE_APP_SOURCE_DIR/src/features/welcome/data/sample-bundles"
+QUICKSTART_BUNDLE_STAGE_DIR="$FRONTEND_CONSOLE_APP_SOURCE_DIR/src/data/sample-bundles"
 
 # Default ports
 GATE_APP_DEFAULT_PORT=5190
@@ -142,7 +142,7 @@ read_config() {
         PUBLIC_HOSTNAME=""
     else
         # Try yq first (YAML parser)
-        if command -v yq >/dev/null 2>&1; then
+        if command -v yq >/dev/null 2>&1 && yq eval '.' /dev/null >/dev/null 2>&1; then
             HOSTNAME=$(yq eval '.server.hostname // "localhost"' "$config_file" 2>/dev/null)
             PORT=$(yq eval '.server.port // 8090' "$config_file" 2>/dev/null)
             HTTP_ONLY=$(yq eval '.server.http_only // false' "$config_file" 2>/dev/null)
@@ -268,6 +268,27 @@ function build_backend() {
     echo "================================================================"
 }
 
+function build_cp_backend() {
+    echo "================================================================"
+    echo "Building Go Control Plane backend..."
+    mkdir -p "$BUILD_DIR"
+
+    # The Control Plane ships alongside the all-in-one server rather than replacing it, so it takes
+    # its own binary name.
+    local output_binary="${BINARY_NAME}-cp"
+    if [ "$GO_OS" = "windows" ]; then
+        output_binary="${BINARY_NAME}-cp.exe"
+    fi
+
+    GOOS=$GO_OS GOARCH=$GO_ARCH CGO_ENABLED=0 go build -C "$BACKEND_BASE_DIR" \
+    -x -ldflags "-X \"main.version=$VERSION\" \
+    -X \"main.buildDate=$(date -u '+%Y-%m-%d %H:%M:%S UTC')\"" \
+    -o "../$BUILD_DIR/$output_binary" ./cmd/cpserver
+
+    echo "Control Plane binary: $BUILD_DIR/$output_binary"
+    echo "================================================================"
+}
+
 function initialize_databases() {
     echo "================================================================"
     local override=$1
@@ -367,14 +388,20 @@ function test_i18n_extractor() {
 }
 
 function lint_cli() {
-    local golangci_lint="$SCRIPT_DIR/backend/bin/tools/golangci-lint"
+    # tools/cli is a separate Go module with its own Go directive, and golangci-lint refuses to
+    # run when the Go it was built with is older than the module it is linting. The CLI therefore
+    # uses a linter installed into its own bin directory with its own toolchain, rather than the
+    # backend's binary. `make lint_cli` installs it.
+    local golangci_lint="$SCRIPT_DIR/tools/cli/bin/tools/golangci-lint"
     echo "Linting CLI tool..."
     cd "$SCRIPT_DIR/tools/cli" && "$golangci_lint" run ./...
     cd "$SCRIPT_DIR" || exit 1
 }
 
 function lint_i18n_extractor() {
-    local golangci_lint="$SCRIPT_DIR/backend/bin/tools/golangci-lint"
+    # Its own linter, not the backend's: see the note in lint_cli. `make tools_lint_i18n_extractor`
+    # installs it.
+    local golangci_lint="$SCRIPT_DIR/tools/i18n-extractor/bin/tools/golangci-lint"
     echo "Linting i18n-extractor..."
     cd "$SCRIPT_DIR/tools/i18n-extractor" && "$golangci_lint" run ./...
     cd "$SCRIPT_DIR" || exit 1
@@ -1192,20 +1219,41 @@ case "$1" in
         build_backend
         package
         ;;
+    build_cp_backend)
+        build_cp_backend
+        ;;
     build_frontend)
         build_frontend
         ;;
     build_docs)
         build_docs
         ;;
-    build_tools)
+    tools_build)
         build_tools
         ;;
-    test_tools)
+    tools_test)
         test_tools
         ;;
-    lint_tools)
+    tools_lint)
         lint_tools
+        ;;
+    tools_build_cli)
+        build_cli
+        ;;
+    tools_test_cli)
+        test_cli
+        ;;
+    tools_lint_cli)
+        lint_cli
+        ;;
+    tools_build_i18n_extractor)
+        build_i18n_extractor
+        ;;
+    tools_test_i18n_extractor)
+        test_i18n_extractor
+        ;;
+    tools_lint_i18n_extractor)
+        lint_i18n_extractor
         ;;
     package_samples)
         package_sample_app
@@ -1250,11 +1298,18 @@ case "$1" in
         echo "  clean                    - Clean build artifacts"
         echo "  build                    - Build the complete ${PRODUCT_NAME} application (backend + frontend + samples)"
         echo "  build_backend            - Build only the ${PRODUCT_NAME} backend server"
+        echo "  build_cp_backend         - Build only the ${PRODUCT_NAME} Control Plane server"
         echo "  build_frontend           - Build only the Next.js frontend applications"
         echo "  build_docs               - Build only the documentation"
-        echo "  build_tools              - Build all tool binaries (CLI + i18n-extractor + npm tools)"
-        echo "  test_tools               - Run tests for all tools (CLI + i18n-extractor)"
-        echo "  lint_tools               - Run linting for all tools (CLI + i18n-extractor)"
+        echo "  tools_build              - Build all tool binaries (CLI + i18n-extractor + npm tools)"
+        echo "  tools_test               - Run tests for all tools (CLI + i18n-extractor)"
+        echo "  tools_lint               - Run linting for all tools (CLI + i18n-extractor)"
+        echo "  tools_build_cli          - Cross-compile the CLI for all supported platforms"
+        echo "  tools_test_cli           - Run CLI unit tests"
+        echo "  tools_lint_cli           - Run golangci-lint on the CLI code"
+        echo "  tools_build_i18n_extractor - Build the i18n-extractor binary"
+        echo "  tools_test_i18n_extractor  - Run i18n-extractor tests"
+        echo "  tools_lint_i18n_extractor  - Run golangci-lint on the i18n-extractor code"
         echo "  package_samples          - Package the sample applications (samples are distributed as source)"
         echo "  test_unit                - Run unit tests with coverage"
         echo "  test_integration         - Run integration tests. Use -run and -package for filtering"

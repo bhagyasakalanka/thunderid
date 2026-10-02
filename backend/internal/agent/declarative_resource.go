@@ -124,6 +124,8 @@ func (e *agentExporter) GetResourceRules() *declarativeresource.ResourceRules {
 	return &declarativeresource.ResourceRules{
 		Variables: []string{
 			"InboundAuthConfig[].OAuthConfig.ClientID",
+		},
+		SecretVariables: []string{
 			"InboundAuthConfig[].OAuthConfig.ClientSecret",
 		},
 		ArrayVariables: []string{
@@ -156,11 +158,12 @@ func (e *agentExporter) GetResourceRulesForResource(resource interface{}) *decla
 	}
 
 	variables := []string{"InboundAuthConfig[].OAuthConfig.ClientID"}
+	var secrets []string
 	if !isPublicClient {
-		variables = append(variables, "InboundAuthConfig[].OAuthConfig.ClientSecret")
+		secrets = append(secrets, "InboundAuthConfig[].OAuthConfig.ClientSecret")
 	}
 
-	rules := &declarativeresource.ResourceRules{Variables: variables}
+	rules := &declarativeresource.ResourceRules{Variables: variables, SecretVariables: secrets}
 	if hasRedirectURIs {
 		rules.ArrayVariables = []string{"InboundAuthConfig[].OAuthConfig.RedirectURIs"}
 	}
@@ -199,7 +202,7 @@ func makeAgentEntityParser(
 			attributesJSON = raw
 		}
 
-		agent := &model.Agent{
+		agent := &providers.Agent{
 			ID:          req.ID,
 			OUID:        req.OUID,
 			OUHandle:    req.OUHandle,
@@ -225,6 +228,7 @@ func makeAgentEntityParser(
 				Assertion:                 req.Assertion,
 				LoginConsent:              req.LoginConsent,
 				AllowedUserTypes:          req.AllowedUserTypes,
+				AllowedAgentTypes:         req.AllowedAgentTypes,
 				PasskeyAllowedOrigins:     req.PasskeyAllowedOrigins,
 				Attestation:               req.Attestation,
 			},
@@ -272,7 +276,7 @@ func makeAgentInboundParser(agentSvc AgentServiceInterface) func([]byte) (*inbou
 			return nil, fmt.Errorf("failed to parse agent YAML: %w", err)
 		}
 
-		agent := &model.Agent{
+		agent := &providers.Agent{
 			ID:          req.ID,
 			OUID:        req.OUID,
 			OUHandle:    req.OUHandle,
@@ -297,6 +301,7 @@ func makeAgentInboundParser(agentSvc AgentServiceInterface) func([]byte) (*inbou
 				Assertion:                 req.Assertion,
 				LoginConsent:              req.LoginConsent,
 				AllowedUserTypes:          req.AllowedUserTypes,
+				AllowedAgentTypes:         req.AllowedAgentTypes,
 				PasskeyAllowedOrigins:     req.PasskeyAllowedOrigins,
 				Attestation:               req.Attestation,
 			},

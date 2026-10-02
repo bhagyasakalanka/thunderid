@@ -69,23 +69,6 @@ func (p *defaultEntityProvider) GetEntity(
 	return toProviderEntity(result), nil
 }
 
-// CreateEntity creates a new entity.
-func (p *defaultEntityProvider) CreateEntity(
-	e *providers.Entity, systemCredentials json.RawMessage,
-) (*providers.Entity, *EntityProviderError) {
-	if e == nil {
-		return nil, NewEntityProviderError(ErrorCodeInvalidRequestFormat, "Invalid request",
-			"Entity cannot be nil")
-	}
-	ctx := security.WithRuntimeContext(context.Background())
-	svcEntity := toServiceEntity(e)
-	result, err := p.entitySvc.CreateEntity(ctx, svcEntity, systemCredentials)
-	if err != nil {
-		return nil, mapEntityError(err)
-	}
-	return toProviderEntity(result), nil
-}
-
 // UpdateEntity updates an existing entity.
 func (p *defaultEntityProvider) UpdateEntity(
 	entityID string, e *providers.Entity,
@@ -180,6 +163,18 @@ func (p *defaultEntityProvider) GetTransitiveEntityGroups(
 	result := make([]providers.EntityGroup, len(groups))
 	copy(result, groups)
 	return result, nil
+}
+
+// GetTransitiveGroupAncestors resolves the ancestor chain of a single group.
+func (p *defaultEntityProvider) GetTransitiveGroupAncestors(
+	groupID string,
+) ([]string, *EntityProviderError) {
+	ctx := security.WithRuntimeContext(context.Background())
+	ancestors, err := p.entitySvc.GetTransitiveGroupAncestors(ctx, groupID)
+	if err != nil {
+		return nil, mapEntityError(err)
+	}
+	return ancestors, nil
 }
 
 // ValidateEntityIDs validates that the given entity IDs exist.

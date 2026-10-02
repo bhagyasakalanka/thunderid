@@ -21,10 +21,6 @@ type EntityProviderInterface interface {
 	// GetEntity retrieves an entity by ID. Credentials are never returned.
 	GetEntity(entityID string) (*providers.Entity, *EntityProviderError)
 
-	// CreateEntity creates a new entity.
-	CreateEntity(entity *providers.Entity,
-		systemCredentials json.RawMessage) (*providers.Entity, *EntityProviderError)
-
 	// UpdateEntity updates an existing entity's core fields.
 	UpdateEntity(entityID string, entity *providers.Entity) (*providers.Entity, *EntityProviderError)
 
@@ -49,6 +45,9 @@ type EntityProviderInterface interface {
 
 	// GetTransitiveEntityGroups retrieves all groups an entity belongs to, including inherited groups.
 	GetTransitiveEntityGroups(entityID string) ([]providers.EntityGroup, *EntityProviderError)
+
+	// GetTransitiveGroupAncestors resolves the ancestor chain of a single group.
+	GetTransitiveGroupAncestors(groupID string) ([]string, *EntityProviderError)
 
 	// ValidateEntityIDs validates that the given entity IDs exist. Returns IDs that are invalid.
 	ValidateEntityIDs(entityIDs []string) ([]string, *EntityProviderError)

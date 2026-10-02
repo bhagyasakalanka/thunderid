@@ -73,12 +73,16 @@ Visit [Get ThunderID](https://thunderid.dev/docs/next/getting-started/get-thunde
     * YAML resource definitions for every entity
     * Immutable runtime
 
+## Conformance
+
+[![OIDC Conformance](https://img.shields.io/github/actions/workflow/status/thunder-id/thunderid/oidc-conformance-test.yml?branch=main&label=OIDC%20Conformance)](https://github.com/thunder-id/thunderid/actions/workflows/oidc-conformance-test.yml)
+
 
 ## Contributing
 
-Please refer to the [Contributing Guide](https://thunderid.dev/docs/next/community/overview) for the different ways to contribute to this project and the relevant guidelines.
+Please refer to the [Contributing Guide](https://thunderid.dev/community/overview) for the different ways to contribute to this project and the relevant guidelines.
 
-For code contributions, refer to the [Contributing Code](https://thunderid.dev/docs/next/community/contributing/contributing-code/prerequisites) section for details on the prerequisites and instructions for running ThunderID in development mode.
+For code contributions, refer to the [Contributing Code](https://thunderid.dev/community/contributing/contributing-code/prerequisites) section for details on the prerequisites and instructions for running ThunderID in development mode.
 
 
 ## License

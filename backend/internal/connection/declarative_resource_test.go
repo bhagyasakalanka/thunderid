@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/thunder-id/thunderid/internal/connection/authzenpdp"
 	"github.com/thunder-id/thunderid/internal/idp"
 	ncommon "github.com/thunder-id/thunderid/internal/notification/common"
 	"github.com/thunder-id/thunderid/internal/system/cmodels"
@@ -41,7 +42,7 @@ func (s *DeclarativeResourceTestSuite) SetupTest() {
 	s.T().Cleanup(config.ResetServerRuntime)
 	s.mockIDP = idpmock.NewIDPServiceInterfaceMock(s.T())
 	s.mockNotif = notificationmock.NewNotificationSenderMgtSvcInterfaceMock(s.T())
-	s.exporter = NewConnectionExporterForTest(s.mockIDP, s.mockNotif)
+	s.exporter = NewConnectionExporterForTest(s.mockIDP, s.mockNotif, nil)
 }
 
 func (s *DeclarativeResourceTestSuite) TestGetResourceType() {
@@ -75,7 +76,7 @@ func (s *DeclarativeResourceTestSuite) TestConnectionModelFromIDPDTORejectsUnreg
 func (s *DeclarativeResourceTestSuite) TestConnectionModelFromSenderDTOUnmasksSecret() {
 	dto := ncommon.NotificationSenderDTO{
 		ID: "tw-1", Name: "My Twilio", Type: ncommon.NotificationSenderTypeMessage,
-		Provider: ncommon.MessageProviderTypeTwilio,
+		Provider: ncommon.NotificationProviderTypeTwilio,
 		Properties: []cmodels.Property{
 			mustProperty(s.T(), ncommon.TwilioPropKeyAccountSID, "AC00000000000000000000000000000000", false),
 			mustProperty(s.T(), ncommon.TwilioPropKeyAuthToken, "tok", true),
@@ -91,7 +92,7 @@ func (s *DeclarativeResourceTestSuite) TestConnectionModelFromSenderDTOUnmasksSe
 func (s *DeclarativeResourceTestSuite) TestConnectionModelFromSenderDTOSMSGateway() {
 	dto := ncommon.NotificationSenderDTO{
 		ID: "sg-1", Name: "Gateway", Type: ncommon.NotificationSenderTypeMessage,
-		Provider: ncommon.MessageProviderTypeCustom,
+		Provider: ncommon.NotificationProviderTypeCustom,
 		Properties: []cmodels.Property{
 			mustProperty(s.T(), ncommon.CustomPropKeyURL, "https://sms.example.com/send", false),
 		},
@@ -154,7 +155,7 @@ func (s *DeclarativeResourceTestSuite) TestConnectionModelToDTORoundTripsSMSVend
 	cases := []struct {
 		name         string
 		model        connectionExportModel
-		wantProvider ncommon.MessageProviderType
+		wantProvider ncommon.NotificationProviderType
 	}{
 		{
 			"twilio",
@@ -162,19 +163,19 @@ func (s *DeclarativeResourceTestSuite) TestConnectionModelToDTORoundTripsSMSVend
 				ID: "s1", Type: "twilio", Name: "n", AccountSID: "AC00000000000000000000000000000000",
 				AuthToken: "t", SenderID: "+1",
 			},
-			ncommon.MessageProviderTypeTwilio,
+			ncommon.NotificationProviderTypeTwilio,
 		},
 		{
 			"vonage",
 			connectionExportModel{
 				ID: "s2", Type: "vonage", Name: "n", APIKey: "k", APISecret: "s", SenderID: "ThunderID",
 			},
-			ncommon.MessageProviderTypeVonage,
+			ncommon.NotificationProviderTypeVonage,
 		},
 		{
 			"sms-gateway",
 			connectionExportModel{ID: "s3", Type: smsGatewayVendorName, Name: "n", URL: "https://x/send"},
-			ncommon.MessageProviderTypeCustom,
+			ncommon.NotificationProviderTypeCustom,
 		},
 	}
 	for _, tc := range cases {
@@ -190,6 +191,36 @@ func (s *DeclarativeResourceTestSuite) TestConnectionModelToDTORoundTripsSMSVend
 func (s *DeclarativeResourceTestSuite) TestConnectionModelToDTOUnsupportedVendor() {
 	_, _, err := connectionModelToDTO(connectionExportModel{Type: "unknown-vendor"})
 	s.Error(err)
+}
+
+func (s *DeclarativeResourceTestSuite) TestAuthZENPDPConnectionExportModelRoundTrip() {
+	doc := []byte(`
+id: pdp-1
+type: authzen-pdp
+name: Production PDP
+endpoint: http://localhost:3592/access/v1/evaluation
+batchEndpoint: http://localhost:3592/access/v1/evaluations
+subjectAttributeMappings:
+  - subjectCategory: user
+    entityType: TravelCustomer
+    attributes:
+      - attribute: accountStatus
+        pdpAttribute: account_status
+`)
+
+	dto, err := parseToConnectionDTOWrapper(doc)
+	s.Require().NoError(err)
+	pdp, ok := dto.(*authzenpdp.AuthZENPDPConnection)
+	s.Require().True(ok)
+	s.Equal("pdp-1", pdp.ID)
+	s.Equal("authzen-pdp", connectionModelFromAuthZENPDP(*pdp).Type)
+	s.Equal("http://localhost:3592/access/v1/evaluation", pdp.Endpoint)
+	s.Equal("http://localhost:3592/access/v1/evaluations", pdp.BatchEndpoint)
+	exported := connectionModelFromAuthZENPDP(*pdp)
+	s.Equal("pdp-1", connectionResourceID(pdp))
+
+	roundTripped := connectionModelToAuthZENPDP(exported)
+	s.Require().NotNil(roundTripped)
 }
 
 func (s *DeclarativeResourceTestSuite) TestParseConnectionFromNodeIDPVendor() {
@@ -252,7 +283,7 @@ httpMethod: POST
 	s.Nil(idpDTO)
 	s.Require().NotNil(senderDTO)
 	s.Equal("prod-sms", senderDTO.ID)
-	s.Equal(ncommon.MessageProviderTypeCustom, senderDTO.Provider)
+	s.Equal(ncommon.NotificationProviderTypeCustom, senderDTO.Provider)
 }
 
 func (s *DeclarativeResourceTestSuite) TestParseToConnectionDTOWrapperIDPVendor() {
@@ -347,12 +378,16 @@ func (s *DeclarativeResourceTestSuite) TestGetResourceRulesForResourceSecretSele
 		{connectionExportModel{Type: "google"}, nil}, // no secret set -> nothing to externalize
 		{connectionExportModel{Type: "twilio"}, []string{"AuthToken"}},
 		{connectionExportModel{Type: "vonage"}, []string{"APISecret"}},
+		{connectionExportModel{Type: "authzen-pdp"}, nil},
 		{connectionExportModel{Type: smsGatewayVendorName}, nil},
 	}
 	for _, tc := range cases {
 		rules := s.exporter.GetResourceRulesForResource(&tc.model)
 		s.Require().NotNil(rules)
-		s.Equal(tc.want, rules.Variables, tc.model.Type)
+		// Every one of these is a credential, so it is named on the list that says so: a value under
+		// Variables is readable back from wherever it is held, and one under SecretVariables is not.
+		s.Equal(tc.want, rules.SecretVariables, tc.model.Type)
+		s.Empty(rules.Variables, tc.model.Type)
 	}
 }
 
@@ -362,7 +397,7 @@ func (s *DeclarativeResourceTestSuite) TestGetResourceByIDFallsBackToSender() {
 	s.mockNotif.On("GetSender", mock.Anything, "tw-1").
 		Return(&ncommon.NotificationSenderDTO{
 			ID: "tw-1", Name: "My Twilio", Type: ncommon.NotificationSenderTypeMessage,
-			Provider: ncommon.MessageProviderTypeTwilio,
+			Provider: ncommon.NotificationProviderTypeTwilio,
 			Properties: []cmodels.Property{
 				mustProperty(s.T(), ncommon.TwilioPropKeyAccountSID, "AC00000000000000000000000000000000", false),
 			},
@@ -382,13 +417,30 @@ func (s *DeclarativeResourceTestSuite) TestGetAllResourceIDsFiltersUnregisteredV
 		{ID: "2", Type: providers.IDPType("SAML")}, // unregistered -> excluded
 	}, (*tidcommon.ServiceError)(nil))
 	s.mockNotif.On("ListSenders", mock.Anything).Return([]ncommon.NotificationSenderDTO{
-		{ID: "s1", Type: ncommon.NotificationSenderTypeMessage, Provider: ncommon.MessageProviderTypeTwilio},
-		{ID: "s2", Type: ncommon.NotificationSenderTypeEmail, Provider: ncommon.MessageProviderType("mailer")},
+		{ID: "s1", Type: ncommon.NotificationSenderTypeMessage, Provider: ncommon.NotificationProviderTypeTwilio},
+		{ID: "s2", Type: ncommon.NotificationSenderTypeEmail, Provider: ncommon.NotificationProviderType("mailer")},
 	}, (*tidcommon.ServiceError)(nil))
 
 	ids, svcErr := s.exporter.GetAllResourceIDs(context.Background())
 	s.Require().Nil(svcErr)
 	s.ElementsMatch([]string{"1", "s1"}, ids)
+}
+
+func (s *DeclarativeResourceTestSuite) TestGetAllResourceIDsExcludesDeclarativeAuthZENPDPConnections() {
+	s.mockIDP.On("GetIdentityProviderList", mock.Anything).
+		Return([]idp.BasicIDPDTO{}, (*tidcommon.ServiceError)(nil))
+	s.mockNotif.On("ListSenders", mock.Anything).
+		Return([]ncommon.NotificationSenderDTO{}, (*tidcommon.ServiceError)(nil))
+	pdpService := &authZENPDPServiceStub{connections: []authzenpdp.AuthZENPDPConnection{
+		{ID: "mutable", Name: "Mutable PDP"},
+		{ID: "declarative", Name: "Declarative PDP", IsReadOnly: true},
+	}}
+	exporter := newConnectionExporter(s.mockIDP, s.mockNotif,
+		pdpService)
+
+	ids, svcErr := exporter.GetAllResourceIDs(context.Background())
+	s.Require().Nil(svcErr)
+	s.Equal([]string{"mutable"}, ids)
 }
 
 func (s *DeclarativeResourceTestSuite) TestValidateResourceRejectsEmptyName() {
@@ -418,13 +470,90 @@ func (s *DeclarativeResourceTestSuite) TestConnectionDeclarativeStoreDispatchesB
 	s.Require().NoError(err)
 	s.Equal(idpDTO, got)
 
-	senderDTO := &ncommon.NotificationSenderDTO{ID: "sender-1", Provider: ncommon.MessageProviderTypeTwilio}
+	senderDTO := &ncommon.NotificationSenderDTO{ID: "sender-1", Provider: ncommon.NotificationProviderTypeTwilio}
 	s.Require().NoError(store.Create("sender-1", senderDTO))
 	got, err = store.senderStore.Get("sender-1")
 	s.Require().NoError(err)
 	s.Equal(senderDTO, got)
 
 	s.Error(store.Create("bad", "not-a-dto"))
+}
+
+func (s *DeclarativeResourceTestSuite) TestConnectionDeclarativeStoreStoresAuthZENPDPEndpoints() {
+	config.ResetServerRuntime()
+	s.Require().NoError(config.InitializeServerRuntime("/tmp/test", &config.Config{
+		DeclarativeResources: config.DeclarativeResources{Enabled: true},
+	}))
+	s.T().Cleanup(config.ResetServerRuntime)
+
+	declarativeStore := &connectionDeclarativeStore{
+		authZENPDPStore: declarativeresource.NewGenericFileBasedStoreForTest(entity.KeyTypeAuthZENPDP),
+	}
+
+	dto := &authzenpdp.AuthZENPDPConnection{
+		Name:          "PDP",
+		Endpoint:      "https://pdp.example.com/access/v1/evaluation",
+		BatchEndpoint: "https://pdp.example.com/access/v1/evaluations",
+	}
+
+	s.Require().NoError(declarativeStore.Create("pdp-1", dto))
+	got, err := declarativeStore.authZENPDPStore.Get("pdp-1")
+	s.Require().NoError(err)
+	s.Equal("pdp-1", got.(*authzenpdp.AuthZENPDPConnection).ID)
+	s.Equal(dto, got)
+}
+
+func (s *DeclarativeResourceTestSuite) TestConnectionDeclarativeStoreSkipsAuthZENPDPWhenDisabled() {
+	config.ResetServerRuntime()
+	s.Require().NoError(config.InitializeServerRuntime("/tmp/test", &config.Config{
+		IdentityProvider: config.IdentityProviderConfig{Store: "composite"},
+	}))
+	s.T().Cleanup(config.ResetServerRuntime)
+
+	declarativeStore := &connectionDeclarativeStore{
+		authZENPDPStore: declarativeresource.NewGenericFileBasedStoreForTest(entity.KeyTypeAuthZENPDP),
+	}
+	dto := &authzenpdp.AuthZENPDPConnection{
+		Name:          "PDP",
+		Endpoint:      "https://pdp.example.com/access/v1/evaluation",
+		BatchEndpoint: "https://pdp.example.com/access/v1/evaluations",
+	}
+
+	s.Require().NoError(declarativeStore.Create("pdp-1", dto))
+	_, err := declarativeStore.authZENPDPStore.Get("pdp-1")
+	s.Error(err)
+}
+
+func (s *DeclarativeResourceTestSuite) TestConnectionDeclarativeStoreSkipsAuthZENPDPInMutableMode() {
+	config.ResetServerRuntime()
+	s.Require().NoError(config.InitializeServerRuntime("/tmp/test", &config.Config{
+		DeclarativeResources: config.DeclarativeResources{Enabled: true},
+		AuthZENPDP:           config.AuthZENPDPConfig{Store: "mutable"},
+	}))
+	s.T().Cleanup(config.ResetServerRuntime)
+
+	store := &connectionDeclarativeStore{
+		authZENPDPStore: declarativeresource.NewGenericFileBasedStoreForTest(entity.KeyTypeAuthZENPDP),
+	}
+	s.Require().NoError(store.Create("pdp-1", &authzenpdp.AuthZENPDPConnection{Name: "PDP"}))
+	_, err := store.authZENPDPStore.Get("pdp-1")
+	s.Error(err)
+}
+
+func (s *DeclarativeResourceTestSuite) TestConnectionDeclarativeStoreLoadsAuthZENPDPInCompositeMode() {
+	config.ResetServerRuntime()
+	s.Require().NoError(config.InitializeServerRuntime("/tmp/test", &config.Config{
+		AuthZENPDP: config.AuthZENPDPConfig{Store: "composite"},
+	}))
+	s.T().Cleanup(config.ResetServerRuntime)
+
+	store := &connectionDeclarativeStore{
+		authZENPDPStore: declarativeresource.NewGenericFileBasedStoreForTest(entity.KeyTypeAuthZENPDP),
+	}
+	s.Require().NoError(store.Create("pdp-1", &authzenpdp.AuthZENPDPConnection{Name: "PDP"}))
+	got, err := store.authZENPDPStore.Get("pdp-1")
+	s.Require().NoError(err)
+	s.Equal("pdp-1", got.(*authzenpdp.AuthZENPDPConnection).ID)
 }
 
 // TestConnectionDeclarativeStoreSkipsIDPWhenIDPStoreModeIsMutable verifies that IdP-typed
@@ -448,7 +577,7 @@ func (s *DeclarativeResourceTestSuite) TestConnectionDeclarativeStoreSkipsIDPWhe
 	_, err := store.idpStore.Get("idp-1")
 	s.Error(err, "IDP declarative resource should not be stored when idp store mode is mutable")
 
-	senderDTO := &ncommon.NotificationSenderDTO{ID: "sender-1", Provider: ncommon.MessageProviderTypeTwilio}
+	senderDTO := &ncommon.NotificationSenderDTO{ID: "sender-1", Provider: ncommon.NotificationProviderTypeTwilio}
 	s.Require().NoError(store.Create("sender-1", senderDTO))
 	got, err := store.senderStore.Get("sender-1")
 	s.Require().NoError(err)

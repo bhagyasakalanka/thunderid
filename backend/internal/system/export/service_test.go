@@ -89,13 +89,13 @@ func (suite *ExportServiceTestSuite) SetupTest() {
 	// Create exporters
 	exporters := []declarativeresource.ResourceExporter{
 		application.NewApplicationExporterForTest(suite.appServiceMock),
-		connection.NewConnectionExporterForTest(suite.idpServiceMock, suite.mockNotificationService),
+		connection.NewConnectionExporterForTest(suite.idpServiceMock, suite.mockNotificationService, nil),
 		entitytype.NewEntityTypeExporterForTest(suite.mockEntityTypeService, entitytype.TypeCategoryUser),
 		flowmgt.NewFlowGraphExporterForTest(suite.mockFlowService),
 	}
 
 	// Create parameterizer instance
-	parameterizer := newParameterizer(templatingRules{})
+	parameterizer := newParameterizer(templatingRules{}, TemplatePlaceholders)
 
 	suite.exportService = newExportService(exporters, parameterizer)
 }
@@ -1229,16 +1229,16 @@ type MockParameterizer struct {
 
 func (m *MockParameterizer) ToParameterizedYAML(_ context.Context, obj interface{},
 	resourceType string, resourceName string,
-	rules *declarativeresource.ResourceRules) (string, map[string]string, error) {
+	rules *declarativeresource.ResourceRules) (string, map[string]string, map[string]bool, error) {
 	if m.shouldFail {
-		return "", nil, fmt.Errorf("%s", m.errorMsg)
+		return "", nil, nil, fmt.Errorf("%s", m.errorMsg)
 	}
 	// Return minimal valid YAML
-	return "id: test\nname: test\n", nil, nil
+	return "id: test\nname: test\n", nil, nil, nil
 }
 
 func (m *MockParameterizer) VarPrefix(resourceName string) string {
-	return newParameterizer(templatingRules{}).VarPrefix(resourceName)
+	return newParameterizer(templatingRules{}, TemplatePlaceholders).VarPrefix(resourceName)
 }
 
 // TestExportResources_TemplateGenerationError tests the error path in generateTemplateFromStruct.
@@ -1272,7 +1272,7 @@ func (suite *ExportServiceTestSuite) TestExportResources_TemplateGenerationError
 	// Create exporters with the test services
 	exporters := []declarativeresource.ResourceExporter{
 		application.NewApplicationExporterForTest(suite.appServiceMock),
-		connection.NewConnectionExporterForTest(suite.idpServiceMock, suite.mockNotificationService),
+		connection.NewConnectionExporterForTest(suite.idpServiceMock, suite.mockNotificationService, nil),
 		entitytype.NewEntityTypeExporterForTest(suite.mockEntityTypeService, entitytype.TypeCategoryUser),
 	}
 
@@ -1392,7 +1392,7 @@ func (suite *ExportServiceTestSuite) TestExportNotificationSenders_Success() {
 		ID:          "sender1",
 		Name:        "Test Sender",
 		Description: "Test notification sender",
-		Provider:    common.MessageProviderTypeTwilio,
+		Provider:    common.NotificationProviderTypeTwilio,
 		Properties:  []cmodels.Property{*mockProperty},
 	}
 
@@ -1419,7 +1419,7 @@ func (suite *ExportServiceTestSuite) TestExportNotificationSenders_Multiple() {
 	mockSender1 := &common.NotificationSenderDTO{
 		ID:         "sender1",
 		Name:       "Twilio Sender",
-		Provider:   common.MessageProviderTypeTwilio,
+		Provider:   common.NotificationProviderTypeTwilio,
 		Properties: []cmodels.Property{*mockProperty1},
 	}
 
@@ -1427,7 +1427,7 @@ func (suite *ExportServiceTestSuite) TestExportNotificationSenders_Multiple() {
 	mockSender2 := &common.NotificationSenderDTO{
 		ID:         "sender2",
 		Name:       "Vonage Sender",
-		Provider:   common.MessageProviderTypeVonage,
+		Provider:   common.NotificationProviderTypeVonage,
 		Properties: []cmodels.Property{*mockProperty2},
 	}
 
@@ -1459,7 +1459,7 @@ func (suite *ExportServiceTestSuite) TestExportNotificationSenders_Wildcard() {
 		ID:         "sender1",
 		Name:       "Twilio Sender",
 		Type:       common.NotificationSenderTypeMessage,
-		Provider:   common.MessageProviderTypeTwilio,
+		Provider:   common.NotificationProviderTypeTwilio,
 		Properties: []cmodels.Property{*mockProperty1},
 	}
 
@@ -1468,7 +1468,7 @@ func (suite *ExportServiceTestSuite) TestExportNotificationSenders_Wildcard() {
 		ID:         "sender2",
 		Name:       "Vonage Sender",
 		Type:       common.NotificationSenderTypeMessage,
-		Provider:   common.MessageProviderTypeVonage,
+		Provider:   common.NotificationProviderTypeVonage,
 		Properties: []cmodels.Property{*mockProperty2},
 	}
 
@@ -1528,7 +1528,7 @@ func (suite *ExportServiceTestSuite) TestExportNotificationSenders_EmptyName() {
 	mockSender := &common.NotificationSenderDTO{
 		ID:         "sender-no-name",
 		Name:       "", // Empty name
-		Provider:   common.MessageProviderTypeTwilio,
+		Provider:   common.NotificationProviderTypeTwilio,
 		Properties: []cmodels.Property{*mockProperty},
 	}
 
@@ -1555,7 +1555,7 @@ func (suite *ExportServiceTestSuite) TestExportNotificationSenders_NoProperties(
 	mockSender := &common.NotificationSenderDTO{
 		ID:         "sender-no-props",
 		Name:       "Empty Sender",
-		Provider:   common.MessageProviderTypeTwilio,
+		Provider:   common.NotificationProviderTypeTwilio,
 		Properties: []cmodels.Property{}, // Empty properties
 	}
 
@@ -1588,7 +1588,7 @@ func (suite *ExportServiceTestSuite) TestExportNotificationSenders_WildcardParti
 		ID:         "sender1",
 		Name:       "Twilio Sender",
 		Type:       common.NotificationSenderTypeMessage,
-		Provider:   common.MessageProviderTypeTwilio,
+		Provider:   common.NotificationProviderTypeTwilio,
 		Properties: []cmodels.Property{*mockProperty1},
 	}
 
@@ -1596,7 +1596,7 @@ func (suite *ExportServiceTestSuite) TestExportNotificationSenders_WildcardParti
 		ID:       "sender2",
 		Name:     "Failing Sender",
 		Type:     common.NotificationSenderTypeMessage,
-		Provider: common.MessageProviderTypeVonage,
+		Provider: common.NotificationProviderTypeVonage,
 	}
 
 	mockProperty3, _ := cmodels.NewProperty("api_key", "key3", true)
@@ -1604,7 +1604,7 @@ func (suite *ExportServiceTestSuite) TestExportNotificationSenders_WildcardParti
 		ID:         "sender3",
 		Name:       "Vonage Sender",
 		Type:       common.NotificationSenderTypeMessage,
-		Provider:   common.MessageProviderTypeVonage,
+		Provider:   common.NotificationProviderTypeVonage,
 		Properties: []cmodels.Property{*mockProperty3},
 	}
 
@@ -2247,7 +2247,7 @@ func (suite *ExportServiceTestSuite) TestExportResourcesWithExporter_Notificatio
 	mockSender := &common.NotificationSenderDTO{
 		ID:         senderID,
 		Name:       "Test Sender",
-		Provider:   common.MessageProviderTypeTwilio,
+		Provider:   common.NotificationProviderTypeTwilio,
 		Properties: []cmodels.Property{*mockProperty},
 	}
 

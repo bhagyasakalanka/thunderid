@@ -8,9 +8,11 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/thunder-id/thunderid/internal/connection/authzenpdp"
 	"github.com/thunder-id/thunderid/internal/idp"
 	"github.com/thunder-id/thunderid/internal/notification"
 	ncommon "github.com/thunder-id/thunderid/internal/notification/common"
+	"github.com/thunder-id/thunderid/internal/resource"
 	serverconst "github.com/thunder-id/thunderid/internal/system/constants"
 	"github.com/thunder-id/thunderid/internal/system/resourcedependency"
 	sysutils "github.com/thunder-id/thunderid/internal/system/utils"
@@ -24,13 +26,22 @@ import (
 type service struct {
 	idpService          idp.IDPServiceInterface
 	notificationService notification.NotificationSenderMgtSvcInterface
+	resourceService     resource.ResourceServiceInterface
+	authZENPDPService   authzenpdp.AuthZENPDPServiceInterface
 }
 
 // newService creates a connection service over the given identity-provider and
 // notification-sender services.
 func newService(idpService idp.IDPServiceInterface,
-	notificationService notification.NotificationSenderMgtSvcInterface) *service {
-	return &service{idpService: idpService, notificationService: notificationService}
+	notificationService notification.NotificationSenderMgtSvcInterface,
+	resourceService resource.ResourceServiceInterface,
+	authZENPDPService authzenpdp.AuthZENPDPServiceInterface) *service {
+	return &service{
+		idpService:          idpService,
+		notificationService: notificationService,
+		resourceService:     resourceService,
+		authZENPDPService:   authZENPDPService,
+	}
 }
 
 // listByType returns the configured instances of the given identity-provider type.
@@ -51,7 +62,7 @@ func (s *service) listByType(ctx context.Context, idpType providers.IDPType) ([]
 
 // smsVendorName returns the connection vendor name for a message provider, or false when the
 // provider has no registered vendor (such instances are not exposed by /connections).
-func smsVendorName(provider ncommon.MessageProviderType) (string, bool) {
+func smsVendorName(provider ncommon.NotificationProviderType) (string, bool) {
 	for _, vendor := range smsBackedVendors {
 		if vendor.provider == provider {
 			return vendor.name, true
@@ -140,6 +151,22 @@ func (s *service) listInstances(ctx context.Context, category connectionCategory
 		}
 	}
 
+	if category == "" || category == categoryAuthorizationPDP {
+		connections, svcErr := s.listAuthZENPDP(ctx)
+		if svcErr != nil {
+			return nil, svcErr
+		}
+		for _, connection := range connections {
+			instances = append(instances, connectionInstance{
+				ID:          connection.ID,
+				Name:        connection.Name,
+				Description: connection.Description,
+				Type:        "authzen-pdp",
+				Categories:  []connectionCategory{categoryAuthorizationPDP},
+			})
+		}
+	}
+
 	sort.SliceStable(instances, func(i, j int) bool {
 		if instances[i].Type != instances[j].Type {
 			return instances[i].Type < instances[j].Type
@@ -214,7 +241,7 @@ func (s *service) deleteByType(ctx context.Context, idpType providers.IDPType, i
 }
 
 // listSMSByProvider returns the configured message senders of the given provider.
-func (s *service) listSMSByProvider(ctx context.Context, provider ncommon.MessageProviderType) (
+func (s *service) listSMSByProvider(ctx context.Context, provider ncommon.NotificationProviderType) (
 	[]ncommon.NotificationSenderDTO, *tidcommon.ServiceError) {
 	all, svcErr := s.notificationService.ListSendersByType(ctx, ncommon.NotificationSenderTypeMessage)
 	if svcErr != nil {
@@ -231,7 +258,7 @@ func (s *service) listSMSByProvider(ctx context.Context, provider ncommon.Messag
 
 // getSMSByProvider fetches a single message sender and verifies it is of the expected provider,
 // returning a not-found error on a mismatch so a vendor endpoint cannot read another provider.
-func (s *service) getSMSByProvider(ctx context.Context, provider ncommon.MessageProviderType, id string) (
+func (s *service) getSMSByProvider(ctx context.Context, provider ncommon.NotificationProviderType, id string) (
 	*ncommon.NotificationSenderDTO, *tidcommon.ServiceError) {
 	dto, svcErr := s.notificationService.GetSender(ctx, id)
 	if svcErr != nil {
@@ -251,7 +278,7 @@ func (s *service) createSMS(ctx context.Context, dto ncommon.NotificationSenderD
 
 // updateSMS verifies the sender is of the expected provider, preserves any secret the request
 // omits (keeping the stored value), then delegates the update.
-func (s *service) updateSMS(ctx context.Context, provider ncommon.MessageProviderType, id string,
+func (s *service) updateSMS(ctx context.Context, provider ncommon.NotificationProviderType, id string,
 	dto ncommon.NotificationSenderDTO) (*ncommon.NotificationSenderDTO, *tidcommon.ServiceError) {
 	existing, svcErr := s.getSMSByProvider(ctx, provider, id)
 	if svcErr != nil {
@@ -262,12 +289,78 @@ func (s *service) updateSMS(ctx context.Context, provider ncommon.MessageProvide
 }
 
 // deleteSMSByProvider verifies the sender is of the expected provider, then deletes it.
-func (s *service) deleteSMSByProvider(ctx context.Context, provider ncommon.MessageProviderType,
+func (s *service) deleteSMSByProvider(ctx context.Context, provider ncommon.NotificationProviderType,
 	id string) *tidcommon.ServiceError {
 	if _, svcErr := s.getSMSByProvider(ctx, provider, id); svcErr != nil {
 		return svcErr
 	}
 	return s.notificationService.DeleteSender(ctx, id)
+}
+
+// createAuthZENPDP validates and stores an AuthZEN PDP connection.
+func (s *service) createAuthZENPDP(
+	ctx context.Context,
+	request authzenpdp.ConnectionRequest,
+) (*authzenpdp.AuthZENPDPConnection, *tidcommon.ServiceError) {
+	if s.authZENPDPService == nil {
+		return nil, &tidcommon.InternalServerError
+	}
+	return s.authZENPDPService.CreateAuthZENPDPConnection(ctx, request)
+}
+
+// listAuthZENPDP returns all AuthZEN PDP connections.
+func (s *service) listAuthZENPDP(ctx context.Context) ([]authzenpdp.AuthZENPDPConnection, *tidcommon.ServiceError) {
+	if s.authZENPDPService == nil {
+		return nil, &tidcommon.InternalServerError
+	}
+	connections, svcErr := s.authZENPDPService.ListAuthZENPDPs(ctx)
+	if svcErr != nil {
+		return nil, svcErr
+	}
+	return connections, nil
+}
+
+// getAuthZENPDP returns an AuthZEN PDP connection by ID.
+func (s *service) getAuthZENPDP(ctx context.Context, id string) (*authzenpdp.AuthZENPDPConnection,
+	*tidcommon.ServiceError) {
+	if s.authZENPDPService == nil {
+		return nil, &tidcommon.InternalServerError
+	}
+	connection, svcErr := s.authZENPDPService.GetAuthZENPDP(ctx, id)
+	if svcErr != nil {
+		return nil, svcErr
+	}
+	if connection == nil {
+		return nil, &authzenpdp.ErrorNotFound
+	}
+	return connection, nil
+}
+
+// updateAuthZENPDP validates and updates an AuthZEN PDP connection by ID.
+func (s *service) updateAuthZENPDP(
+	ctx context.Context,
+	id string,
+	request authzenpdp.ConnectionRequest,
+) (*authzenpdp.AuthZENPDPConnection, *tidcommon.ServiceError) {
+	if s.authZENPDPService == nil {
+		return nil, &tidcommon.InternalServerError
+	}
+	return s.authZENPDPService.UpdateAuthZENPDPConnection(ctx, id, request)
+}
+
+// deleteAuthZENPDP deletes an AuthZEN PDP connection when it has no blocking usages.
+func (s *service) deleteAuthZENPDP(ctx context.Context, id string) *tidcommon.ServiceError {
+	if _, svcErr := s.getAuthZENPDP(ctx, id); svcErr != nil {
+		return svcErr
+	}
+	usages, svcErr := s.usagesAuthZENPDP(ctx, id)
+	if svcErr != nil {
+		return svcErr
+	}
+	if len(resourcedependency.BlockingUsages(usages)) > 0 {
+		return &authzenpdp.ErrorHasBlockingDependencies
+	}
+	return s.authZENPDPService.DeleteAuthZENPDPConnection(ctx, id)
 }
 
 // usagesByType verifies the instance is of the expected type, then returns the resources that
@@ -282,10 +375,56 @@ func (s *service) usagesByType(ctx context.Context, idpType providers.IDPType, i
 
 // usagesSMSByProvider verifies the sender is of the expected provider, then returns the resources
 // that reference it. Drives the pre-delete confirmation dialog.
-func (s *service) usagesSMSByProvider(ctx context.Context, provider ncommon.MessageProviderType, id string) (
+func (s *service) usagesSMSByProvider(ctx context.Context, provider ncommon.NotificationProviderType, id string) (
 	*resourcedependency.DependenciesResponse, *tidcommon.ServiceError) {
 	if _, svcErr := s.getSMSByProvider(ctx, provider, id); svcErr != nil {
 		return nil, svcErr
 	}
 	return s.notificationService.GetSenderUsages(ctx, id)
+}
+
+// usagesAuthZENPDP returns resources that reference an AuthZEN PDP connection.
+func (s *service) usagesAuthZENPDP(ctx context.Context, id string) (
+	*resourcedependency.DependenciesResponse, *tidcommon.ServiceError) {
+	if _, svcErr := s.getAuthZENPDP(ctx, id); svcErr != nil {
+		return nil, svcErr
+	}
+	if s.resourceService == nil {
+		return nil, &tidcommon.InternalServerError
+	}
+
+	usages := make([]resourcedependency.ResourceDependency, 0)
+	offset := 0
+	for {
+		list, svcErr := s.resourceService.GetResourceServerList(ctx, serverconst.MaxPageSize, offset)
+		if svcErr != nil {
+			return nil, svcErr
+		}
+		if list == nil || list.Count == 0 {
+			break
+		}
+		for _, resourceServer := range list.ResourceServers {
+			if strings.TrimSpace(resourceServer.AuthorizationEngine.Properties.PDPConnectionID) != id {
+				continue
+			}
+			usages = append(usages, resourcedependency.ResourceDependency{
+				ResourceType:     resourcedependency.ResourceTypeResourceServer,
+				ID:               resourceServer.ID,
+				DisplayName:      resourceServer.Name,
+				BehaviorOnDelete: resourcedependency.BehaviorRestrict,
+			})
+		}
+		offset += list.Count
+		if offset >= list.TotalResults {
+			break
+		}
+	}
+
+	total := len(usages)
+	return &resourcedependency.DependenciesResponse{
+		TotalResults: &total,
+		Count:        total,
+		Summary:      map[string]int{resourcedependency.ResourceTypeResourceServer: total},
+		Usages:       usages,
+	}, nil
 }

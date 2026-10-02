@@ -263,6 +263,7 @@ func (h *refreshTokenGrantHandler) HandleGrant(ctx context.Context, tokenRequest
 		DPoPJkt:           dpop.GetJkt(ctx),
 		TokenFamilyID:     refreshTokenClaims.TokenFamilyID,
 	}
+	setRefreshSubjectIdentity(accessTokenCtx, subjectEntity, cacheEntry)
 	// Replay the on-behalf-of decision frozen at issuance, sourced from the stored marker
 	// rather than the client's current setting.
 	if refreshTokenClaims.ActorSub != "" {
@@ -280,6 +281,7 @@ func (h *refreshTokenGrantHandler) HandleGrant(ctx context.Context, tokenRequest
 	// Prepare the token response
 	tokenResponse := &model.TokenResponseDTO{
 		AccessToken: *accessToken,
+		SessionID:   refreshTokenClaims.SessionID,
 	}
 
 	// Generate ID token if 'openid' scope is present
@@ -291,6 +293,7 @@ func (h *refreshTokenGrantHandler) HandleGrant(ctx context.Context, tokenRequest
 			UserAttributes: attrs,
 			OAuthApp:       oauthApp,
 			ClaimsRequest:  refreshTokenClaims.ClaimsRequest,
+			SessionID:      refreshTokenClaims.SessionID,
 		})
 		if idErr != nil {
 			logger.Error(ctx, "Failed to generate ID token", log.Error(idErr))
@@ -389,6 +392,9 @@ func (h *refreshTokenGrantHandler) IssueRefreshToken(
 	tokenFamilyID string,
 	expiresAt int64,
 ) *model.ErrorResponse {
+	if tokenResponse == nil {
+		tokenResponse = &model.TokenResponseDTO{}
+	}
 	tokenCtx := &tokenservice.RefreshTokenBuildContext{
 		ExpiresAt:            expiresAt,
 		ClientID:             oauthApp.ClientID,
@@ -402,6 +408,7 @@ func (h *refreshTokenGrantHandler) IssueRefreshToken(
 		ClaimsLocales:        claimsLocales,
 		DPoPJkt:              dpopJktForRefresh(ctx, oauthApp),
 		TokenFamilyID:        tokenFamilyID,
+		SessionID:            tokenResponse.SessionID,
 	}
 	if oauthApp.ShouldAppendActorClaim() {
 		tokenCtx.ActorSub = oauthApp.ID
@@ -416,9 +423,6 @@ func (h *refreshTokenGrantHandler) IssueRefreshToken(
 		}
 	}
 
-	if tokenResponse == nil {
-		tokenResponse = &model.TokenResponseDTO{}
-	}
 	tokenResponse.RefreshToken = *refreshToken
 	return nil
 }
@@ -510,6 +514,28 @@ func (h *refreshTokenGrantHandler) verifyCredentialsUnchanged(ctx context.Contex
 		}
 	}
 	return subjectEntity, nil
+}
+
+// setRefreshSubjectIdentity records which entity the refreshed token is for, so issuance reports the
+// subject without resolving it again.
+//
+// Two sources, in order. The entity resolved while verifying this refresh token is preferred: it is
+// already in hand, so this costs nothing. It is nil when sub named no entity, which is what a sub
+// mapped to an attribute such as an email address looks like — there the attribute cache entry
+// created during login is the only server-side record of the resource ID, since the refresh token
+// carries none. Neither source leaves both fields empty, and the builder then falls back to resolving
+// sub itself.
+func setRefreshSubjectIdentity(accessTokenCtx *tokenservice.AccessTokenBuildContext,
+	subjectEntity *providers.Entity, cacheEntry *attributecache.AttributeCache) {
+	if subjectEntity != nil {
+		accessTokenCtx.SubjectEntityID = subjectEntity.ID
+		accessTokenCtx.SubjectCategory = string(subjectEntity.Category)
+		return
+	}
+	if cacheEntry != nil && cacheEntry.SubjectID != "" {
+		accessTokenCtx.SubjectEntityID = cacheEntry.SubjectID
+		accessTokenCtx.SubjectCategory = cacheEntry.SubjectCategory
+	}
 }
 
 // resolveSubjectEntity resolves the token's subject to its entity, or nil when it does not name one.
@@ -636,7 +662,8 @@ func (h *refreshTokenGrantHandler) reauthorizeScopes(ctx context.Context, subjec
 	}
 
 	authzResp, svcErr := h.authzService.EvaluateAccessBatch(ctx,
-		buildAccessEvaluationsRequest(subject, groupIDs, scopes, resourceServerID))
+		tokenservice.BuildAccessEvaluationsRequest(
+			subject, subjectEntity.Category.String(), groupIDs, nil, scopes, resourceServerID))
 	if svcErr != nil {
 		logger.Error(ctx, "Failed to evaluate authorized permissions for refresh token subject",
 			log.MaskedString(log.LoggerKeyUserID, subject),
@@ -647,7 +674,7 @@ func (h *refreshTokenGrantHandler) reauthorizeScopes(ctx context.Context, subjec
 		}
 	}
 
-	authorizedScopes := filterAuthorizedScopes(scopes, authzResp.Evaluations)
+	authorizedScopes := tokenservice.FilterAuthorizedScopes(scopes, authzResp.Evaluations)
 	if len(authorizedScopes) != len(scopes) {
 		logger.Debug(ctx, "Dropped permission scopes the subject is no longer authorized for",
 			log.MaskedString(log.LoggerKeyUserID, subject),

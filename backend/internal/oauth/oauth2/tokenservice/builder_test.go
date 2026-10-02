@@ -34,6 +34,7 @@ import (
 	"github.com/thunder-id/thunderid/internal/system/config"
 	"github.com/thunder-id/thunderid/internal/system/jose/jwe"
 	"github.com/thunder-id/thunderid/internal/system/jose/jwt"
+	"github.com/thunder-id/thunderid/tests/mocks/actorprovidermock"
 	"github.com/thunder-id/thunderid/tests/mocks/httpmock"
 	"github.com/thunder-id/thunderid/tests/mocks/jose/jwemock"
 	"github.com/thunder-id/thunderid/tests/mocks/jose/jwtmock"
@@ -98,7 +99,7 @@ func (suite *TokenBuilderTestSuite) TestNewTokenBuilder() {
 	jwtService := jwtmock.NewJWTServiceInterfaceMock(suite.T())
 	builder := newTokenBuilder(oauthconfig.Config{
 		JWT: engineconfig.JWTConfig{Issuer: "https://example.com", ValidityPeriod: 3600},
-	}, jwtService, nil, nil)
+	}, jwtService, nil, nil, nil)
 
 	assert.NotNil(suite.T(), builder)
 	assert.Implements(suite.T(), (*TokenBuilderInterface)(nil), builder)
@@ -143,6 +144,73 @@ func (suite *TokenBuilderTestSuite) TestBuildAccessToken_Success_Basic() {
 	assert.Equal(suite.T(), "test-client", result.ClientID)
 	assert.Equal(suite.T(), map[string]interface{}{"name": testUserName}, result.UserAttributes)
 	suite.mockJWTService.AssertExpectations(suite.T())
+}
+
+// The authenticated client is the actor on the OBO grants, so its resource ID is reported without
+// consulting the actor provider.
+func (suite *TokenBuilderTestSuite) TestBuildAccessToken_CarriesActorSubOntoTokenDTO() {
+	suite.oauthApp.ID = "agent-entity-1"
+	ctx := &AccessTokenBuildContext{
+		Subject:     "user123",
+		Audiences:   []string{"app123"},
+		ClientID:    "test-client",
+		GrantType:   string(providers.GrantTypeAuthorizationCode),
+		OAuthApp:    suite.oauthApp,
+		ActorClaims: &SubjectTokenClaims{Sub: "agent-entity-1"},
+	}
+
+	suite.mockJWTService.On("GenerateJWT", mock.Anything, "user123", mock.Anything, mock.Anything,
+		mock.Anything, mock.Anything, mock.Anything).
+		Return(testAccessToken, time.Now().Unix(), nil)
+
+	result, err := suite.builder.BuildAccessToken(context.Background(), ctx)
+
+	assert.NoError(suite.T(), err)
+	assert.Equal(suite.T(), "agent-entity-1", result.ActorSub)
+	assert.True(suite.T(), result.Delegated)
+}
+
+// An actor that resolves to no entity is withheld, but the issuance is still reported as delegated:
+// the identifier is dropped, not the fact.
+func (suite *TokenBuilderTestSuite) TestBuildAccessToken_UnresolvableActorIsWithheldButStaysDelegated() {
+	ctx := &AccessTokenBuildContext{
+		Subject:     "user123",
+		Audiences:   []string{"app123"},
+		ClientID:    "test-client",
+		GrantType:   string(providers.GrantTypeTokenExchange),
+		OAuthApp:    suite.oauthApp,
+		ActorClaims: &SubjectTokenClaims{Sub: "svc@example.com"},
+	}
+
+	suite.mockJWTService.On("GenerateJWT", mock.Anything, "user123", mock.Anything, mock.Anything,
+		mock.Anything, mock.Anything, mock.Anything).
+		Return(testAccessToken, time.Now().Unix(), nil)
+
+	result, err := suite.builder.BuildAccessToken(context.Background(), ctx)
+
+	assert.NoError(suite.T(), err)
+	assert.Empty(suite.T(), result.ActorSub)
+	assert.True(suite.T(), result.Delegated)
+}
+
+func (suite *TokenBuilderTestSuite) TestBuildAccessToken_NoActorClaimsLeavesActorSubEmpty() {
+	ctx := &AccessTokenBuildContext{
+		Subject:   "agent-entity-1",
+		Audiences: []string{"app123"},
+		ClientID:  "test-client",
+		GrantType: string(providers.GrantTypeClientCredentials),
+		OAuthApp:  suite.oauthApp,
+	}
+
+	suite.mockJWTService.On("GenerateJWT", mock.Anything, "agent-entity-1", mock.Anything, mock.Anything,
+		mock.Anything, mock.Anything, mock.Anything).
+		Return(testAccessToken, time.Now().Unix(), nil)
+
+	result, err := suite.builder.BuildAccessToken(context.Background(), ctx)
+
+	assert.NoError(suite.T(), err)
+	assert.Empty(suite.T(), result.ActorSub)
+	assert.False(suite.T(), result.Delegated)
 }
 
 func (suite *TokenBuilderTestSuite) TestBuildAccessToken_ClientAttributes_MergesOUAndOwnClaims() {
@@ -1406,6 +1474,60 @@ func (suite *TokenBuilderTestSuite) TestBuildRefreshToken_Success_WithClaimsLoca
 // BuildIDToken Tests - Success Cases
 // ============================================================================
 
+// TestBuildIDToken_UsesConfiguredSigningAlg verifies that a client's configured ID token signing
+// algorithm reaches the JWT service, and that an unconfigured client still signs with the
+// server's preferred key (passed as an empty algorithm).
+func (suite *TokenBuilderTestSuite) TestBuildIDToken_UsesConfiguredSigningAlg() {
+	testCases := []struct {
+		name        string
+		idTokenCfg  *providers.IDTokenConfig
+		expectedAlg string
+	}{
+		{
+			name:        "ConfiguredAlgIsUsed",
+			idTokenCfg:  &providers.IDTokenConfig{SigningAlg: "ES256"},
+			expectedAlg: "ES256",
+		},
+		{
+			name:        "NoTokenConfigFallsBackToServerDefault",
+			idTokenCfg:  nil,
+			expectedAlg: "",
+		},
+		{
+			name:        "EmptyConfiguredAlgFallsBackToServerDefault",
+			idTokenCfg:  &providers.IDTokenConfig{},
+			expectedAlg: "",
+		},
+	}
+
+	for _, tc := range testCases {
+		suite.Run(tc.name, func() {
+			mockJWT := jwtmock.NewJWTServiceInterfaceMock(suite.T())
+			builder := &tokenBuilder{jwtService: mockJWT, cfg: suite.builder.cfg}
+
+			oauthApp := &providers.OAuthClient{ClientID: "app123"}
+			if tc.idTokenCfg != nil {
+				oauthApp.Token = &providers.OAuthTokenConfig{IDToken: tc.idTokenCfg}
+			}
+
+			mockJWT.EXPECT().GenerateJWT(
+				mock.Anything, "user123", mock.Anything, mock.Anything,
+				mock.Anything, mock.Anything, tc.expectedAlg,
+			).Return(testIDToken, time.Now().Unix(), nil).Once()
+
+			result, err := builder.BuildIDToken(context.Background(), &IDTokenBuildContext{
+				Subject:  "user123",
+				Audience: "app123",
+				Scopes:   []string{"openid"},
+				OAuthApp: oauthApp,
+			})
+
+			assert.NoError(suite.T(), err)
+			assert.Equal(suite.T(), testIDToken, result.Token)
+		})
+	}
+}
+
 func (suite *TokenBuilderTestSuite) TestBuildIDToken_Success_Basic() {
 	ctx := &IDTokenBuildContext{
 		Subject:        "user123",
@@ -2466,4 +2588,554 @@ func testRSAPublicKeyToJWKS(pub *rsa.PublicKey, use string) string {
 	}
 	b, _ := json.Marshal(map[string]interface{}{"keys": []interface{}{key}})
 	return string(b)
+}
+
+const (
+	subjectIdentityClientID = "client-entity-1"
+	subjectIdentityUserID   = "user-entity-1"
+)
+
+// authorization_code carries both values on the flow assertion, so the login path resolves nothing.
+// The builder is given no actor provider here: needing one would mean the fast path is not taken.
+func TestResolveSubjectIdentity_CarriedFromTheAssertion(t *testing.T) {
+	tb := &tokenBuilder{}
+
+	id, category := tb.resolveSubjectIdentity(&AccessTokenBuildContext{
+		Subject:         "alice@example.com",
+		SubjectEntityID: subjectIdentityUserID,
+		SubjectCategory: string(providers.EntityCategoryUser),
+	})
+
+	// The mapped subject attribute is reported as the resource ID, never as the token's own sub.
+	assert.Equal(t, subjectIdentityUserID, id)
+	assert.Equal(t, string(providers.EntityCategoryUser), category)
+}
+
+// An assertion that carried the ID but no category still reports the subject; only the category is
+// resolved.
+func TestResolveSubjectIdentity_AssertionIDWithoutCategory(t *testing.T) {
+	actors := actorprovidermock.NewActorProviderMock(t)
+	actors.On("GetActor", subjectIdentityUserID).
+		Return(&providers.Entity{ID: subjectIdentityUserID, Category: providers.EntityCategoryUser},
+			(*tidcommon.ServiceError)(nil))
+	tb := &tokenBuilder{actorProvider: actors}
+
+	id, category := tb.resolveSubjectIdentity(&AccessTokenBuildContext{
+		SubjectEntityID: subjectIdentityUserID,
+	})
+
+	assert.Equal(t, subjectIdentityUserID, id)
+	assert.Equal(t, string(providers.EntityCategoryUser), category)
+}
+
+// A client_credentials token is issued about the client itself, so both values are known without
+// resolving anything.
+func TestResolveSubjectIdentity_SubjectIsTheClient(t *testing.T) {
+	tb := &tokenBuilder{}
+
+	id, category := tb.resolveSubjectIdentity(&AccessTokenBuildContext{
+		Subject: subjectIdentityClientID,
+		OAuthApp: &providers.OAuthClient{
+			ID:             subjectIdentityClientID,
+			EntityCategory: providers.EntityCategoryAgent,
+		},
+	})
+
+	assert.Equal(t, subjectIdentityClientID, id)
+	assert.Equal(t, string(providers.EntityCategoryAgent), category)
+}
+
+// An agent can be a token subject as well as a token requester: agent A exchanging a subject token
+// minted for agent B must report an agent subject, not a user.
+func TestResolveSubjectIdentity_AgentSubjectOfAnExchange(t *testing.T) {
+	actors := actorprovidermock.NewActorProviderMock(t)
+	actors.On("GetActor", "agent-b").
+		Return(&providers.Entity{ID: "agent-b", Category: providers.EntityCategoryAgent},
+			(*tidcommon.ServiceError)(nil))
+	tb := &tokenBuilder{actorProvider: actors}
+
+	id, category := tb.resolveSubjectIdentity(&AccessTokenBuildContext{
+		Subject:  "agent-b",
+		OAuthApp: &providers.OAuthClient{ID: subjectIdentityClientID, EntityCategory: providers.EntityCategoryAgent},
+	})
+
+	assert.Equal(t, "agent-b", id)
+	assert.Equal(t, string(providers.EntityCategoryAgent), category)
+}
+
+// On an exchange the subject arrives as the presented token's sub, which is a mapped attribute when
+// the issuing application configured one. It resolves to no entity, and both fields are left empty
+// so the attribute — an email address here — is never published.
+func TestResolveSubjectIdentity_MappedAttributeIsNotReported(t *testing.T) {
+	actors := actorprovidermock.NewActorProviderMock(t)
+	actors.On("GetActor", "alice@example.com").
+		Return((*providers.Entity)(nil), &tidcommon.ServiceError{Code: "ENTITY-404"})
+	tb := &tokenBuilder{actorProvider: actors}
+
+	id, category := tb.resolveSubjectIdentity(&AccessTokenBuildContext{
+		Subject:  "alice@example.com",
+		OAuthApp: &providers.OAuthClient{ID: subjectIdentityClientID},
+	})
+
+	assert.Empty(t, id)
+	assert.Empty(t, category)
+}
+
+func TestResolveSubjectIdentity_NoProviderOrNoSubject(t *testing.T) {
+	tb := &tokenBuilder{}
+
+	// A subject that is not the client cannot be resolved without a provider, so it is not reported.
+	id, category := tb.resolveSubjectIdentity(&AccessTokenBuildContext{
+		Subject:  subjectIdentityUserID,
+		OAuthApp: &providers.OAuthClient{ID: subjectIdentityClientID},
+	})
+	assert.Empty(t, id)
+	assert.Empty(t, category)
+
+	// No subject at all.
+	id, category = tb.resolveSubjectIdentity(&AccessTokenBuildContext{})
+	assert.Empty(t, id)
+	assert.Empty(t, category)
+}
+
+// The OBO grants (authorization_code, CIBA, refresh, and token exchange without an actor_token) name
+// the authenticated client as the actor, which is already a resource ID. The builder is given no
+// actor provider here: needing one would mean the fast path is not taken.
+func TestResolveActorIdentity_ActorIsTheClient(t *testing.T) {
+	tb := &tokenBuilder{}
+
+	id := tb.resolveActorIdentity(&AccessTokenBuildContext{
+		OAuthApp: &providers.OAuthClient{
+			ID:             subjectIdentityClientID,
+			EntityCategory: providers.EntityCategoryAgent,
+		},
+	}, subjectIdentityClientID)
+
+	assert.Equal(t, subjectIdentityClientID, id)
+}
+
+// An actor_token presented by a different principal resolves through the provider, so a genuine
+// entity is reported.
+func TestResolveActorIdentity_ActorTokenNamesAnEntity(t *testing.T) {
+	actors := actorprovidermock.NewActorProviderMock(t)
+	actors.On("GetActor", "agent-b").
+		Return(&providers.Entity{ID: "agent-b", Category: providers.EntityCategoryAgent},
+			(*tidcommon.ServiceError)(nil))
+	tb := &tokenBuilder{actorProvider: actors}
+
+	id := tb.resolveActorIdentity(&AccessTokenBuildContext{
+		OAuthApp: &providers.OAuthClient{ID: subjectIdentityClientID},
+	}, "agent-b")
+
+	assert.Equal(t, "agent-b", id)
+}
+
+// An actor_token's sub is that token's own subject, which is a mapped attribute when the issuing
+// application configured one. It resolves to no entity and is left empty, so the attribute, an email
+// address here, is never published.
+func TestResolveActorIdentity_MappedAttributeIsNotReported(t *testing.T) {
+	actors := actorprovidermock.NewActorProviderMock(t)
+	actors.On("GetActor", "svc@example.com").
+		Return((*providers.Entity)(nil), &tidcommon.ServiceError{Code: "ENTITY-404"})
+	tb := &tokenBuilder{actorProvider: actors}
+
+	id := tb.resolveActorIdentity(&AccessTokenBuildContext{
+		OAuthApp: &providers.OAuthClient{ID: subjectIdentityClientID},
+	}, "svc@example.com")
+
+	assert.Empty(t, id)
+}
+
+func TestResolveActorIdentity_NoProviderOrNoActor(t *testing.T) {
+	tb := &tokenBuilder{}
+
+	// An actor that is not the client cannot be resolved without a provider, so it is not reported.
+	id := tb.resolveActorIdentity(&AccessTokenBuildContext{
+		OAuthApp: &providers.OAuthClient{ID: subjectIdentityClientID},
+	}, "agent-b")
+	assert.Empty(t, id)
+
+	// No actor at all.
+	id = tb.resolveActorIdentity(&AccessTokenBuildContext{}, "")
+	assert.Empty(t, id)
+}
+
+// testSessionID is the SSO session id the ID and refresh token tests carry through the sid path.
+const testSessionID = "sess-1"
+
+func (suite *TokenBuilderTestSuite) TestBuildIDToken_CarriesSessionIDAsSid() {
+	ctx := &IDTokenBuildContext{
+		Subject:   "user123",
+		Audience:  "app123",
+		Scopes:    []string{"openid"},
+		OAuthApp:  suite.oauthApp,
+		SessionID: testSessionID,
+	}
+
+	suite.mockJWTService.On("GenerateJWT",
+		mock.Anything,
+		"user123",
+		"https://example.com",
+		int64(3600),
+		mock.MatchedBy(func(claims map[string]interface{}) bool {
+			return claims[constants.ClaimSessionID] == testSessionID
+		}), mock.Anything, mock.Anything,
+	).Return(testIDToken, time.Now().Unix(), nil)
+
+	result, err := suite.builder.BuildIDToken(context.Background(), ctx)
+
+	assert.NoError(suite.T(), err)
+	assert.Equal(suite.T(), testIDToken, result.Token)
+	suite.mockJWTService.AssertExpectations(suite.T())
+}
+
+func (suite *TokenBuilderTestSuite) TestBuildIDToken_OmitsSidWithoutSession() {
+	ctx := &IDTokenBuildContext{
+		Subject:  "user123",
+		Audience: "app123",
+		Scopes:   []string{"openid"},
+		OAuthApp: suite.oauthApp,
+	}
+
+	suite.mockJWTService.On("GenerateJWT",
+		mock.Anything,
+		"user123",
+		"https://example.com",
+		int64(3600),
+		mock.MatchedBy(func(claims map[string]interface{}) bool {
+			_, has := claims[constants.ClaimSessionID]
+			return !has
+		}), mock.Anything, mock.Anything,
+	).Return(testIDToken, time.Now().Unix(), nil)
+
+	result, err := suite.builder.BuildIDToken(context.Background(), ctx)
+
+	assert.NoError(suite.T(), err)
+	assert.Equal(suite.T(), testIDToken, result.Token)
+	suite.mockJWTService.AssertExpectations(suite.T())
+}
+
+func (suite *TokenBuilderTestSuite) TestBuildRefreshToken_CarriesSessionID() {
+	ctx := &RefreshTokenBuildContext{
+		ClientID:             "test-client",
+		Scopes:               []string{"openid"},
+		GrantType:            string(providers.GrantTypeAuthorizationCode),
+		AccessTokenSubject:   "user123",
+		AccessTokenAudiences: []string{"app123"},
+		OAuthApp:             suite.oauthApp,
+		SessionID:            testSessionID,
+	}
+
+	suite.mockJWTService.On("GenerateJWT",
+		mock.Anything,
+		"test-client",
+		"https://example.com",
+		mock.Anything,
+		mock.MatchedBy(func(claims map[string]interface{}) bool {
+			return claims[constants.ClaimSessionID] == testSessionID
+		}), mock.Anything, mock.Anything,
+	).Return(testRefreshToken, time.Now().Unix(), nil)
+
+	result, err := suite.builder.BuildRefreshToken(context.Background(), ctx)
+
+	assert.NoError(suite.T(), err)
+	assert.Equal(suite.T(), testRefreshToken, result.Token)
+	suite.mockJWTService.AssertExpectations(suite.T())
+}
+
+// sidAllowListedApp is an application that allow-lists a user attribute named sid for the ID token,
+// the configuration under which the attribute merge would otherwise emit a user-supplied sid.
+func sidAllowListedApp() *providers.OAuthClient {
+	return &providers.OAuthClient{
+		ClientID:    "test-client",
+		ScopeClaims: map[string][]string{"profile": {constants.ClaimSessionID}},
+		Token: &providers.OAuthTokenConfig{
+			IDToken: &providers.IDTokenConfig{UserAttributes: []string{constants.ClaimSessionID}},
+		},
+	}
+}
+
+// An allow-listed user attribute named sid must not displace the session id.
+func (suite *TokenBuilderTestSuite) TestBuildIDToken_UserAttributeCannotOverwriteSid() {
+	ctx := &IDTokenBuildContext{
+		Subject:        "user123",
+		Audience:       "app123",
+		Scopes:         []string{"openid", "profile"},
+		UserAttributes: map[string]interface{}{constants.ClaimSessionID: "attacker-supplied"},
+		OAuthApp:       sidAllowListedApp(),
+		SessionID:      testSessionID,
+	}
+
+	suite.mockJWTService.On("GenerateJWT",
+		mock.Anything, "user123", mock.Anything, mock.Anything,
+		mock.MatchedBy(func(claims map[string]interface{}) bool {
+			return claims[constants.ClaimSessionID] == testSessionID
+		}), mock.Anything, mock.Anything,
+	).Return(testIDToken, time.Now().Unix(), nil)
+
+	result, err := suite.builder.BuildIDToken(context.Background(), ctx)
+
+	assert.NoError(suite.T(), err)
+	assert.Equal(suite.T(), testIDToken, result.Token)
+	suite.mockJWTService.AssertExpectations(suite.T())
+}
+
+// Every claim the ID-token builder writes itself must be immune to an allow-listed attribute of the
+// same name, whether the builder set it or not.
+func (suite *TokenBuilderTestSuite) TestBuildIDToken_BuilderOwnedClaims_NotSuppliableByAttributes() {
+	forged := "FORGED"
+	owned := builderOwnedIDTokenClaimNames()
+	names := make([]string, 0, len(owned))
+	attrs := map[string]interface{}{"email": "real@example.com"}
+	for name := range owned {
+		names = append(names, name)
+		attrs[name] = forged
+	}
+	app := &providers.OAuthClient{
+		ClientID:    "test-client",
+		ScopeClaims: map[string][]string{"profile": append([]string{"email"}, names...)},
+		Token: &providers.OAuthTokenConfig{
+			IDToken: &providers.IDTokenConfig{UserAttributes: append([]string{"email"}, names...)},
+		},
+	}
+	ctx := &IDTokenBuildContext{
+		Subject:        "user123",
+		Audience:       "app123",
+		Scopes:         []string{"openid", "profile"},
+		UserAttributes: attrs,
+		OAuthApp:       app,
+		AuthTime:       1700000000,
+		Nonce:          "real-nonce",
+		SessionID:      testSessionID,
+	}
+
+	suite.mockJWTService.On("GenerateJWT",
+		mock.Anything, "user123", mock.Anything, mock.Anything,
+		mock.MatchedBy(func(claims map[string]interface{}) bool {
+			for name := range owned {
+				if claims[name] == forged {
+					return false
+				}
+			}
+			_, hasACR := claims["acr"]
+			return claims["auth_time"] == int64(1700000000) && claims[constants.RequestParamNonce] == "real-nonce" &&
+				claims[constants.ClaimSessionID] == testSessionID && !hasACR &&
+				claims["email"] == "real@example.com"
+		}), mock.Anything, mock.Anything,
+	).Return(testIDToken, time.Now().Unix(), nil)
+
+	result, err := suite.builder.BuildIDToken(context.Background(), ctx)
+
+	assert.NoError(suite.T(), err)
+	assert.Equal(suite.T(), testIDToken, result.Token)
+	suite.mockJWTService.AssertExpectations(suite.T())
+}
+
+// With no session, an allow-listed user attribute named sid must not be emitted in its place.
+func (suite *TokenBuilderTestSuite) TestBuildIDToken_UserAttributeCannotSynthesizeSidWithoutSession() {
+	ctx := &IDTokenBuildContext{
+		Subject:        "user123",
+		Audience:       "app123",
+		Scopes:         []string{"openid", "profile"},
+		UserAttributes: map[string]interface{}{constants.ClaimSessionID: "attacker-supplied"},
+		OAuthApp:       sidAllowListedApp(),
+	}
+
+	suite.mockJWTService.On("GenerateJWT",
+		mock.Anything, "user123", mock.Anything, mock.Anything,
+		mock.MatchedBy(func(claims map[string]interface{}) bool {
+			_, has := claims[constants.ClaimSessionID]
+			return !has
+		}), mock.Anything, mock.Anything,
+	).Return(testIDToken, time.Now().Unix(), nil)
+
+	result, err := suite.builder.BuildIDToken(context.Background(), ctx)
+
+	assert.NoError(suite.T(), err)
+	assert.Equal(suite.T(), testIDToken, result.Token)
+	suite.mockJWTService.AssertExpectations(suite.T())
+}
+
+// Refresh tokens are minted with the rt+jwt typ so they are self-identifying: a validator that
+// whitelists the types it accepts rejects one by default, rather than by remembering to check the
+// access_token_sub claim. The other BuildRefreshToken tests pass mock.Anything for the typ argument,
+// so this is the only assertion tying the minted type to the constant.
+func (suite *TokenBuilderTestSuite) TestBuildRefreshToken_MintsRTJWTTyp() {
+	ctx := &RefreshTokenBuildContext{
+		ClientID:             "test-client",
+		Scopes:               []string{"read"},
+		GrantType:            string(providers.GrantTypeAuthorizationCode),
+		AccessTokenSubject:   "user123",
+		AccessTokenAudiences: []string{testAppID},
+		OAuthApp:             &providers.OAuthClient{ClientID: "test-client"},
+	}
+
+	suite.mockJWTService.On("GenerateJWT",
+		mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything,
+		jwt.TokenTypeRefreshToken, mock.Anything,
+	).Return(testRefreshToken, time.Now().Unix(), nil)
+
+	result, err := suite.builder.BuildRefreshToken(context.Background(), ctx)
+
+	assert.NoError(suite.T(), err)
+	assert.NotNil(suite.T(), result)
+	suite.mockJWTService.AssertExpectations(suite.T())
+}
+
+// ----- BuildLogoutToken -----
+
+const (
+	logoutTestClientID  = "rp-client"
+	logoutTestSubjectID = "user-1"
+	logoutTestSessionID = "01a0d89e-fc9a-7049-885d-00ebaa20ab41"
+	logoutSignedToken   = "signed.logout.token"
+)
+
+func (suite *TokenBuilderTestSuite) newLogoutBuilder(validity int64, jweService jwe.JWEServiceInterface) *tokenBuilder {
+	cfg := oauthconfig.Config{JWT: engineconfig.JWTConfig{Issuer: "https://example.com", ValidityPeriod: 3600}}
+	cfg.OAuth.Logout.Backchannel.TokenValidityPeriod = validity
+	return &tokenBuilder{cfg: cfg, jwtService: suite.mockJWTService, jweService: jweService,
+		jwksResolver: jwksresolver.Initialize(nil)}
+}
+
+// expectLogoutJWT expects one logout-typed GenerateJWT call and records the claims it was asked to sign.
+func (suite *TokenBuilderTestSuite) expectLogoutJWT(validity int64, alg string) *map[string]interface{} {
+	var got map[string]interface{}
+	suite.mockJWTService.EXPECT().
+		GenerateJWT(mock.Anything, logoutTestSubjectID, "https://example.com", validity, mock.Anything,
+			jwt.TokenTypeLogout, alg).
+		Run(func(_ context.Context, _, _ string, _ int64, claims map[string]interface{}, _, _ string) {
+			got = claims
+		}).Return(logoutSignedToken, int64(1700000000), nil).Once()
+	return &got
+}
+
+func logoutCtx(client *providers.OAuthClient) *LogoutTokenBuildContext {
+	return &LogoutTokenBuildContext{OAuthApp: client, SubjectID: logoutTestSubjectID, SessionID: logoutTestSessionID}
+}
+
+func (suite *TokenBuilderTestSuite) TestBuildLogoutToken_ClaimShape() {
+	claims := suite.expectLogoutJWT(120, "")
+
+	result, err := suite.newLogoutBuilder(120, nil).
+		BuildLogoutToken(context.Background(), logoutCtx(&providers.OAuthClient{ClientID: logoutTestClientID}))
+
+	suite.Require().NoError(err)
+	suite.Equal(logoutSignedToken, result.Token)
+	suite.Equal(int64(120), result.ExpiresIn)
+	suite.Equal(logoutTestSubjectID, result.Subject)
+	suite.Equal(logoutTestClientID, (*claims)["aud"])
+	suite.Equal(logoutTestSessionID, (*claims)["sid"])
+	events, ok := (*claims)["events"].(map[string]interface{})
+	suite.Require().True(ok, "events must be an object")
+	suite.Len(events, 1)
+	suite.Equal(map[string]interface{}{}, events[eventBackchannelLogout], "the member value is an empty object")
+	suite.NotContains(*claims, "nonce", "a logout token must never carry nonce")
+	suite.NotContains(*claims, "sub", "sub is the positional argument, not a claim map entry")
+}
+
+func (suite *TokenBuilderTestSuite) TestBuildLogoutToken_UsesTheClientsIDTokenSigningAlgorithm() {
+	client := &providers.OAuthClient{ClientID: logoutTestClientID,
+		Token: &providers.OAuthTokenConfig{IDToken: &providers.IDTokenConfig{SigningAlg: "ES256"}}}
+	suite.expectLogoutJWT(60, "ES256")
+
+	_, err := suite.newLogoutBuilder(60, nil).BuildLogoutToken(context.Background(), logoutCtx(client))
+
+	suite.NoError(err)
+}
+
+func (suite *TokenBuilderTestSuite) TestBuildLogoutToken_RejectsMissingInputs() {
+	b := suite.newLogoutBuilder(120, nil)
+	cases := []struct {
+		name string
+		ctx  *LogoutTokenBuildContext
+	}{
+		{"nil context", nil},
+		{"nil client", &LogoutTokenBuildContext{SubjectID: logoutTestSubjectID, SessionID: logoutTestSessionID}},
+		{"client without id", logoutCtx(&providers.OAuthClient{})},
+		{"empty subject", &LogoutTokenBuildContext{OAuthApp: &providers.OAuthClient{ClientID: logoutTestClientID},
+			SessionID: logoutTestSessionID}},
+		{"empty session", &LogoutTokenBuildContext{OAuthApp: &providers.OAuthClient{ClientID: logoutTestClientID},
+			SubjectID: logoutTestSubjectID}},
+	}
+	for _, tc := range cases {
+		suite.Run(tc.name, func() {
+			_, err := b.BuildLogoutToken(context.Background(), tc.ctx)
+			suite.Error(err)
+		})
+	}
+	suite.mockJWTService.AssertNotCalled(suite.T(), "GenerateJWT")
+}
+
+func (suite *TokenBuilderTestSuite) TestBuildLogoutToken_SigningFailurePropagates() {
+	suite.mockJWTService.EXPECT().GenerateJWT(mock.Anything, mock.Anything, mock.Anything, mock.Anything,
+		mock.Anything, mock.Anything, mock.Anything).Return("", 0, &tidcommon.InternalServerError).Once()
+
+	_, err := suite.newLogoutBuilder(120, nil).
+		BuildLogoutToken(context.Background(), logoutCtx(&providers.OAuthClient{ClientID: logoutTestClientID}))
+
+	suite.Error(err)
+}
+
+// logoutEncryptingClient is a client that negotiated JWE ID tokens with an inline RSA JWKS.
+func logoutEncryptingClient(t *testing.T) *providers.OAuthClient {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &providers.OAuthClient{
+		ClientID: logoutTestClientID,
+		Token: &providers.OAuthTokenConfig{IDToken: &providers.IDTokenConfig{
+			ResponseType:  providers.IDTokenResponseTypeJWE,
+			EncryptionAlg: "RSA-OAEP-256",
+			EncryptionEnc: "A256GCM",
+		}},
+		Certificate: &inboundmodel.Certificate{Type: certmodel.CertificateTypeJWKS,
+			Value: testRSAPublicKeyToJWKS(&key.PublicKey, "enc")},
+	}
+}
+
+func (suite *TokenBuilderTestSuite) TestBuildLogoutToken_EncryptsForAClientThatEncryptsIDTokensAndReplicatesIss() {
+	mockJWE := jwemock.NewJWEServiceInterfaceMock(suite.T())
+	suite.expectLogoutJWT(120, "")
+	var header map[string]interface{}
+	mockJWE.EXPECT().Encrypt(mock.Anything, []byte(logoutSignedToken), mock.Anything, "RSA-OAEP-256",
+		jwe.ContentEncAlgorithm("A256GCM"), "JWT", mock.Anything, mock.Anything).
+		Run(func(_ context.Context, _ []byte, key *providers.KeyRef, _ string, _ jwe.ContentEncAlgorithm,
+			_, _ string, opts ...jwe.EncryptOption) {
+			suite.NotNil(key.PublicKeyJWK, "the client's key is resolved from its certificate")
+			header = map[string]interface{}{}
+			for _, opt := range opts {
+				opt(header)
+			}
+		}).Return("encrypted.logout.token", nil).Once()
+
+	result, err := suite.newLogoutBuilder(120, mockJWE).
+		BuildLogoutToken(context.Background(), logoutCtx(logoutEncryptingClient(suite.T())))
+
+	suite.Require().NoError(err)
+	suite.Equal("encrypted.logout.token", result.Token)
+	suite.Equal("https://example.com", header["iss"], "iss is replicated in the JWE protected header")
+}
+
+func (suite *TokenBuilderTestSuite) TestBuildLogoutToken_EncryptingClientWithoutJWEServiceFails() {
+	suite.expectLogoutJWT(120, "")
+
+	_, err := suite.newLogoutBuilder(120, nil).
+		BuildLogoutToken(context.Background(), logoutCtx(logoutEncryptingClient(suite.T())))
+
+	suite.Error(err, "signing only would be rejected by a client that negotiated encryption")
+}
+
+func (suite *TokenBuilderTestSuite) TestBuildLogoutToken_EncryptionFailurePropagates() {
+	mockJWE := jwemock.NewJWEServiceInterfaceMock(suite.T())
+	suite.expectLogoutJWT(120, "")
+	mockJWE.EXPECT().Encrypt(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything,
+		mock.Anything, mock.Anything, mock.Anything).Return("", &tidcommon.InternalServerError).Once()
+
+	_, err := suite.newLogoutBuilder(120, mockJWE).
+		BuildLogoutToken(context.Background(), logoutCtx(logoutEncryptingClient(suite.T())))
+
+	suite.Error(err)
 }

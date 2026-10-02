@@ -150,7 +150,8 @@ func (s *inboundClientService) CreateInboundClient(ctx context.Context, client *
 		return err
 	}
 	if oauthProfile != nil {
-		if vErr := validateOAuthProfile(oauthProfile, hasClientSecret, s.cryptoProvider, s.jweService); vErr != nil {
+		if vErr := validateOAuthProfile(
+			ctx, oauthProfile, hasClientSecret, s.cryptoProvider, s.jweService); vErr != nil {
 			return vErr
 		}
 	}
@@ -238,7 +239,8 @@ func (s *inboundClientService) UpdateInboundClient(ctx context.Context, client *
 		return err
 	}
 	if oauthProfile != nil {
-		if vErr := validateOAuthProfile(oauthProfile, hasClientSecret, s.cryptoProvider, s.jweService); vErr != nil {
+		if vErr := validateOAuthProfile(
+			ctx, oauthProfile, hasClientSecret, s.cryptoProvider, s.jweService); vErr != nil {
 			return vErr
 		}
 	}
@@ -298,7 +300,8 @@ func (s *inboundClientService) Validate(ctx context.Context, client *inboundmode
 		return err
 	}
 	if oauthProfile != nil {
-		if vErr := validateOAuthProfile(oauthProfile, hasClientSecret, s.cryptoProvider, s.jweService); vErr != nil {
+		if vErr := validateOAuthProfile(
+			ctx, oauthProfile, hasClientSecret, s.cryptoProvider, s.jweService); vErr != nil {
 			return vErr
 		}
 	}
@@ -577,6 +580,7 @@ func BuildOAuthClient(
 		EntityCategory:                     entityCategory,
 		RedirectURIs:                       p.RedirectURIs,
 		PostLogoutRedirectURIs:             p.PostLogoutRedirectURIs,
+		BackchannelLogoutURI:               p.BackchannelLogoutURI,
 		TokenEndpointAuthMethod:            providers.TokenEndpointAuthMethod(p.TokenEndpointAuthMethod),
 		PKCERequired:                       p.PKCERequired,
 		PublicClient:                       p.PublicClient,
@@ -809,12 +813,15 @@ func validateCertificateInput(refID, existingCertID string, in *inboundmodel.Cer
 }
 
 // validateOAuthProfile validates all fields of an OAuth profile data object.
-func validateOAuthProfile(p *providers.OAuthProfile, hasClientSecret bool,
+func validateOAuthProfile(ctx context.Context, p *providers.OAuthProfile, hasClientSecret bool,
 	cryptoProvider providers.RuntimeCryptoProvider, jweService jwe.JWEServiceInterface) error {
 	if p == nil {
 		return nil
 	}
 	if err := validateRedirectURIs(p); err != nil {
+		return err
+	}
+	if err := validateBackchannelLogoutURI(p); err != nil {
 		return err
 	}
 	if err := validateGrantAndResponseTypes(p); err != nil {
@@ -828,16 +835,49 @@ func validateOAuthProfile(p *providers.OAuthProfile, hasClientSecret bool,
 			return err
 		}
 	}
-	if err := validateUserInfoConfig(p, cryptoProvider, jweService); err != nil {
+	if err := validateUserInfoConfig(ctx, p, cryptoProvider, jweService); err != nil {
 		return err
 	}
-	if err := validateIDTokenConfig(p, jweService); err != nil {
+	if err := validateIDTokenConfig(ctx, p, cryptoProvider, jweService); err != nil {
 		return err
 	}
 	if err := validateAccessTokenConfig(p); err != nil {
 		return err
 	}
 	return nil
+}
+
+// validateBackchannelLogoutURI checks the back-channel logout URI: an absolute http or https URL
+// with a host, no userinfo, fragment or wildcard, https for a public client, and no private host when
+// configuration rejects them.
+func validateBackchannelLogoutURI(p *providers.OAuthProfile) error {
+	uri := p.BackchannelLogoutURI
+	if uri == "" {
+		return nil
+	}
+	// A bare "#" parses to an empty fragment, so the delimiter is rejected rather than the parsed value.
+	if strings.ContainsAny(uri, "*#") {
+		return ErrOAuthInvalidBackchannelLogoutURI
+	}
+	parsed, err := sysutils.ParseURL(uri)
+	if err != nil || parsed.Hostname() == "" || parsed.User != nil {
+		return ErrOAuthInvalidBackchannelLogoutURI
+	}
+	if config.GetServerRuntime().Config.OAuth.Logout.Backchannel.RejectsPrivateAddresses() &&
+		syshttp.IsPrivateHost(parsed.Hostname()) {
+		return ErrOAuthBackchannelLogoutURIPrivateHost
+	}
+	switch parsed.Scheme {
+	case "https":
+		return nil
+	case "http":
+		if p.PublicClient {
+			return ErrOAuthBackchannelLogoutURIRequiresHTTPS
+		}
+		return nil
+	default:
+		return ErrOAuthInvalidBackchannelLogoutURI
+	}
 }
 
 // maxDefaultAudienceLength bounds the access token default audience, a single audience identifier
@@ -855,16 +895,44 @@ func validateAccessTokenConfig(p *providers.OAuthProfile) error {
 	return nil
 }
 
+// configuredSigningAlgorithms returns the JWS algorithms the deployment's configured signing keys
+// support. This is narrower than the algorithms the crypto provider can compute, and matches what
+// discovery advertises, so a client cannot register an algorithm that has no key to sign with.
+func configuredSigningAlgorithms(
+	ctx context.Context, cryptoProvider providers.RuntimeCryptoProvider,
+) ([]string, error) {
+	keys, err := cryptoProvider.GetPublicKeys(ctx, providers.PublicKeyFilter{})
+	if err != nil {
+		log.GetLogger().Error(ctx, "Failed to retrieve public keys for signing algorithm validation",
+			log.Error(err))
+		return nil, fmt.Errorf("failed to retrieve signing keys: %w", err)
+	}
+
+	algs := make([]string, 0, len(keys))
+	for _, key := range keys {
+		if key.Algorithm != "" && !slices.Contains(algs, key.Algorithm) {
+			algs = append(algs, key.Algorithm)
+		}
+	}
+	return algs, nil
+}
+
 // validateUserInfoConfig validates the UserInfo signing and encryption configuration.
-func validateUserInfoConfig(p *providers.OAuthProfile, cryptoProvider providers.RuntimeCryptoProvider,
-	jweService jwe.JWEServiceInterface) error {
+func validateUserInfoConfig(ctx context.Context, p *providers.OAuthProfile,
+	cryptoProvider providers.RuntimeCryptoProvider, jweService jwe.JWEServiceInterface) error {
 	if p.UserInfo == nil {
 		return nil
 	}
 	cfg := p.UserInfo
 
-	if cfg.SigningAlg != "" && !slices.Contains(cryptoProvider.GetSupportedSigningAlgorithms(), cfg.SigningAlg) {
-		return ErrOAuthUserInfoUnsupportedSigningAlg
+	if cfg.SigningAlg != "" {
+		algs, err := configuredSigningAlgorithms(ctx, cryptoProvider)
+		if err != nil {
+			return err
+		}
+		if !slices.Contains(algs, cfg.SigningAlg) {
+			return ErrOAuthUserInfoUnsupportedSigningAlg
+		}
 	}
 
 	if cfg.EncryptionEnc != "" && cfg.EncryptionAlg == "" {
@@ -919,11 +987,22 @@ func validateUserInfoConfig(p *providers.OAuthProfile, cryptoProvider providers.
 
 // validateIDTokenConfig validates the ID token configuration.
 // responseType is the authoritative field; empty defaults to JWT.
-func validateIDTokenConfig(p *providers.OAuthProfile, jweService jwe.JWEServiceInterface) error {
+func validateIDTokenConfig(ctx context.Context, p *providers.OAuthProfile,
+	cryptoProvider providers.RuntimeCryptoProvider, jweService jwe.JWEServiceInterface) error {
 	if p.Token == nil || p.Token.IDToken == nil {
 		return nil
 	}
 	cfg := p.Token.IDToken
+
+	if cfg.SigningAlg != "" {
+		algs, err := configuredSigningAlgorithms(ctx, cryptoProvider)
+		if err != nil {
+			return err
+		}
+		if !slices.Contains(algs, cfg.SigningAlg) {
+			return ErrOAuthIDTokenUnsupportedSigningAlg
+		}
+	}
 
 	if cfg.ResponseType == "" {
 		cfg.ResponseType = providers.IDTokenResponseTypeJWT
@@ -1200,6 +1279,9 @@ func (s *inboundClientService) validateFKs(ctx context.Context, c *inboundmodel.
 	if err := s.validateAllowedUserTypes(ctx, c.AllowedUserTypes); err != nil {
 		return err
 	}
+	if err := s.validateAllowedAgentTypes(ctx, c.AllowedAgentTypes); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1291,23 +1373,44 @@ func (s *inboundClientService) validateLayoutID(ctx context.Context, layoutID st
 func (s *inboundClientService) validateAllowedUserTypes(
 	ctx context.Context, allowedUserTypes []string,
 ) error {
-	if len(allowedUserTypes) == 0 || s.entityType == nil {
+	return s.validateAllowedEntityTypes(ctx, entitytype.TypeCategoryUser, allowedUserTypes,
+		ErrFKInvalidUserType, ErrUserSchemaLookupFailed)
+}
+
+// validateAllowedAgentTypes validates that each allowed agent type corresponds to an existing agent type.
+func (s *inboundClientService) validateAllowedAgentTypes(
+	ctx context.Context, allowedAgentTypes []string,
+) error {
+	return s.validateAllowedEntityTypes(ctx, entitytype.TypeCategoryAgent, allowedAgentTypes,
+		ErrFKInvalidAgentType, ErrAgentSchemaLookupFailed)
+}
+
+// validateAllowedEntityTypes validates that each name in allowedTypes corresponds to an existing
+// entity type in the given category. invalidErr is returned for an unknown name; lookupErr is
+// returned when the entity type service itself fails, so the caller can tell a client validation
+// failure from a server fault.
+func (s *inboundClientService) validateAllowedEntityTypes(
+	ctx context.Context, category entitytype.TypeCategory, allowedTypes []string,
+	invalidErr, lookupErr error,
+) error {
+	if len(allowedTypes) == 0 || s.entityType == nil {
 		return nil
 	}
-	existingUserTypes := make(map[string]bool)
+	existingTypes := make(map[string]bool)
 	limit := serverconst.MaxPageSize
 	offset := 0
 	for {
 		// Runtime context: skip authorization checks when fetching entity types.
 		entityTypeList, svcErr := s.entityType.GetEntityTypeList(
-			security.WithRuntimeContext(ctx), entitytype.TypeCategoryUser, limit, offset, false)
+			security.WithRuntimeContext(ctx), category, limit, offset, false)
 		if svcErr != nil {
-			s.logger.Error(ctx, "Failed to retrieve user type list for validation",
+			s.logger.Error(ctx, "Failed to retrieve entity type list for validation",
+				log.String("category", string(category)),
 				log.String("error", svcErr.Error.DefaultValue), log.String("code", svcErr.Code))
-			return ErrUserSchemaLookupFailed
+			return lookupErr
 		}
 		for _, schema := range entityTypeList.Types {
-			existingUserTypes[schema.Name] = true
+			existingTypes[schema.Name] = true
 		}
 		if len(entityTypeList.Types) == 0 ||
 			offset+len(entityTypeList.Types) >= entityTypeList.TotalResults {
@@ -1315,9 +1418,9 @@ func (s *inboundClientService) validateAllowedUserTypes(
 		}
 		offset += limit
 	}
-	for _, userType := range allowedUserTypes {
-		if userType == "" || !existingUserTypes[userType] {
-			return ErrFKInvalidUserType
+	for _, entityTypeName := range allowedTypes {
+		if entityTypeName == "" || !existingTypes[entityTypeName] {
+			return invalidErr
 		}
 	}
 	return nil
@@ -1693,6 +1796,7 @@ func resolveOAuthTokens(in *providers.OAuthTokenConfig,
 			ValidityPeriod: in.IDToken.ValidityPeriod,
 			UserAttributes: in.IDToken.UserAttributes,
 			ResponseType:   in.IDToken.ResponseType,
+			SigningAlg:     in.IDToken.SigningAlg,
 			EncryptionAlg:  in.IDToken.EncryptionAlg,
 			EncryptionEnc:  in.IDToken.EncryptionEnc,
 		}

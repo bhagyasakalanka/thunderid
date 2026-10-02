@@ -314,7 +314,7 @@ func TestUserService_GetUsersByPath_HandlesOUServiceErrors(t *testing.T) {
 				ouServiceMock := oumock.NewOrganizationUnitServiceInterfaceMock(t)
 				ouServiceMock.
 					On("GetOrganizationUnitByPath", mock.Anything, "root").
-					Return(providers.OrganizationUnit{}, &tidcommon.ServiceError{
+					Return(oupkg.OrganizationUnit{}, &tidcommon.ServiceError{
 						Type: tidcommon.ClientErrorType,
 						Code: oupkg.ErrorInvalidHandlePath.Code,
 					}).
@@ -332,7 +332,7 @@ func TestUserService_GetUsersByPath_HandlesOUServiceErrors(t *testing.T) {
 				ouServiceMock := oumock.NewOrganizationUnitServiceInterfaceMock(t)
 				ouServiceMock.
 					On("GetOrganizationUnitByPath", mock.Anything, "root").
-					Return(providers.OrganizationUnit{ID: "ou-id"}, (*tidcommon.ServiceError)(nil)).
+					Return(oupkg.OrganizationUnit{ID: "ou-id"}, (*tidcommon.ServiceError)(nil)).
 					Once()
 				ouServiceMock.
 					On("GetOrganizationUnitUsers", mock.Anything, "ou-id", 10, 0, false).
@@ -368,7 +368,7 @@ func TestUserService_CreateUserByPath_HandlesOUServiceErrors(t *testing.T) {
 	ouServiceMock := oumock.NewOrganizationUnitServiceInterfaceMock(t)
 	ouServiceMock.
 		On("GetOrganizationUnitByPath", mock.Anything, "root/engineering").
-		Return(providers.OrganizationUnit{}, &tidcommon.ServiceError{
+		Return(oupkg.OrganizationUnit{}, &tidcommon.ServiceError{
 			Type: tidcommon.ClientErrorType,
 			Code: oupkg.ErrorInvalidHandlePath.Code,
 		}).
@@ -417,7 +417,7 @@ func TestUserService_CreateUser_CallsCreateEntity(t *testing.T) {
 		uuidGenerator:     utils.GenerateUUIDv7,
 	}
 
-	user := &User{
+	user := &providers.User{
 		Type:       testUserType,
 		OUID:       testOrgID,
 		Attributes: json.RawMessage(`{}`),
@@ -449,7 +449,7 @@ func TestUserService_CreateUser_UUIDGenerationError(t *testing.T) {
 		},
 	}
 
-	user := &User{Type: testUserType, OUID: testOrgID}
+	user := &providers.User{Type: testUserType, OUID: testOrgID}
 
 	created, svcErr := service.CreateUser(context.Background(), user)
 	require.Nil(t, created)
@@ -485,7 +485,7 @@ func TestUserService_CreateUser_PropagatesStoreError(t *testing.T) {
 		uuidGenerator:     utils.GenerateUUIDv7,
 	}
 
-	user := &User{
+	user := &providers.User{
 		Type:       testUserType,
 		OUID:       testOrgID,
 		Attributes: json.RawMessage(`{}`),
@@ -880,7 +880,7 @@ func TestUserService_DeleteUser(t *testing.T) {
 
 func TestUserService_UpdateUser(t *testing.T) {
 	userID := svcTestUserID1
-	updatedUser := User{ID: userID, OUID: testOrgID, Type: testUserType,
+	updatedUser := providers.User{ID: userID, OUID: testOrgID, Type: testUserType,
 		Attributes: json.RawMessage(`{"updated":"true"}`)}
 
 	storeMock := entitymock.NewEntityServiceInterfaceMock(t)
@@ -929,7 +929,7 @@ func TestUserService_UpdateUser(t *testing.T) {
 func TestUserService_UpdateUser_RejectsCredentialAttributes(t *testing.T) {
 	userID := svcTestUserID1
 
-	updatedUser := User{
+	updatedUser := providers.User{
 		ID:         userID,
 		OUID:       testOrgID,
 		Type:       testUserType,
@@ -1216,7 +1216,7 @@ func TestUserService_UpdateUser_ErrorPaths(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			updatedUser := User{
+			updatedUser := providers.User{
 				ID:         userID,
 				OUID:       testOrgID,
 				Type:       testUserType,
@@ -1472,7 +1472,7 @@ func TestUserService_UpdateUser_AuthzBranches(t *testing.T) {
 				authzService:      authzMock,
 			}
 
-			updatedUser := User{
+			updatedUser := providers.User{
 				ID:         userID,
 				OUID:       tt.userOU,
 				Type:       testUserType,
@@ -1501,7 +1501,7 @@ func TestUserService_UpdateUser_RejectsCredentialInMixedAttributes(t *testing.T)
 	userID := svcTestUserID123
 	testOU := testOrgID
 
-	updatedUser := User{
+	updatedUser := providers.User{
 		ID:   userID,
 		Type: testUserType,
 		OUID: testOU,
@@ -1756,13 +1756,13 @@ func TestUserService_CRUD_ErrorCases(t *testing.T) {
 	})
 
 	t.Run("CreateUser_MissingType", func(t *testing.T) {
-		_, err := service.CreateUser(ctx, &User{ID: "u1"})
+		_, err := service.CreateUser(ctx, &providers.User{ID: "u1"})
 		require.NotNil(t, err)
 		require.Equal(t, ErrorEntityTypeNotFound.Code, err.Code)
 	})
 
 	t.Run("UpdateUser_MissingID", func(t *testing.T) {
-		_, err := service.UpdateUser(ctx, "", &User{})
+		_, err := service.UpdateUser(ctx, "", &providers.User{})
 		require.NotNil(t, err)
 		require.Equal(t, ErrorMissingUserID.Code, err.Code)
 	})
@@ -1774,7 +1774,7 @@ func TestUserService_GetUsersByPath(t *testing.T) {
 	ctx := context.Background()
 
 	mockOU.On("GetOrganizationUnitByPath", mock.Anything, "root").
-		Return(providers.OrganizationUnit{ID: "ou-1"}, nil).
+		Return(oupkg.OrganizationUnit{ID: "ou-1"}, nil).
 		Once()
 	mockOU.On("GetOrganizationUnitUsers", mock.Anything, "ou-1", 10, 0, false).Return(&oupkg.UserListResponse{
 		TotalResults: 20,
@@ -1800,7 +1800,7 @@ func TestUserService_GetUsersByPath_WithIncludeDisplay(t *testing.T) {
 	ctx := context.Background()
 
 	mockOU.On("GetOrganizationUnitByPath", mock.Anything, "root").
-		Return(providers.OrganizationUnit{ID: "ou-1"}, nil).Once()
+		Return(oupkg.OrganizationUnit{ID: "ou-1"}, nil).Once()
 	mockOU.On("GetOrganizationUnitUsers", mock.Anything, "ou-1", 10, 0, false).
 		Return(&oupkg.UserListResponse{
 			TotalResults: 2,
@@ -1832,7 +1832,7 @@ func TestUserService_GetUsersByPath_WithIncludeDisplay_BatchFetchError(t *testin
 	ctx := context.Background()
 
 	mockOU.On("GetOrganizationUnitByPath", mock.Anything, "root").
-		Return(providers.OrganizationUnit{ID: "ou-1"}, nil).Once()
+		Return(oupkg.OrganizationUnit{ID: "ou-1"}, nil).Once()
 	mockOU.On("GetOrganizationUnitUsers", mock.Anything, "ou-1", 10, 0, false).
 		Return(&oupkg.UserListResponse{
 			TotalResults: 1,
@@ -1892,7 +1892,7 @@ func TestUserService_MoreErrorCases(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("UpdateUser_StoreError", func(t *testing.T) {
-		userIn := &User{Type: "customer", OUID: testOrgID}
+		userIn := &providers.User{Type: "customer", OUID: testOrgID}
 		storeMock.On("GetEntity", mock.Anything, "u1").
 			Return(&providers.Entity{
 				Category: providers.EntityCategoryUser, ID: "u1", OUID: testOrgID,
@@ -1986,7 +1986,7 @@ func TestUserService_CreateUser_EntityErrors(t *testing.T) {
 				uuidGenerator:     utils.GenerateUUIDv7,
 			}
 
-			user := &User{
+			user := &providers.User{
 				Type:       testUserType,
 				OUID:       testOrgID,
 				Attributes: json.RawMessage(`{}`),
@@ -2014,7 +2014,7 @@ func TestUserService_UpdateUser_NilSchemaService(t *testing.T) {
 		authzService:  newAllowAllAuthz(t),
 	}
 
-	user := &User{
+	user := &providers.User{
 		ID:         svcTestUserID1,
 		Type:       testUserType,
 		OUID:       testOrgID,
@@ -2051,7 +2051,7 @@ func TestUserService_UpdateUser_SchemaNotFound(t *testing.T) {
 		authzService:      newAllowAllAuthz(t),
 	}
 
-	user := &User{
+	user := &providers.User{
 		ID:         svcTestUserID1,
 		Type:       testUserType,
 		OUID:       testOrgID,
@@ -2254,7 +2254,7 @@ func TestUserService_GetUsersByPath_AuthzChecks(t *testing.T) {
 			setup: func(t *testing.T) *userService {
 				ouServiceMock := oumock.NewOrganizationUnitServiceInterfaceMock(t)
 				ouServiceMock.On("GetOrganizationUnitByPath", mock.Anything, "root").
-					Return(providers.OrganizationUnit{ID: ouID}, (*tidcommon.ServiceError)(nil)).Once()
+					Return(oupkg.OrganizationUnit{ID: ouID}, (*tidcommon.ServiceError)(nil)).Once()
 
 				authzMock := sysauthzmock.NewSystemAuthorizationServiceInterfaceMock(t)
 				authzMock.On("IsActionAllowed", mock.Anything, mock.Anything, mock.Anything).
@@ -2272,7 +2272,7 @@ func TestUserService_GetUsersByPath_AuthzChecks(t *testing.T) {
 			setup: func(t *testing.T) *userService {
 				ouServiceMock := oumock.NewOrganizationUnitServiceInterfaceMock(t)
 				ouServiceMock.On("GetOrganizationUnitByPath", mock.Anything, "root").
-					Return(providers.OrganizationUnit{ID: ouID}, (*tidcommon.ServiceError)(nil)).Once()
+					Return(oupkg.OrganizationUnit{ID: ouID}, (*tidcommon.ServiceError)(nil)).Once()
 
 				authzMock := sysauthzmock.NewSystemAuthorizationServiceInterfaceMock(t)
 				authzMock.On("IsActionAllowed", mock.Anything, mock.Anything, mock.Anything).
@@ -2338,7 +2338,7 @@ func TestUserService_CreateUser_AuthzChecks(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			svc := tc.setup(t)
-			user := &User{Type: testUserType, OUID: testOrgID}
+			user := &providers.User{Type: testUserType, OUID: testOrgID}
 			resp, err := svc.CreateUser(context.Background(), user)
 			require.Nil(t, resp)
 			require.NotNil(t, err)
@@ -2529,7 +2529,7 @@ func TestUserService_UpdateUser_PreFetchAndAuthzChecks(t *testing.T) {
 		Code:  "SVC-5000",
 		Error: tidcommon.I18nMessage{DefaultValue: "authz error"},
 	}
-	updatedUser := &User{Type: testUserType, OUID: testOrgID,
+	updatedUser := &providers.User{Type: testUserType, OUID: testOrgID,
 		Attributes: json.RawMessage(`{"email":"test@example.com"}`)}
 
 	tests := []struct {
@@ -3015,7 +3015,7 @@ func TestUserService_DeleteUser_AbortedWhenCascadeFails(t *testing.T) {
 // when the user is declarative.
 func TestUpdateUser_DeclarativeResource(t *testing.T) {
 	userID := svcTestDeclarativeUserID1
-	updatedUser := User{
+	updatedUser := providers.User{
 		ID:         userID,
 		OUID:       "ou1",
 		Type:       "employee",
@@ -3045,7 +3045,7 @@ func TestUpdateUser_DeclarativeResource(t *testing.T) {
 // TestUpdateUser_DeclarativeCheckError tests that UpdateUser surfaces errors from IsUserDeclarative.
 func TestUpdateUser_DeclarativeCheckError(t *testing.T) {
 	userID := svcTestUserID1
-	updatedUser := User{
+	updatedUser := providers.User{
 		ID:         userID,
 		OUID:       "ou1",
 		Type:       "employee",
@@ -3077,7 +3077,7 @@ func TestUpdateUser_DeclarativeCheckError(t *testing.T) {
 // when IsUserDeclarative encounters ErrEntityNotFound.
 func TestUpdateUser_DeclarativeCheckUserNotFound(t *testing.T) {
 	userID := "non-existent-user"
-	updatedUser := User{
+	updatedUser := providers.User{
 		ID:         userID,
 		OUID:       "ou1",
 		Type:       "employee",
@@ -3286,7 +3286,7 @@ func TestPopulateUserDisplayNames_Success(t *testing.T) {
 		Return(map[string]string{"employee": "name"}, (*tidcommon.ServiceError)(nil)).Once()
 
 	service := &userService{entityTypeService: schemaMock}
-	users := []User{
+	users := []providers.User{
 		{ID: "user-1", Type: "employee", Attributes: json.RawMessage(`{"name":"Alice"}`)},
 		{ID: "user-2", Type: "employee", Attributes: json.RawMessage(`{"name":"Bob"}`)},
 	}
@@ -3303,7 +3303,7 @@ func TestPopulateUserDisplayNames_FallbackToID(t *testing.T) {
 
 	service := &userService{entityTypeService: schemaMock}
 
-	users := []User{
+	users := []providers.User{
 		{ID: "user-1", Type: "employee", Attributes: json.RawMessage(`{"name":"Alice"}`)},
 	}
 
@@ -3314,7 +3314,7 @@ func TestPopulateUserDisplayNames_FallbackToID(t *testing.T) {
 func TestPopulateUserDisplayNames_EmptyUsers(t *testing.T) {
 	service := &userService{}
 
-	var users []User
+	var users []providers.User
 	service.populateUserDisplayNames(context.Background(), users, nil)
 	// Should not panic.
 }
@@ -3322,7 +3322,7 @@ func TestPopulateUserDisplayNames_EmptyUsers(t *testing.T) {
 func TestPopulateUserDisplayNames_NilSchemaService(t *testing.T) {
 	service := &userService{entityTypeService: nil}
 
-	users := []User{
+	users := []providers.User{
 		{ID: "user-1", Type: "employee", Attributes: json.RawMessage(`{"name":"Alice"}`)},
 	}
 
@@ -3341,7 +3341,7 @@ func TestPopulateUserDisplayNames_SchemaServiceError(t *testing.T) {
 
 	service := &userService{entityTypeService: schemaMock}
 
-	users := []User{
+	users := []providers.User{
 		{ID: "user-1", Type: "employee", Attributes: json.RawMessage(`{"name":"Alice"}`)},
 	}
 
@@ -3370,7 +3370,7 @@ func TestPopulateUserDisplayNames_MultipleTypes(t *testing.T) {
 
 	service := &userService{entityTypeService: schemaMock}
 
-	users := []User{
+	users := []providers.User{
 		{ID: "user-1", Type: "employee", Attributes: json.RawMessage(`{"name":"Alice"}`)},
 		{ID: "user-2", Type: "customer", Attributes: json.RawMessage(`{"email":"bob@example.com"}`)},
 	}
@@ -3438,10 +3438,10 @@ func TestUserService_GetUserList_WithIncludeDisplay(t *testing.T) {
 func TestResolveUserOUHandle_OUHandleResolved(t *testing.T) {
 	ouServiceMock := oumock.NewOrganizationUnitServiceInterfaceMock(t)
 	ouServiceMock.On("GetOrganizationUnitByPath", mock.Anything, "default").
-		Return(providers.OrganizationUnit{ID: "ou-resolved"}, (*tidcommon.ServiceError)(nil)).Once()
+		Return(oupkg.OrganizationUnit{ID: "ou-resolved"}, (*tidcommon.ServiceError)(nil)).Once()
 
 	svc := &userService{ouService: ouServiceMock}
-	u := &User{OUHandle: "default"}
+	u := &providers.User{OUHandle: "default"}
 
 	svcErr := svc.ResolveUserOUHandle(context.Background(), u)
 
@@ -3453,7 +3453,7 @@ func TestResolveUserOUHandle_OUHandleResolved(t *testing.T) {
 // ou_id is set and ou_handle is empty.
 func TestResolveUserOUHandle_OUIDAlreadySet(t *testing.T) {
 	svc := &userService{}
-	u := &User{OUID: "ou-direct"}
+	u := &providers.User{OUID: "ou-direct"}
 
 	svcErr := svc.ResolveUserOUHandle(context.Background(), u)
 
@@ -3467,7 +3467,7 @@ func TestResolveUserOUHandle_BothProvided(t *testing.T) {
 	ouServiceMock := oumock.NewOrganizationUnitServiceInterfaceMock(t)
 
 	svc := &userService{ouService: ouServiceMock}
-	u := &User{ID: "u1", OUID: "ou-direct", OUHandle: "default"}
+	u := &providers.User{ID: "u1", OUID: "ou-direct", OUHandle: "default"}
 
 	svcErr := svc.ResolveUserOUHandle(context.Background(), u)
 
@@ -3481,10 +3481,10 @@ func TestResolveUserOUHandle_BothProvided(t *testing.T) {
 func TestResolveUserOUHandle_OUHandleNotFound(t *testing.T) {
 	ouServiceMock := oumock.NewOrganizationUnitServiceInterfaceMock(t)
 	ouServiceMock.On("GetOrganizationUnitByPath", mock.Anything, "missing").
-		Return(providers.OrganizationUnit{}, &oupkg.ErrorOrganizationUnitNotFound).Once()
+		Return(oupkg.OrganizationUnit{}, &oupkg.ErrorOrganizationUnitNotFound).Once()
 
 	svc := &userService{ouService: ouServiceMock}
-	u := &User{OUHandle: "missing"}
+	u := &providers.User{OUHandle: "missing"}
 
 	svcErr := svc.ResolveUserOUHandle(context.Background(), u)
 
@@ -3496,7 +3496,7 @@ func TestResolveUserOUHandle_OUHandleNotFound(t *testing.T) {
 // ou_id nor ou_handle is provided.
 func TestResolveUserOUHandle_NeitherProvided(t *testing.T) {
 	svc := &userService{}
-	u := &User{}
+	u := &providers.User{}
 
 	svcErr := svc.ResolveUserOUHandle(context.Background(), u)
 
@@ -3508,7 +3508,7 @@ func TestResolveUserOUHandle_NeitherProvided(t *testing.T) {
 // service is nil and ou_handle is supplied (no nil-pointer panic).
 func TestResolveUserOUHandle_NilOUService(t *testing.T) {
 	svc := &userService{ouService: nil}
-	u := &User{OUHandle: "default"}
+	u := &providers.User{OUHandle: "default"}
 
 	svcErr := svc.ResolveUserOUHandle(context.Background(), u)
 
@@ -3609,7 +3609,7 @@ func TestPopulateOUHandles_HandleResolutionError(t *testing.T) {
 		Return(map[string]string(nil), &tidcommon.InternalServerError).Once()
 
 	service := &userService{ouService: ouServiceMock}
-	users := []User{{ID: "user-1", OUID: testOrgID}}
+	users := []providers.User{{ID: "user-1", OUID: testOrgID}}
 
 	service.populateOUHandles(context.Background(), users, log.GetLogger())
 	require.Empty(t, users[0].OUHandle)

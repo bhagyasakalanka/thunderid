@@ -16,12 +16,12 @@ import (
 	thememgt "github.com/thunder-id/thunderid/internal/design/theme/mgt"
 	"github.com/thunder-id/thunderid/internal/entitytype"
 	"github.com/thunder-id/thunderid/internal/group"
+	"github.com/thunder-id/thunderid/internal/ou"
 	"github.com/thunder-id/thunderid/internal/resource"
 	"github.com/thunder-id/thunderid/internal/role"
 	serverconst "github.com/thunder-id/thunderid/internal/system/constants"
 	i18nmgt "github.com/thunder-id/thunderid/internal/system/i18n/mgt"
 	"github.com/thunder-id/thunderid/internal/system/log"
-	"github.com/thunder-id/thunderid/internal/user"
 	"github.com/thunder-id/thunderid/internal/vc/credential"
 	"github.com/thunder-id/thunderid/internal/vc/presentation"
 )
@@ -106,12 +106,12 @@ func (s *importService) importOrganizationUnit(
 		return unsupportedAdapterOutcome(resourceTypeOrganizationUnit, "organization unit")
 	}
 
-	var req providers.OrganizationUnit
+	var req ou.OrganizationUnit
 	if err := doc.Node.Decode(&req); err != nil {
 		return decodeErrorOutcome(resourceTypeOrganizationUnit, req.ID, req.Name, err)
 	}
 
-	createReq := providers.OrganizationUnitRequestWithID{
+	createReq := ou.OrganizationUnitRequestWithID{
 		ID:                        req.ID,
 		Handle:                    req.Handle,
 		Name:                      req.Name,
@@ -692,7 +692,7 @@ func (s *importService) importUser(
 			Code: ErrorInvalidYAMLContent.Code, Message: fmt.Sprintf("failed to marshal user attributes: %v", err)}
 	}
 
-	userReq := &user.User{
+	userReq := &providers.User{
 		ID:         req.ID,
 		OUID:       req.OUID,
 		Type:       req.Type,
@@ -935,7 +935,7 @@ func (s *importService) importAgent(
 
 	normalizeAgentOAuthConfigForImport(ctx, &req)
 
-	createReq := &agentmodel.Agent{
+	createReq := &providers.Agent{
 		ID:          req.ID,
 		OUID:        req.OUID,
 		OUHandle:    req.OUHandle,
@@ -961,6 +961,7 @@ func (s *importService) importAgent(
 			Assertion:                 req.Assertion,
 			LoginConsent:              req.LoginConsent,
 			AllowedUserTypes:          req.AllowedUserTypes,
+			AllowedAgentTypes:         req.AllowedAgentTypes,
 			PasskeyAllowedOrigins:     req.PasskeyAllowedOrigins,
 			Attestation:               req.Attestation,
 		},
@@ -1116,6 +1117,14 @@ func (s *importService) importPresentationDefinition(
 		}
 	}
 
+	resolvedOUID, svcErr := s.resolveImportOUHandle(
+		ctx, resourceTypePresentationDefinition, dto.ID, dto.Handle, dto.OUID, dto.OUHandle)
+	if svcErr != nil {
+		return serviceErrorOutcome(
+			resourceTypePresentationDefinition, dto.ID, dto.Handle, operationCreate, svcErr)
+	}
+	dto.OUID = resolvedOUID
+
 	if dryRun {
 		if options.IsUpsertEnabled() && dto.ID != "" {
 			_, svcErr := s.presentationDefinitionService.GetPresentationDefinition(ctx, dto.ID)
@@ -1170,6 +1179,13 @@ func (s *importService) importCredentialConfiguration(
 			Message:      fmt.Sprintf("failed to decode credential configuration document: %v", err),
 		}
 	}
+
+	resolvedOUID, svcErr := s.resolveImportOUHandle(
+		ctx, resourceTypeCredentialConfiguration, dto.ID, dto.Handle, dto.OUID, dto.OUHandle)
+	if svcErr != nil {
+		return serviceErrorOutcome(resourceTypeCredentialConfiguration, dto.ID, dto.Handle, operationCreate, svcErr)
+	}
+	dto.OUID = resolvedOUID
 
 	if dryRun {
 		if options.IsUpsertEnabled() && dto.ID != "" {

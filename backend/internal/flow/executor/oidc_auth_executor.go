@@ -16,7 +16,6 @@ import (
 	authnprovidercm "github.com/thunder-id/thunderid/internal/authnprovider/common"
 	"github.com/thunder-id/thunderid/internal/flow/common"
 	"github.com/thunder-id/thunderid/internal/flow/core"
-	"github.com/thunder-id/thunderid/internal/idp"
 	oauth2const "github.com/thunder-id/thunderid/internal/oauth/oauth2/constants"
 	"github.com/thunder-id/thunderid/internal/system/log"
 	systemutils "github.com/thunder-id/thunderid/internal/system/utils"
@@ -37,6 +36,7 @@ type oidcAuthExecutorInterface interface {
 // oidcAuthExecutor implements the OIDCAuthExecutorInterface for handling generic OIDC authentication flows.
 type oidcAuthExecutor struct {
 	oAuthExecutorInterface
+	idpService    providers.IDPProvider
 	authService   authnoidc.OIDCAuthnCoreServiceInterface
 	authnProvider providers.AuthnProviderManager
 	idpType       providers.IDPType
@@ -50,7 +50,7 @@ func newOIDCAuthExecutor(
 	name string,
 	defaultInputs, prerequisites []providers.Input,
 	flowFactory core.FlowFactoryInterface,
-	idpService idp.IDPServiceInterface,
+	idpService providers.IDPProvider,
 	authService authnoidc.OIDCAuthnCoreServiceInterface,
 	authnProvider providers.AuthnProviderManager,
 	idpType providers.IDPType,
@@ -71,6 +71,7 @@ func newOIDCAuthExecutor(
 
 	return &oidcAuthExecutor{
 		oAuthExecutorInterface: base,
+		idpService:             idpService,
 		authService:            authService,
 		authnProvider:          authnProvider,
 		idpType:                idpType,
@@ -212,14 +213,9 @@ func (o *oidcAuthExecutor) ProcessAuthFlowResponse(ctx *providers.NodeContext,
 		return nil
 	}
 
-	if len(federatedAttributes) > 0 {
-		if execResp.RuntimeData == nil {
-			execResp.RuntimeData = make(map[string]string)
-		}
-		for key, value := range federatedAttributes {
-			execResp.RuntimeData[key] = systemutils.ConvertInterfaceValueToString(value)
-		}
-	}
+	copyFederatedAttributesToRuntimeData(execResp, federatedAttributes)
+
+	resolveAndSetMappedAuthorizationTargets(ctx.Context, execResp, o.idpService, idpID, federatedAttributes, logger)
 
 	setFederatedEntityState(ctx.Context, execResp, o.authnProvider)
 

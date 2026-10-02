@@ -24,7 +24,6 @@ import (
 	"github.com/thunder-id/thunderid/internal/oauth/oauth2/tokenservice"
 	"github.com/thunder-id/thunderid/internal/system/cryptolib"
 	"github.com/thunder-id/thunderid/internal/system/kmprovider/defaultkm"
-	"github.com/thunder-id/thunderid/internal/user"
 	"github.com/thunder-id/thunderid/internal/vc/credential"
 	tidcommon "github.com/thunder-id/thunderid/pkg/thunderidengine/common"
 	"github.com/thunder-id/thunderid/pkg/thunderidengine/providers"
@@ -209,13 +208,22 @@ func (s *MetadataTestSuite) TestBuildMetadataMinimal() {
 func (s *MetadataTestSuite) TestCredentialClaims() {
 	out := credentialClaims([]credential.ClaimMapping{
 		{Name: "given_name", DisplayName: "Given Name"},
-		{Name: "skip"},
+		{Name: "no_display"},
 	})
-	s.Require().NotNil(out)
-	s.Contains(out, "given_name")
-	s.NotContains(out, "skip")
+	s.Require().Len(out, 2)
 
-	s.Nil(credentialClaims([]credential.ClaimMapping{{Name: "skip"}}))
+	// Each entry identifies its claim with a Claims Path Pointer, not by being keyed on the
+	// name, and carries display only when one is configured.
+	first := out[0].(map[string]interface{})
+	s.Equal([]interface{}{"given_name"}, first["path"])
+	s.Equal([]interface{}{map[string]interface{}{"name": "Given Name"}}, first["display"])
+
+	second := out[1].(map[string]interface{})
+	s.Equal([]interface{}{"no_display"}, second["path"])
+	s.NotContains(second, "display")
+
+	// A claim with no name cannot be pointed at, so it is dropped.
+	s.Nil(credentialClaims([]credential.ClaimMapping{{DisplayName: "orphan"}}))
 	s.Nil(credentialClaims(nil))
 }
 
@@ -787,7 +795,7 @@ func (s *CredentialTestSuite) TestIssueCredentialSignError() {
 		}, nil)
 	userSvc := usermock.NewUserServiceInterfaceMock(s.T())
 	attrs, _ := json.Marshal(map[string]interface{}{})
-	userSvc.EXPECT().GetUser(ctx, "u1", false).Return(&user.User{ID: "u1", Attributes: attrs}, nil)
+	userSvc.EXPECT().GetUser(ctx, "u1", false).Return(&providers.User{ID: "u1", Attributes: attrs}, nil)
 
 	provider := newTestVerifyCryptoProvider(s.T())
 	provider.EXPECT().Sign(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
@@ -840,7 +848,7 @@ func (s *CredentialTestSuite) TestIssueCredentialSuccess() {
 
 	userSvc := usermock.NewUserServiceInterfaceMock(s.T())
 	attrs, _ := json.Marshal(map[string]interface{}{"given_name": "Ada"})
-	userSvc.EXPECT().GetUser(ctx, "u1", false).Return(&user.User{ID: "u1", Attributes: attrs}, nil)
+	userSvc.EXPECT().GetUser(ctx, "u1", false).Return(&providers.User{ID: "u1", Attributes: attrs}, nil)
 
 	svc := &openid4vciService{
 		cfg:            serviceConfig{CredentialIssuer: testIssuer, ProofMaxAge: time.Minute, BatchSize: 5},
@@ -887,7 +895,7 @@ func (s *ClaimsTestSuite) TestResolveClaimsSelectsConfiguredClaims() {
 		"extra":       "ignored",
 	})
 	userSvc.EXPECT().GetUser(ctx, "u1", false).
-		Return(&user.User{ID: "u1", Attributes: attrs}, nil)
+		Return(&providers.User{ID: "u1", Attributes: attrs}, nil)
 	svc := &openid4vciService{userService: userSvc}
 
 	claims, err := svc.resolveClaims(ctx, "u1", []string{"given_name", "family_name", "missing"})
@@ -913,7 +921,7 @@ func (s *ClaimsTestSuite) TestResolveClaimsBadAttributes() {
 	ctx := context.Background()
 	userSvc := usermock.NewUserServiceInterfaceMock(s.T())
 	userSvc.EXPECT().GetUser(ctx, "u1", false).
-		Return(&user.User{ID: "u1", Attributes: json.RawMessage("not-json")}, nil)
+		Return(&providers.User{ID: "u1", Attributes: json.RawMessage("not-json")}, nil)
 	svc := &openid4vciService{userService: userSvc}
 
 	_, err := svc.resolveClaims(ctx, "u1", []string{"given_name"})
@@ -924,7 +932,7 @@ func (s *ClaimsTestSuite) TestResolveClaimsNoAttributes() {
 	ctx := context.Background()
 	userSvc := usermock.NewUserServiceInterfaceMock(s.T())
 	userSvc.EXPECT().GetUser(ctx, "u1", false).
-		Return(&user.User{ID: "u1"}, nil)
+		Return(&providers.User{ID: "u1"}, nil)
 	svc := &openid4vciService{userService: userSvc}
 
 	claims, err := svc.resolveClaims(ctx, "u1", []string{"given_name"})

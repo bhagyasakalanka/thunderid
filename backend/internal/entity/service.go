@@ -62,6 +62,8 @@ type EntityServiceInterface interface {
 	GetGroupCountForEntity(ctx context.Context, entityID string) (int, error)
 	GetEntityGroups(ctx context.Context, entityID string, limit, offset int) ([]providers.EntityGroup, error)
 	GetTransitiveEntityGroups(ctx context.Context, entityID string) ([]providers.EntityGroup, error)
+	// GetTransitiveGroupAncestors resolves the ancestor chain of a single group.
+	GetTransitiveGroupAncestors(ctx context.Context, groupID string) ([]string, error)
 
 	// Authentication
 	AuthenticateEntity(ctx context.Context, identifiers map[string]interface{},
@@ -85,6 +87,7 @@ type EntityServiceInterface interface {
 // Covers both DB-backed and declarative (YAML) group memberships.
 type GroupMembershipProvider interface {
 	GetTransitiveGroupsForEntity(ctx context.Context, entityID string) ([]providers.EntityGroup, error)
+	GetTransitiveAncestorGroups(ctx context.Context, groupID string) ([]string, error)
 }
 
 // entityService is the default implementation of EntityServiceInterface.
@@ -452,6 +455,16 @@ func (s *entityService) GetTransitiveEntityGroups(
 	return s.groupMembershipProvider.GetTransitiveGroupsForEntity(ctx, entityID)
 }
 
+// GetTransitiveGroupAncestors resolves the ancestor chain of a single group.
+func (s *entityService) GetTransitiveGroupAncestors(
+	ctx context.Context, groupID string,
+) ([]string, error) {
+	if s.groupMembershipProvider == nil {
+		return []string{}, nil
+	}
+	return s.groupMembershipProvider.GetTransitiveAncestorGroups(ctx, groupID)
+}
+
 // AuthenticateEntity authenticates an entity by combining identify and verify operations.
 // Identifiers are used to find the entity, and credentials are verified against stored credentials.
 func (s *entityService) AuthenticateEntity(
@@ -498,7 +511,7 @@ func (s *entityService) AuthenticateEntityByID(
 		return nil, ErrEntityNotFound
 	}
 
-	if err := s.verifyCredentials(credentials, result.SchemaCredentials, result.SystemCredentials); err != nil {
+	if err := s.verifyCredentials(ctx, credentials, result.SchemaCredentials, result.SystemCredentials); err != nil {
 		return nil, err
 	}
 
@@ -511,7 +524,7 @@ func (s *entityService) AuthenticateEntityByID(
 }
 
 // verifyCredentials verifies provided credentials from both schema and system credentials.
-func (s *entityService) verifyCredentials(credentials map[string]interface{},
+func (s *entityService) verifyCredentials(ctx context.Context, credentials map[string]interface{},
 	schemaCredsJSON, systemCredsJSON json.RawMessage) error {
 	// Merge both credential columns for verification.
 	storedCreds := make(map[string][]StoredCredential)
@@ -561,16 +574,17 @@ func (s *entityService) verifyCredentials(credentials map[string]interface{},
 		verified := false
 		for _, stored := range credList {
 			ref := cryptolib.Credential{
-				Algorithm: stored.StorageAlgo,
-				Hash:      stored.Value,
-				Parameters: cryptolib.CredParameters{
-					Salt:       stored.StorageAlgoParams.Salt,
-					Iterations: stored.StorageAlgoParams.Iterations,
-					KeySize:    stored.StorageAlgoParams.KeySize,
-				},
+				Algorithm:  stored.StorageAlgo,
+				Hash:       stored.Value,
+				Parameters: stored.StorageAlgoParams,
 			}
 			ok, verifyErr := s.hashService.Verify([]byte(credValue), ref)
-			if verifyErr == nil && ok {
+			if verifyErr != nil {
+				s.logger.Debug(ctx, "Credential verification error", log.String("credentialType", credType),
+					log.Any("error", verifyErr))
+				continue
+			}
+			if ok {
 				verified = true
 				break
 			}
@@ -1097,13 +1111,9 @@ func (s *entityService) hashPlaintextCredentials(creds json.RawMessage) (json.Ra
 			}
 			result[credType] = []StoredCredential{
 				{
-					StorageAlgo: credHash.Algorithm,
-					StorageAlgoParams: cryptolib.CredParameters{
-						Salt:       credHash.Parameters.Salt,
-						Iterations: credHash.Parameters.Iterations,
-						KeySize:    credHash.Parameters.KeySize,
-					},
-					Value: credHash.Hash,
+					StorageAlgo:       credHash.Algorithm,
+					StorageAlgoParams: credHash.Parameters,
+					Value:             credHash.Hash,
 				},
 			}
 		default:

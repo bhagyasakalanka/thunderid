@@ -2710,3 +2710,146 @@ func (suite *RefreshTokenGrantHandlerTestSuite) TestHandleGrant_SystemAttributes
 	assert.Nil(suite.T(), err)
 	assert.NotNil(suite.T(), response)
 }
+
+const (
+	refreshSubjectEntityID = "user-entity-1"
+	refreshCachedSubjectID = "user-entity-2"
+)
+
+// The entity resolved while verifying the refresh token is already in hand, so it is preferred over
+// the cache entry and costs no further lookup.
+func TestSetRefreshSubjectIdentity_PrefersTheResolvedEntity(t *testing.T) {
+	tokenCtx := &tokenservice.AccessTokenBuildContext{}
+
+	setRefreshSubjectIdentity(tokenCtx,
+		&providers.Entity{ID: refreshSubjectEntityID, Category: providers.EntityCategoryUser},
+		&attributecache.AttributeCache{
+			SubjectID:       refreshCachedSubjectID,
+			SubjectCategory: string(providers.EntityCategoryAgent),
+		})
+
+	assert.Equal(t, refreshSubjectEntityID, tokenCtx.SubjectEntityID)
+	assert.Equal(t, string(providers.EntityCategoryUser), tokenCtx.SubjectCategory)
+}
+
+// A sub mapped to an attribute such as an email address resolves to no entity. The refresh token
+// carries no resource ID, so the attribute cache entry written during login is the only server-side
+// record of who the token is for.
+func TestSetRefreshSubjectIdentity_FallsBackToTheAttributeCache(t *testing.T) {
+	tokenCtx := &tokenservice.AccessTokenBuildContext{}
+
+	setRefreshSubjectIdentity(tokenCtx, nil, &attributecache.AttributeCache{
+		SubjectID:       refreshCachedSubjectID,
+		SubjectCategory: string(providers.EntityCategoryUser),
+	})
+
+	assert.Equal(t, refreshCachedSubjectID, tokenCtx.SubjectEntityID)
+	assert.Equal(t, string(providers.EntityCategoryUser), tokenCtx.SubjectCategory)
+}
+
+// An entry created before the identity was recorded, or one holding attributes for a subject that
+// was never resolved, carries no id. Nothing is set, so the builder resolves sub itself.
+func TestSetRefreshSubjectIdentity_CacheWithoutAnIdentityLeavesItToTheBuilder(t *testing.T) {
+	tokenCtx := &tokenservice.AccessTokenBuildContext{}
+
+	setRefreshSubjectIdentity(tokenCtx, nil, &attributecache.AttributeCache{
+		Attributes: map[string]interface{}{"email": "someone@example.com"},
+	})
+
+	assert.Empty(t, tokenCtx.SubjectEntityID)
+	assert.Empty(t, tokenCtx.SubjectCategory)
+}
+
+// An expired or absent cache entry, with no resolvable subject: the subject is genuinely unknown and
+// the event omits it rather than reporting the possibly-mapped sub.
+func TestSetRefreshSubjectIdentity_NoSourceAtAll(t *testing.T) {
+	tokenCtx := &tokenservice.AccessTokenBuildContext{}
+
+	setRefreshSubjectIdentity(tokenCtx, nil, nil)
+
+	assert.Empty(t, tokenCtx.SubjectEntityID)
+	assert.Empty(t, tokenCtx.SubjectCategory)
+}
+
+// The category is optional: an entry recorded without one still supplies the id, and the builder
+// resolves only the category.
+func TestSetRefreshSubjectIdentity_CacheIDWithoutCategory(t *testing.T) {
+	tokenCtx := &tokenservice.AccessTokenBuildContext{}
+
+	setRefreshSubjectIdentity(tokenCtx, nil,
+		&attributecache.AttributeCache{SubjectID: refreshCachedSubjectID})
+
+	assert.Equal(t, refreshCachedSubjectID, tokenCtx.SubjectEntityID)
+	assert.Empty(t, tokenCtx.SubjectCategory)
+}
+
+// The sid restored from the refresh token reaches the refreshed ID token and the response.
+func (suite *RefreshTokenGrantHandlerTestSuite) TestHandleGrant_IDTokenCarriesSessionID() {
+	suite.mockTokenValidator.
+		On("ValidateRefreshToken", mock.Anything, suite.validRefreshToken).
+		Return(&tokenservice.RefreshTokenClaims{
+			ClientID:  testRefreshTokenClientID,
+			Sub:       testRefreshTokenUserID,
+			Audiences: []string{testRefreshTokenAudience},
+			Scopes:    []string{"openid", "read"},
+			GrantType: "authorization_code",
+			Iat:       int64(suite.validClaims["iat"].(float64)),
+			SessionID: testSessionID,
+		}, nil)
+
+	suite.mockTokenBuilder.On("BuildAccessToken", mock.Anything, mock.Anything).Return(&model.TokenDTO{
+		Token:     "new.access.token",
+		IssuedAt:  time.Now().Unix(),
+		ExpiresIn: 3600,
+		Scopes:    []string{"openid", "read"},
+	}, nil)
+	suite.mockTokenBuilder.On("BuildIDToken", mock.Anything, mock.MatchedBy(
+		func(ctx *tokenservice.IDTokenBuildContext) bool {
+			return ctx.SessionID == testSessionID
+		})).Return(&model.TokenDTO{Token: "new.id.token"}, nil)
+
+	tokenReq := &model.TokenRequest{
+		GrantType:    string(providers.GrantTypeRefreshToken),
+		ClientID:     testRefreshTokenClientID,
+		RefreshToken: suite.validRefreshToken,
+		Scope:        "openid read",
+	}
+
+	response, err := suite.handler.HandleGrant(context.Background(), tokenReq, suite.oauthApp)
+
+	assert.Nil(suite.T(), err)
+	assert.Equal(suite.T(), "new.id.token", response.IDToken.Token)
+	assert.Equal(suite.T(), testSessionID, response.SessionID)
+	suite.mockTokenBuilder.AssertExpectations(suite.T())
+}
+
+func (suite *RefreshTokenGrantHandlerTestSuite) TestIssueRefreshToken_CarriesResponseSessionID() {
+	suite.mockTokenBuilder.On("BuildRefreshToken", mock.Anything, mock.MatchedBy(
+		func(ctx *tokenservice.RefreshTokenBuildContext) bool {
+			return ctx.SessionID == testSessionID && ctx.TokenFamilyID == "tfid-1"
+		})).Return(&model.TokenDTO{Token: "new.refresh.token"}, nil)
+
+	tokenResponse := &model.TokenResponseDTO{SessionID: testSessionID}
+
+	err := suite.handler.IssueRefreshToken(context.Background(), tokenResponse, suite.oauthApp,
+		testRefreshTokenUserID, []string{testRefreshTokenAudience},
+		"authorization_code", []string{"openid"}, nil, "", "", "tfid-1", 0)
+
+	assert.Nil(suite.T(), err)
+	assert.Equal(suite.T(), "new.refresh.token", tokenResponse.RefreshToken.Token)
+	suite.mockTokenBuilder.AssertExpectations(suite.T())
+}
+
+// A nil response is tolerated rather than panicking on the session id read.
+func (suite *RefreshTokenGrantHandlerTestSuite) TestIssueRefreshToken_NilResponseDoesNotPanic() {
+	suite.mockTokenBuilder.On("BuildRefreshToken", mock.Anything, mock.MatchedBy(
+		func(ctx *tokenservice.RefreshTokenBuildContext) bool { return ctx.SessionID == "" })).
+		Return(&model.TokenDTO{Token: "new.refresh.token"}, nil)
+
+	err := suite.handler.IssueRefreshToken(context.Background(), nil, suite.oauthApp,
+		testRefreshTokenUserID, []string{testRefreshTokenAudience},
+		"authorization_code", []string{"openid"}, nil, "", "", "tfid-1", 0)
+
+	assert.Nil(suite.T(), err)
+	suite.mockTokenBuilder.AssertExpectations(suite.T())
+}
