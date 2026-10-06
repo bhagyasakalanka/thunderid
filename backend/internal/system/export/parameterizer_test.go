@@ -2756,3 +2756,32 @@ func TestACredentialThatLooksLikeAReferenceIsNotExported(t *testing.T) {
 	assert.Contains(t, doc, "sec:CONNECTION_MY_CONNECTION_API_KEY")
 	assert.True(t, secrets["CONNECTION_MY_CONNECTION_API_KEY"])
 }
+
+// A map is written in key order, so exporting the same resource twice gives the same document and a
+// version captured from it is the same version.
+func TestAMapExportsInKeyOrder(t *testing.T) {
+	type claims struct {
+		Name        string              `yaml:"name"`
+		ScopeClaims map[string][]string `yaml:"scopeClaims"`
+	}
+	resource := &claims{Name: "My App", ScopeClaims: map[string][]string{
+		"profile": {"name"}, "email": {"email"}, "phone": {"phone_number"}, "group": {"groups"}, "address": {"address"},
+	}}
+
+	first, _, _, err := newParameterizer(templatingRules{}, ValueReferences).
+		ToParameterizedYAML(context.Background(), resource, "Application", "My App",
+			&declarativeresource.ResourceRules{})
+	require.NoError(t, err)
+	for range 20 {
+		again, _, _, err := newParameterizer(templatingRules{}, ValueReferences).
+			ToParameterizedYAML(context.Background(), resource, "Application", "My App",
+				&declarativeresource.ResourceRules{})
+		require.NoError(t, err)
+		require.Equal(t, first, again)
+	}
+	order := []int{}
+	for _, key := range []string{"address:", "email:", "group:", "phone:", "profile:"} {
+		order = append(order, strings.Index(first, key))
+	}
+	assert.IsIncreasing(t, order, "scope claims are not in key order")
+}

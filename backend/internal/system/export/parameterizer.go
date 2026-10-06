@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -965,18 +966,28 @@ func (p *parameterizer) handleJSONRawMessage(v reflect.Value) (*yaml.Node, error
 	}, nil
 }
 
-// handleMapNode converts a map reflect.Value to a YAML mapping node.
+// handleMapNode converts a map reflect.Value to a YAML mapping node. The entries are written in key
+// order, so the same resource always exports the same document.
 func (p *parameterizer) handleMapNode(
 	v reflect.Value, rules *resourceRules, currentPath string, resourceName string) (*yaml.Node, error) {
 	node := &yaml.Node{Kind: yaml.MappingNode}
+	type entry struct {
+		name  string
+		value reflect.Value
+	}
+	entries := make([]entry, 0, v.Len())
 	iter := v.MapRange()
 	for iter.Next() {
+		entries = append(entries, entry{name: fmt.Sprintf("%v", iter.Key().Interface()), value: iter.Value()})
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].name < entries[j].name })
+	for _, e := range entries {
 		keyNode := &yaml.Node{
 			Kind:  yaml.ScalarNode,
 			Tag:   "!!str",
-			Value: fmt.Sprintf("%v", iter.Key().Interface()),
+			Value: e.name,
 		}
-		valueNode, err := p.fieldToNode(iter.Value(), rules, currentPath, resourceName)
+		valueNode, err := p.fieldToNode(e.value, rules, currentPath, resourceName)
 		if err != nil {
 			return nil, err
 		}
