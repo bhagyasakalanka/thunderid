@@ -33,6 +33,15 @@ describe('TranslationFieldsView', () => {
     vi.clearAllMocks();
   });
 
+  describe('Read-only', () => {
+    it('disables the fields and hides adding a key', () => {
+      render(<TranslationFieldsView {...defaultProps} isCustomNamespace readOnly />);
+
+      expect(screen.getByDisplayValue('Save')).toBeDisabled();
+      expect(screen.queryByText(t('editor.addKey'))).not.toBeInTheDocument();
+    });
+  });
+
   describe('Rendering', () => {
     it('renders a text field for each translation key', () => {
       render(<TranslationFieldsView {...defaultProps} />);

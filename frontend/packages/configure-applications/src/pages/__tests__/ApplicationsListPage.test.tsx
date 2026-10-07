@@ -6,6 +6,16 @@ import {render, screen} from '@thunderid/test-utils';
 import {describe, it, expect, vi, beforeEach} from 'vitest';
 import ApplicationsListPage from '../ApplicationsListPage';
 
+const {environment} = vi.hoisted(() => ({environment: {readOnly: false}}));
+
+vi.mock('@thunderid/contexts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@thunderid/contexts')>();
+  return {
+    ...actual,
+    useEnvironment: () => ({...actual.useEnvironment(), readOnly: environment.readOnly}),
+  };
+});
+
 // Mock the ApplicationsList component
 vi.mock('../../components/ApplicationsList', () => ({
   default: () => <div data-testid="applications-list">Applications List Component</div>,
@@ -41,6 +51,16 @@ describe('ApplicationsListPage', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    environment.readOnly = false;
+  });
+
+  it('hides the Create Application button in a gateway view', () => {
+    environment.readOnly = true;
+
+    renderWithProviders();
+
+    expect(screen.queryByRole('button', {name: 'Create Application'})).not.toBeInTheDocument();
+    expect(screen.getByTestId('applications-list')).toBeInTheDocument();
   });
 
   describe('Rendering', () => {

@@ -1,7 +1,8 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {BuilderLayout, BuilderStaticPanel} from '@thunderid/components';
+import {BuilderLayout, BuilderStaticPanel, EnvironmentDeploymentNotice} from '@thunderid/components';
+import {useEnvironment} from '@thunderid/contexts';
 import {Box, Button, useColorScheme} from '@wso2/oxygen-ui';
 import {ArrowLeft, Save, Trash, Undo2} from '@wso2/oxygen-ui-icons-react';
 import {useCallback, useRef, useState, type JSX} from 'react';
@@ -20,6 +21,7 @@ export default function ThemeBuilderPage(): JSX.Element {
   const {mode, systemMode} = useColorScheme();
   const navigate = useNavigate();
   const routes = useDesignRoutes();
+  const {readOnly} = useEnvironment();
 
   const {
     themeId,
@@ -63,6 +65,7 @@ export default function ThemeBuilderPage(): JSX.Element {
       draftTheme={draftTheme}
       setDraftTheme={setDraftTheme}
       setIsDirty={setIsDirty}
+      readOnly={readOnly}
       activeSection={activeSection}
       setActiveSection={setActiveSection}
     />
@@ -82,6 +85,9 @@ export default function ThemeBuilderPage(): JSX.Element {
           },
         }}
       >
+        <Box sx={{px: 2, pt: 1, '&:empty': {display: 'none'}}}>
+          <EnvironmentDeploymentNotice resourceType="theme" resourceId={themeId ?? undefined} />
+        </Box>
         {/* ── Top bar: back button | toolbar (portal target) | action buttons ── */}
         <Box sx={{display: 'flex', alignItems: 'center', px: 2, py: 1, flexShrink: 0}}>
           <Button
@@ -106,22 +112,26 @@ export default function ThemeBuilderPage(): JSX.Element {
                 {t('themes.builder.actions.delete.label', 'Delete')}
               </Button>
             )}
-            <Button
-              variant="outlined"
-              disabled={!isDirty || isSaving}
-              startIcon={<Undo2 size={18} />}
-              onClick={resetDraft}
-            >
-              {t('themes.builder.actions.revert.label', 'Revert')}
-            </Button>
-            <Button
-              variant="contained"
-              disabled={!isDirty}
-              startIcon={<Save size={18} />}
-              onClick={() => saveHandlerRef.current()}
-            >
-              {t('themes.builder.actions.save.label', 'Save')}
-            </Button>
+            {!readOnly && (
+              <>
+                <Button
+                  variant="outlined"
+                  disabled={!isDirty || isSaving}
+                  startIcon={<Undo2 size={18} />}
+                  onClick={resetDraft}
+                >
+                  {t('themes.builder.actions.revert.label', 'Revert')}
+                </Button>
+                <Button
+                  variant="contained"
+                  disabled={!isDirty}
+                  startIcon={<Save size={18} />}
+                  onClick={() => saveHandlerRef.current()}
+                >
+                  {t('themes.builder.actions.save.label', 'Save')}
+                </Button>
+              </>
+            )}
           </Box>
         </Box>
 
@@ -149,12 +159,14 @@ export default function ThemeBuilderPage(): JSX.Element {
                     : t('themes.builder.config.label', 'Config')
                 }
               >
-                <ThemeConfigPanel
-                  themeId={themeId ?? null}
-                  activeSection={activeSection}
-                  saveHandlerRef={saveHandlerRef}
-                  onSavingChange={setIsSaving}
-                />
+                <fieldset disabled={readOnly} style={{display: 'contents'}}>
+                  <ThemeConfigPanel
+                    themeId={themeId ?? null}
+                    activeSection={activeSection}
+                    saveHandlerRef={saveHandlerRef}
+                    onSavingChange={setIsSaving}
+                  />
+                </fieldset>
               </BuilderStaticPanel>
             }
           >

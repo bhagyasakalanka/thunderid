@@ -24,6 +24,10 @@ interface EditCustomizationSettingsProps {
    * @param value - The new value for the field
    */
   onFieldChange: (field: keyof OrganizationUnit, value: unknown) => void;
+  /**
+   * Whether the settings are shown read-only
+   */
+  readOnly?: boolean;
 }
 
 /**
@@ -39,10 +43,16 @@ export default function EditCustomizationSettings({
   organizationUnit,
   editedOU,
   onFieldChange,
+  readOnly = false,
 }: EditCustomizationSettingsProps): JSX.Element {
   return (
     <Stack spacing={3}>
-      <AppearanceSection organizationUnit={organizationUnit} editedOU={editedOU} onFieldChange={onFieldChange} />
+      <AppearanceSection
+        organizationUnit={organizationUnit}
+        editedOU={editedOU}
+        onFieldChange={onFieldChange}
+        readOnly={readOnly}
+      />
     </Stack>
   );
 }

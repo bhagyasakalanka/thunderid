@@ -1,7 +1,13 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {PageLoadingAnimation, QueryErrorNotice} from '@thunderid/components';
+import {
+  EnvironmentDeploymentNotice,
+  PageLoadingAnimation,
+  QueryErrorNotice,
+  useEnvironmentResource,
+} from '@thunderid/components';
+import {useEnvironment} from '@thunderid/contexts';
 import {getErrorMessage} from '@thunderid/utils';
 import {Alert, Button, IconButton, PageContent, PageTitle, Stack, TextField, Typography} from '@wso2/oxygen-ui';
 import {ArrowLeft, Edit} from '@wso2/oxygen-ui-icons-react';
@@ -31,7 +37,9 @@ export default function VerifiablePresentationEditPage(): JSX.Element {
     [t],
   );
 
-  const {data, isLoading, error, refetch} = useGetVerifiablePresentation(vpId);
+  const {readOnly} = useEnvironment();
+  const live = useGetVerifiablePresentation(vpId);
+  const {data, isLoading, error, refetch, presence} = useEnvironmentResource('presentation_definition', vpId, live);
   const updateVP = useUpdateVerifiablePresentation();
   const [deleteOpen, setDeleteOpen] = useState<boolean>(false);
 
@@ -50,6 +58,10 @@ export default function VerifiablePresentationEditPage(): JSX.Element {
     setDescription(data.description ?? '');
     setInitializedId(data.id);
   }
+
+  // A gateway's copy is shown as it is: the header is not edited there, so it shows that copy's own name.
+  const shownName = readOnly ? (data?.name ?? '') : name;
+  const shownDescription = readOnly ? (data?.description ?? '') : description;
 
   const handleDeleted = (): void => {
     void navigate(listUrl);
@@ -100,6 +112,7 @@ export default function VerifiablePresentationEditPage(): JSX.Element {
 
     return (
       <PageContent>
+        <EnvironmentDeploymentNotice resourceType="presentation_definition" resourceId={vpId} />
         <Alert severity="warning" sx={{mb: 2}}>
           {t('verifiable-presentations:edit.notFound')}
         </Alert>
@@ -146,18 +159,20 @@ export default function VerifiablePresentationEditPage(): JSX.Element {
               />
             ) : (
               <>
-                <Typography variant="h3">{name || data.handle}</Typography>
-                <IconButton
-                  size="small"
-                  aria-label={t('verifiable-presentations:edit.name.editButton')}
-                  onClick={() => {
-                    setTempName(name);
-                    setIsEditingName(true);
-                  }}
-                  sx={{opacity: 0.6, '&:hover': {opacity: 1}}}
-                >
-                  <Edit size={16} />
-                </IconButton>
+                <Typography variant="h3">{shownName || data.handle}</Typography>
+                {!readOnly && (
+                  <IconButton
+                    size="small"
+                    aria-label={t('verifiable-presentations:edit.name.editButton')}
+                    onClick={() => {
+                      setTempName(name);
+                      setIsEditingName(true);
+                    }}
+                    sx={{opacity: 0.6, '&:hover': {opacity: 1}}}
+                  >
+                    <Edit size={16} />
+                  </IconButton>
+                )}
               </>
             )}
           </Stack>
@@ -203,35 +218,41 @@ export default function VerifiablePresentationEditPage(): JSX.Element {
             ) : (
               <>
                 <Typography variant="body2" color="text.secondary">
-                  {description || t('verifiable-presentations:edit.description.empty')}
+                  {shownDescription || t('verifiable-presentations:edit.description.empty')}
                 </Typography>
-                <IconButton
-                  size="small"
-                  aria-label={t('verifiable-presentations:edit.description.editButton')}
-                  onClick={() => {
-                    setTempDescription(description);
-                    setIsEditingDescription(true);
-                  }}
-                  sx={{opacity: 0.6, '&:hover': {opacity: 1}, mt: -0.5}}
-                >
-                  <Edit size={14} />
-                </IconButton>
+                {!readOnly && (
+                  <IconButton
+                    size="small"
+                    aria-label={t('verifiable-presentations:edit.description.editButton')}
+                    onClick={() => {
+                      setTempDescription(description);
+                      setIsEditingDescription(true);
+                    }}
+                    sx={{opacity: 0.6, '&:hover': {opacity: 1}, mt: -0.5}}
+                  >
+                    <Edit size={14} />
+                  </IconButton>
+                )}
               </>
             )}
           </Stack>
         </PageTitle.SubHeader>
       </PageTitle>
 
+      <EnvironmentDeploymentNotice resourceType="presentation_definition" resourceId={vpId} />
+
       <VerifiablePresentationForm
+        key={presence.source}
         initial={data}
-        name={name}
-        description={description}
+        name={shownName}
+        description={shownDescription}
+        readOnly={readOnly}
         onNameChange={setName}
         onDescriptionChange={setDescription}
         submitting={updateVP.isPending}
         submitLabel={t('common:actions.save')}
         onSubmit={handleSubmit}
-        onDelete={(): void => setDeleteOpen(true)}
+        onDelete={readOnly ? undefined : (): void => setDeleteOpen(true)}
         error={
           updateVP.error
             ? getErrorMessage(updateVP.error, tForErrors, 'update.error', 'Failed to update presentation definition')

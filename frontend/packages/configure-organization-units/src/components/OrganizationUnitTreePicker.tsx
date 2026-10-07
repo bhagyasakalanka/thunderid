@@ -16,11 +16,13 @@ import useGetOrganizationUnit from '../api/useGetOrganizationUnit';
 import useGetOrganizationUnits from '../api/useGetOrganizationUnits';
 import OrganizationUnitQueryKeys from '../constants/organization-unit-query-keys';
 import OrganizationUnitTreeConstants from '../constants/organization-unit-tree-constants';
+import useAppliedOrganizationUnits from '../hooks/useAppliedOrganizationUnits';
 import type {OrganizationUnitTreeItem} from '../models/organization-unit-tree';
 import type {OrganizationUnitListResponse} from '../models/responses';
 import appendTreeItemChildren from '../utils/appendTreeItemChildren';
 import buildItemMap from '../utils/buildItemMap';
 import buildTreeItems from '../utils/buildTreeItems';
+import toOrganizationUnitPage from '../utils/toOrganizationUnitPage';
 import updateTreeItemChildren from '../utils/updateTreeItemChildren';
 
 function PickerLoadingIcon(): JSX.Element {
@@ -235,6 +237,11 @@ interface OrganizationUnitTreePickerProps {
    * applies in global-root mode (i.e. when `rootOuId` isn't set).
    */
   autoSelectFirst?: boolean;
+  /**
+   * Lists, in read-only mode, the organization units the gateway shown runs instead of the live
+   * ones, for a tree that shows units rather than picks one.
+   */
+  showApplied?: boolean;
 }
 
 export default function OrganizationUnitTreePicker({
@@ -249,6 +256,7 @@ export default function OrganizationUnitTreePicker({
   maxHeight = 300,
   spacious = false,
   autoSelectFirst = false,
+  showApplied = false,
 }: OrganizationUnitTreePickerProps): JSX.Element {
   const theme = useTheme();
   const {t} = useTranslation();
@@ -256,30 +264,50 @@ export default function OrganizationUnitTreePicker({
   const {http} = useThunderID();
   const {getServerUrl} = useConfig();
   const queryClient = useQueryClient();
+  const applied = useAppliedOrganizationUnits();
+  const appliedRead = showApplied ? applied : undefined;
+  const appliedUnits = appliedRead?.data;
+  const liveRootList = useGetOrganizationUnits(undefined, !rootOuId);
+  const appliedRootList = useMemo(
+    () =>
+      appliedUnits &&
+      toOrganizationUnitPage(appliedUnits, null, {limit: OrganizationUnitTreeConstants.PAGE_SIZE, offset: 0}),
+    [appliedUnits],
+  );
   const {
     data,
     isLoading,
     error: rootListError,
     refetch: refetchRootList,
-  } = useGetOrganizationUnits(undefined, !rootOuId);
+  } = appliedRead ? {...appliedRead, data: appliedRootList} : liveRootList;
 
   useEffect((): void => {
     if (!autoSelectFirst || rootOuId || value) return;
     const firstRootOuId = data?.organizationUnits[0]?.id;
     if (firstRootOuId) onChange(firstRootOuId);
   }, [autoSelectFirst, rootOuId, value, data, onChange]);
+  const liveRootOu = useGetOrganizationUnit(rootOuId, !hideRoot);
+  const appliedRootOu = useMemo(() => appliedUnits?.find((unit) => unit.id === rootOuId), [appliedUnits, rootOuId]);
   const {
     data: rootOuData,
     isLoading: isRootOuLoading,
     error: rootOuError,
     refetch: refetchRootOu,
-  } = useGetOrganizationUnit(rootOuId, !hideRoot);
+  } = appliedRead ? {...appliedRead, data: appliedRootOu} : liveRootOu;
+  const liveRootOuChildren = useGetChildOrganizationUnits(rootOuId);
+  const appliedRootOuChildren = useMemo(
+    () =>
+      appliedUnits && rootOuId
+        ? toOrganizationUnitPage(appliedUnits, rootOuId, {limit: OrganizationUnitTreeConstants.PAGE_SIZE, offset: 0})
+        : undefined,
+    [appliedUnits, rootOuId],
+  );
   const {
     data: rootOuChildrenData,
     isLoading: isRootOuChildrenLoading,
     error: rootOuChildrenError,
     refetch: refetchRootOuChildren,
-  } = useGetChildOrganizationUnits(rootOuId);
+  } = appliedRead ? {...appliedRead, data: appliedRootOuChildren} : liveRootOuChildren;
 
   const [treeItems, setTreeItems] = useState<OrganizationUnitTreeItem[]>([]);
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
@@ -296,7 +324,8 @@ export default function OrganizationUnitTreePicker({
 
   const itemMap = useMemo(() => buildItemMap(treeItems), [treeItems]);
 
-  // Reset all tree state when rootOuId changes so stale data is never shown.
+  // Reset all tree state when rootOuId, or where the units come from, changes so stale data is never shown.
+  const showsApplied = Boolean(appliedRead);
   useEffect(() => {
     setTreeItems([]);
     setExpandedItems([]);
@@ -306,7 +335,7 @@ export default function OrganizationUnitTreePicker({
     setChildOffsets(new Map());
     setRootOffset(0);
     setRootLoadMoreLoading(false);
-  }, [rootOuId]);
+  }, [rootOuId, showsApplied]);
 
   // Build root tree when data arrives (global root mode)
   useEffect(() => {
@@ -397,20 +426,22 @@ export default function OrganizationUnitTreePicker({
 
   const fetchChildPage = useCallback(
     async (parentId: string, offset: number): Promise<OrganizationUnitListResponse> =>
-      queryClient.fetchQuery<OrganizationUnitListResponse>({
-        queryKey: [
-          OrganizationUnitQueryKeys.CHILD_ORGANIZATION_UNITS,
-          parentId,
-          {limit: OrganizationUnitTreeConstants.PAGE_SIZE, offset},
-        ],
-        queryFn: async (): Promise<OrganizationUnitListResponse> =>
-          fetchChildOrganizationUnits(http, getServerUrl(), parentId, {
-            limit: OrganizationUnitTreeConstants.PAGE_SIZE,
-            offset,
+      appliedUnits
+        ? toOrganizationUnitPage(appliedUnits, parentId, {limit: OrganizationUnitTreeConstants.PAGE_SIZE, offset})
+        : queryClient.fetchQuery<OrganizationUnitListResponse>({
+            queryKey: [
+              OrganizationUnitQueryKeys.CHILD_ORGANIZATION_UNITS,
+              parentId,
+              {limit: OrganizationUnitTreeConstants.PAGE_SIZE, offset},
+            ],
+            queryFn: async (): Promise<OrganizationUnitListResponse> =>
+              fetchChildOrganizationUnits(http, getServerUrl(), parentId, {
+                limit: OrganizationUnitTreeConstants.PAGE_SIZE,
+                offset,
+              }),
+            staleTime: 0,
           }),
-        staleTime: 0,
-      }),
-    [getServerUrl, queryClient, http],
+    [appliedUnits, getServerUrl, queryClient, http],
   );
 
   const buildChildItems = useCallback(
@@ -479,18 +510,23 @@ export default function OrganizationUnitTreePicker({
     setRootLoadMoreLoading(true);
 
     try {
-      const result = await queryClient.fetchQuery<OrganizationUnitListResponse>({
-        queryKey: [
-          OrganizationUnitQueryKeys.ORGANIZATION_UNITS,
-          {limit: OrganizationUnitTreeConstants.PAGE_SIZE, offset: rootOffset},
-        ],
-        queryFn: async (): Promise<OrganizationUnitListResponse> =>
-          fetchOrganizationUnits(http, getServerUrl(), {
+      const result = appliedUnits
+        ? toOrganizationUnitPage(appliedUnits, null, {
             limit: OrganizationUnitTreeConstants.PAGE_SIZE,
             offset: rootOffset,
-          }),
-        staleTime: 0,
-      });
+          })
+        : await queryClient.fetchQuery<OrganizationUnitListResponse>({
+            queryKey: [
+              OrganizationUnitQueryKeys.ORGANIZATION_UNITS,
+              {limit: OrganizationUnitTreeConstants.PAGE_SIZE, offset: rootOffset},
+            ],
+            queryFn: async (): Promise<OrganizationUnitListResponse> =>
+              fetchOrganizationUnits(http, getServerUrl(), {
+                limit: OrganizationUnitTreeConstants.PAGE_SIZE,
+                offset: rootOffset,
+              }),
+            staleTime: 0,
+          });
 
       const newItems = buildTreeItems(result.organizationUnits);
       const loadedSoFar = rootOffset + result.organizationUnits.length;
@@ -515,7 +551,7 @@ export default function OrganizationUnitTreePicker({
     } finally {
       setRootLoadMoreLoading(false);
     }
-  }, [rootOffset, getServerUrl, queryClient, http, logger]);
+  }, [appliedUnits, rootOffset, getServerUrl, queryClient, http, logger]);
 
   const handleLoadMore = useCallback(
     async (parentId: string): Promise<void> => {

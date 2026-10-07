@@ -3,7 +3,7 @@
 
 import {useQueryClient} from '@tanstack/react-query';
 import {PageLoadingAnimation, QueryErrorNotice, ResourceAvatar} from '@thunderid/components';
-import {useConfig} from '@thunderid/contexts';
+import {useConfig, useEnvironment} from '@thunderid/contexts';
 import {useLogger} from '@thunderid/logger/react';
 import {useThunderID} from '@thunderid/react';
 import {Box, IconButton, Typography, CircularProgress, TreeView, useTheme, Avatar, Tooltip} from '@wso2/oxygen-ui';
@@ -19,6 +19,7 @@ import useGetOrganizationUnits from '../api/useGetOrganizationUnits';
 import OrganizationUnitQueryKeys from '../constants/organization-unit-query-keys';
 import OrganizationUnitTreeConstants from '../constants/organization-unit-tree-constants';
 import useOrganizationUnit from '../contexts/useOrganizationUnit';
+import useAppliedOrganizationUnits from '../hooks/useAppliedOrganizationUnits';
 import useOrganizationUnitRoutes from '../hooks/useOrganizationUnitRoutes';
 import type {OrganizationUnit} from '../models/organization-unit';
 import type {OrganizationUnitTreeItem} from '../models/organization-unit-tree';
@@ -27,6 +28,7 @@ import appendTreeItemChildren from '../utils/appendTreeItemChildren';
 import buildItemMap from '../utils/buildItemMap';
 import buildTreeItems from '../utils/buildTreeItems';
 import findTreeItem from '../utils/findTreeItem';
+import toOrganizationUnitPage from '../utils/toOrganizationUnitPage';
 import updateTreeItemChildren from '../utils/updateTreeItemChildren';
 
 function TreeViewLoadingIcon(): JSX.Element {
@@ -40,6 +42,13 @@ function buildAddChildItem(parentId: string, parentName: string, parentHandle: s
     handle: parentHandle,
     isPlaceholder: true,
   };
+}
+
+/** The tree without its "add child" rows, for a view nothing is created in. */
+function withoutAddChildItems(items: OrganizationUnitTreeItem[]): OrganizationUnitTreeItem[] {
+  return items
+    .filter((item) => !item.id.endsWith(OrganizationUnitTreeConstants.ADD_CHILD_SUFFIX))
+    .map((item) => (item.children ? {...item, children: withoutAddChildItems(item.children)} : item));
 }
 
 interface CustomTreeItemProps extends TreeView.TreeItemProps {
@@ -56,6 +65,8 @@ interface CustomTreeItemProps extends TreeView.TreeItemProps {
   loadingItems?: Set<string>;
   loadMoreLoadingItems?: Set<string>;
   itemMap?: Map<string, OrganizationUnitTreeItem>;
+  /** Whether the tree is shown read-only: a gateway is selected, and an item is only opened. */
+  readOnly?: boolean;
 }
 
 function CustomTreeItem(allProps: CustomTreeItemProps): JSX.Element {
@@ -71,6 +82,7 @@ function CustomTreeItem(allProps: CustomTreeItemProps): JSX.Element {
     loadingItems: loadingItemsProp,
     loadMoreLoadingItems: loadMoreLoadingItemsProp,
     itemMap: itemMapProp,
+    readOnly = false,
     itemId,
     label,
     ...restProps
@@ -292,7 +304,20 @@ function CustomTreeItem(allProps: CustomTreeItemProps): JSX.Element {
               </Typography>
             )}
           </Box>
-          {itemData?.isReadOnly ? (
+          {readOnly ? (
+            <Tooltip title={t('common:actions.view', 'View')}>
+              <IconButton
+                size="small"
+                aria-label={t('common:actions.view', 'View')}
+                onClick={(e: MouseEvent<HTMLButtonElement>) => {
+                  e.stopPropagation();
+                  onEdit?.(e as unknown as MouseEvent<HTMLElement>, {id: itemId, name: labelStr});
+                }}
+              >
+                <Eye size={16} />
+              </IconButton>
+            </Tooltip>
+          ) : itemData?.isReadOnly ? (
             <Tooltip title={t('common:status.readOnly', 'Read Only')}>
               <IconButton size="small" disableRipple sx={{cursor: 'default'}}>
                 <Eye size={16} />
@@ -358,9 +383,21 @@ export default function OrganizationUnitsTreeView(): JSX.Element {
   const {http} = useThunderID();
   const {getServerUrl} = useConfig();
   const queryClient = useQueryClient();
-  const {data, isLoading, error, refetch} = useGetOrganizationUnits();
+  const liveRoots = useGetOrganizationUnits();
+  // In read-only mode the tree is the gateway's units, paged here a level at a time.
+  const applied = useAppliedOrganizationUnits();
+  const appliedUnits = applied?.data;
+  const appliedRoots = useMemo(
+    () =>
+      appliedUnits &&
+      toOrganizationUnitPage(appliedUnits, null, {limit: OrganizationUnitTreeConstants.PAGE_SIZE, offset: 0}),
+    [appliedUnits],
+  );
+  const {data, isLoading, error, refetch} = applied ? {...applied, data: appliedRoots} : liveRoots;
   const {treeItems, setTreeItems, expandedItems, setExpandedItems, loadedItems, setLoadedItems, resetTreeState} =
     useOrganizationUnit();
+  const {readOnly} = useEnvironment();
+  const shownTreeItems = useMemo(() => (readOnly ? withoutAddChildItems(treeItems) : treeItems), [readOnly, treeItems]);
 
   const itemMap = useMemo(() => buildItemMap(treeItems), [treeItems]);
 
@@ -384,20 +421,22 @@ export default function OrganizationUnitsTreeView(): JSX.Element {
 
   const fetchChildPage = useCallback(
     async (parentId: string, offset: number): Promise<OrganizationUnitListResponse> =>
-      queryClient.fetchQuery<OrganizationUnitListResponse>({
-        queryKey: [
-          OrganizationUnitQueryKeys.CHILD_ORGANIZATION_UNITS,
-          parentId,
-          {limit: OrganizationUnitTreeConstants.PAGE_SIZE, offset},
-        ],
-        queryFn: async (): Promise<OrganizationUnitListResponse> =>
-          fetchChildOrganizationUnits(http, getServerUrl(), parentId, {
-            limit: OrganizationUnitTreeConstants.PAGE_SIZE,
-            offset,
+      appliedUnits
+        ? toOrganizationUnitPage(appliedUnits, parentId, {limit: OrganizationUnitTreeConstants.PAGE_SIZE, offset})
+        : queryClient.fetchQuery<OrganizationUnitListResponse>({
+            queryKey: [
+              OrganizationUnitQueryKeys.CHILD_ORGANIZATION_UNITS,
+              parentId,
+              {limit: OrganizationUnitTreeConstants.PAGE_SIZE, offset},
+            ],
+            queryFn: async (): Promise<OrganizationUnitListResponse> =>
+              fetchChildOrganizationUnits(http, getServerUrl(), parentId, {
+                limit: OrganizationUnitTreeConstants.PAGE_SIZE,
+                offset,
+              }),
+            staleTime: 0,
           }),
-        staleTime: 0,
-      }),
-    [getServerUrl, queryClient, http],
+    [appliedUnits, getServerUrl, queryClient, http],
   );
 
   // Fetch children for a single parent and return the built tree items.
@@ -470,18 +509,23 @@ export default function OrganizationUnitsTreeView(): JSX.Element {
     setRootLoadMoreLoading(true);
 
     try {
-      const result = await queryClient.fetchQuery<OrganizationUnitListResponse>({
-        queryKey: [
-          OrganizationUnitQueryKeys.ORGANIZATION_UNITS,
-          {limit: OrganizationUnitTreeConstants.PAGE_SIZE, offset: rootOffset},
-        ],
-        queryFn: async (): Promise<OrganizationUnitListResponse> =>
-          fetchOrganizationUnits(http, getServerUrl(), {
+      const result = appliedUnits
+        ? toOrganizationUnitPage(appliedUnits, null, {
             limit: OrganizationUnitTreeConstants.PAGE_SIZE,
             offset: rootOffset,
-          }),
-        staleTime: 0,
-      });
+          })
+        : await queryClient.fetchQuery<OrganizationUnitListResponse>({
+            queryKey: [
+              OrganizationUnitQueryKeys.ORGANIZATION_UNITS,
+              {limit: OrganizationUnitTreeConstants.PAGE_SIZE, offset: rootOffset},
+            ],
+            queryFn: async (): Promise<OrganizationUnitListResponse> =>
+              fetchOrganizationUnits(http, getServerUrl(), {
+                limit: OrganizationUnitTreeConstants.PAGE_SIZE,
+                offset: rootOffset,
+              }),
+            staleTime: 0,
+          });
 
       const newItems = buildTreeItems(result.organizationUnits);
       const loadedSoFar = rootOffset + result.organizationUnits.length;
@@ -506,7 +550,7 @@ export default function OrganizationUnitsTreeView(): JSX.Element {
     } finally {
       setRootLoadMoreLoading(false);
     }
-  }, [rootOffset, getServerUrl, queryClient, http, setTreeItems, logger]);
+  }, [appliedUnits, rootOffset, getServerUrl, queryClient, http, setTreeItems, logger]);
 
   const handleLoadMore = useCallback(
     async (parentId: string): Promise<void> => {
@@ -636,7 +680,13 @@ export default function OrganizationUnitsTreeView(): JSX.Element {
   // rebuildIdRef guards against stale rebuilds: if a newer rebuild starts while an
   // older one is in-flight, the older result is silently ignored.
   useEffect(() => {
-    if (!data?.organizationUnits || data.organizationUnits.length === 0) return;
+    if (!data?.organizationUnits) return;
+
+    // A tree built from other units, such as the live ones before read-only mode, is not kept.
+    if (data.organizationUnits.length === 0) {
+      if (treeItems.length > 0) setTreeItems([]);
+      return;
+    }
 
     // Skip if tree is already built from this exact data reference
     if (treeItems.length > 0 && builtFromDataRef.current === data) return;
@@ -804,6 +854,75 @@ export default function OrganizationUnitsTreeView(): JSX.Element {
           <Typography variant="body2" color="text.secondary" sx={{mb: 2}}>
             {t('organizationUnits:listing.treeView.empty')}
           </Typography>
+          {!readOnly && (
+            <Box
+              role="button"
+              tabIndex={0}
+              onClick={handleAddRootClick}
+              onKeyDown={(e: KeyboardEvent) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  handleAddRootClick();
+                }
+              }}
+              sx={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 1.5,
+                border: '1px dashed',
+                borderColor: theme.vars?.palette.primary.main,
+                borderRadius: 1,
+                py: 1,
+                px: 2,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease-in-out',
+                '&:hover': {
+                  backgroundColor: theme.vars?.palette.primary.main,
+                  '& .add-root-avatar': {
+                    backgroundColor: theme.vars?.palette.primary.contrastText,
+                    color: theme.vars?.palette.primary.main,
+                  },
+                  '& .add-root-text': {
+                    color: theme.vars?.palette.primary.contrastText,
+                  },
+                },
+              }}
+            >
+              <Avatar
+                className="add-root-avatar"
+                sx={{
+                  p: 0.5,
+                  backgroundColor: theme.vars?.palette.primary.main,
+                  color: theme.vars?.palette.primary.contrastText,
+                  width: 32,
+                  height: 32,
+                  fontSize: '0.875rem',
+                  transition: 'all 0.15s ease-in-out',
+                }}
+              >
+                <Plus size={14} />
+              </Avatar>
+              <Typography
+                className="add-root-text"
+                variant="body2"
+                sx={{fontWeight: 500, transition: 'color 0.15s ease-in-out'}}
+              >
+                {t('organizationUnits:listing.addRootOrganizationUnit')}
+              </Typography>
+            </Box>
+          )}
+        </Box>
+      );
+    }
+
+    // Still loading tree items
+    return <PageLoadingAnimation />;
+  }
+
+  return (
+    <>
+      <Box sx={{width: '100%', minHeight: 400}}>
+        {!readOnly && (
           <Box
             role="button"
             tabIndex={0}
@@ -815,14 +934,16 @@ export default function OrganizationUnitsTreeView(): JSX.Element {
               }
             }}
             sx={{
-              display: 'inline-flex',
+              display: 'flex',
               alignItems: 'center',
               gap: 1.5,
               border: '1px dashed',
               borderColor: theme.vars?.palette.primary.main,
               borderRadius: 1,
               py: 1,
-              px: 2,
+              pl: 5,
+              pr: 1.5,
+              mb: 0.75,
               cursor: 'pointer',
               transition: 'all 0.15s ease-in-out',
               '&:hover': {
@@ -859,76 +980,9 @@ export default function OrganizationUnitsTreeView(): JSX.Element {
               {t('organizationUnits:listing.addRootOrganizationUnit')}
             </Typography>
           </Box>
-        </Box>
-      );
-    }
-
-    // Still loading tree items
-    return <PageLoadingAnimation />;
-  }
-
-  return (
-    <>
-      <Box sx={{width: '100%', minHeight: 400}}>
-        <Box
-          role="button"
-          tabIndex={0}
-          onClick={handleAddRootClick}
-          onKeyDown={(e: KeyboardEvent) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              handleAddRootClick();
-            }
-          }}
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 1.5,
-            border: '1px dashed',
-            borderColor: theme.vars?.palette.primary.main,
-            borderRadius: 1,
-            py: 1,
-            pl: 5,
-            pr: 1.5,
-            mb: 0.75,
-            cursor: 'pointer',
-            transition: 'all 0.15s ease-in-out',
-            '&:hover': {
-              backgroundColor: theme.vars?.palette.primary.main,
-              '& .add-root-avatar': {
-                backgroundColor: theme.vars?.palette.primary.contrastText,
-                color: theme.vars?.palette.primary.main,
-              },
-              '& .add-root-text': {
-                color: theme.vars?.palette.primary.contrastText,
-              },
-            },
-          }}
-        >
-          <Avatar
-            className="add-root-avatar"
-            sx={{
-              p: 0.5,
-              backgroundColor: theme.vars?.palette.primary.main,
-              color: theme.vars?.palette.primary.contrastText,
-              width: 32,
-              height: 32,
-              fontSize: '0.875rem',
-              transition: 'all 0.15s ease-in-out',
-            }}
-          >
-            <Plus size={14} />
-          </Avatar>
-          <Typography
-            className="add-root-text"
-            variant="body2"
-            sx={{fontWeight: 500, transition: 'color 0.15s ease-in-out'}}
-          >
-            {t('organizationUnits:listing.addRootOrganizationUnit')}
-          </Typography>
-        </Box>
+        )}
         <TreeView.RichTreeView
-          items={treeItems}
+          items={shownTreeItems}
           expandedItems={expandedItems}
           onExpandedItemsChange={handleExpandedItemsChange}
           onItemExpansionToggle={handleItemExpansionToggle}
@@ -947,6 +1001,7 @@ export default function OrganizationUnitsTreeView(): JSX.Element {
               loadingItems,
               loadMoreLoadingItems: combinedLoadMoreLoadingItems,
               itemMap,
+              readOnly,
             } as Record<string, unknown>,
           }}
           getItemLabel={(item: OrganizationUnitTreeItem) => item.label}

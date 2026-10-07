@@ -1,6 +1,7 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
+import {useEnvironmentPresence, useEnvironmentResource} from '@thunderid/components';
 import {useToast} from '@thunderid/contexts';
 import {useLogger} from '@thunderid/logger/react';
 import {
@@ -68,8 +69,23 @@ export function ResourceNode({
 
   const deleteResource = useDeleteResource(resourceServerId);
 
-  const {data: childResources} = useGetResources(resourceServerId, node.id);
-  const {data: resourceActions} = useGetResourceActions(resourceServerId, node.id, expanded);
+  // In read-only mode the children and actions are read from what the gateway applied, never live.
+  const presence = useEnvironmentPresence('resource_server', resourceServerId);
+  const liveReadable = presence.source === 'live' && !presence.isLoading;
+  const liveChildren = useGetResources(resourceServerId, node.id, liveReadable);
+  const {data: childResources} = useEnvironmentResource(
+    'resource_server',
+    resourceServerId,
+    liveChildren,
+    `resources/${node.id}/resources`,
+  );
+  const liveActions = useGetResourceActions(resourceServerId, node.id, expanded && liveReadable);
+  const {data: resourceActions} = useEnvironmentResource(
+    'resource_server',
+    resourceServerId,
+    liveActions,
+    `resources/${node.id}/actions`,
+  );
 
   const isSelected = selectedNodeId === node.id;
   const children = childResources?.resources ?? [];

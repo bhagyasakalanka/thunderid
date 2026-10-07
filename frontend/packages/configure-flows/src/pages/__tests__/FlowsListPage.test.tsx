@@ -48,12 +48,15 @@ vi.mock('../../components/FlowsList', () => ({
   default: () => <div data-testid="flows-list">FlowsList Component</div>,
 }));
 
+const mockEnvironment = vi.hoisted(() => ({readOnly: false}));
+
 // Mock useConfig (consumed by ExternalLink in the page header)
 vi.mock('@thunderid/contexts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@thunderid/contexts')>();
   return {
     ...actual,
     useConfig: () => ({getDocumentationLink: () => undefined}),
+    useEnvironment: () => ({readOnly: mockEnvironment.readOnly}),
   };
 });
 
@@ -91,6 +94,19 @@ describe('FlowsListPage', () => {
       );
 
       expect(screen.getByRole('button', {name: /add flow/i})).toBeInTheDocument();
+    });
+
+    it('should hide the Add Flow button in a gateway view', () => {
+      mockEnvironment.readOnly = true;
+      render(
+        <MemoryRouter>
+          <FlowsListPage />
+        </MemoryRouter>,
+      );
+
+      expect(screen.queryByRole('button', {name: /add flow/i})).not.toBeInTheDocument();
+      expect(screen.getByTestId('flows-list')).toBeInTheDocument();
+      mockEnvironment.readOnly = false;
     });
 
     it('should render FlowsList component', () => {

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {ExternalLink} from '@thunderid/components';
+import {useEnvironment} from '@thunderid/contexts';
 import {useLogger} from '@thunderid/logger/react';
 import {Button, PageContent, PageTitle, Stack} from '@wso2/oxygen-ui';
 import {Plus} from '@wso2/oxygen-ui-icons-react';
@@ -16,6 +17,7 @@ export default function ResourceServersListPage(): JSX.Element {
   const routes = useResourceServerRoutes();
   const {t} = useTranslation();
   const logger = useLogger('ResourceServersListPage');
+  const {readOnly} = useEnvironment();
 
   return (
     <PageContent>
@@ -28,23 +30,25 @@ export default function ResourceServersListPage(): JSX.Element {
           )}{' '}
           <ExternalLink docKey="resourceServers" />
         </PageTitle.SubHeader>
-        <PageTitle.Actions>
-          <Stack direction="row" spacing={2}>
-            <Button
-              variant="contained"
-              startIcon={<Plus size={18} />}
-              onClick={() => {
-                (async (): Promise<void> => {
-                  await navigate(routes.create());
-                })().catch((err: unknown) => {
-                  logger.error('Failed to navigate to create resource server page', {error: err});
-                });
-              }}
-            >
-              {t('resourceServers:listing.addResourceServer', 'Add resource server')}
-            </Button>
-          </Stack>
-        </PageTitle.Actions>
+        {!readOnly && (
+          <PageTitle.Actions>
+            <Stack direction="row" spacing={2}>
+              <Button
+                variant="contained"
+                startIcon={<Plus size={18} />}
+                onClick={() => {
+                  (async (): Promise<void> => {
+                    await navigate(routes.create());
+                  })().catch((err: unknown) => {
+                    logger.error('Failed to navigate to create resource server page', {error: err});
+                  });
+                }}
+              >
+                {t('resourceServers:listing.addResourceServer', 'Add resource server')}
+              </Button>
+            </Stack>
+          </PageTitle.Actions>
+        )}
       </PageTitle>
 
       <ResourceServersList />

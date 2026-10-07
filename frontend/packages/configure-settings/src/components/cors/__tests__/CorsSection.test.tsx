@@ -22,6 +22,28 @@ vi.mock('../../../api/useUpdateCorsConfig', () => ({
   default: () => ({mutate: mockMutate, isPending: false, reset: mockReset, ...updateState}),
 }));
 
+// Read-only mode makes the section read-only and shows what the gateway applied, or nothing when it
+// applied no cors section.
+let mockReadOnly = false;
+let mockApplied: CorsConfigResponse | undefined;
+let mockMissing = false;
+const mockUseEnvironmentResource = vi.fn();
+vi.mock('@thunderid/contexts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@thunderid/contexts')>()),
+  useEnvironment: () => ({readOnly: mockReadOnly}),
+}));
+vi.mock('@thunderid/components', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@thunderid/components')>()),
+  useEnvironmentResource: (resourceType: string, resourceId: string, live: Record<string, unknown>) => {
+    mockUseEnvironmentResource(resourceType, resourceId);
+    if (mockMissing) {
+      return {...live, data: undefined, isLoading: false, error: null, presence: {source: 'missing'}};
+    }
+    return mockApplied ? {...live, data: mockApplied, presence: {source: 'applied'}} : live;
+  },
+  EnvironmentDeploymentNotice: () => (mockReadOnly ? <div data-testid="environment-notice" /> : null),
+}));
+
 const {default: CorsSection} = await import('../CorsSection');
 
 function makeData(overrides?: Partial<CorsConfigResponse>): CorsConfigResponse {
@@ -40,6 +62,9 @@ describe('CorsSection', () => {
     mockReset.mockReset();
     mockRefetch.mockReset();
     updateState = {isError: false, error: null};
+    mockReadOnly = false;
+    mockApplied = undefined;
+    mockMissing = false;
   });
 
   afterEach(() => {
@@ -290,5 +315,46 @@ describe('CorsSection', () => {
     const saveButton = await screen.findByRole('button', {name: 'Save changes'});
     expect(saveButton).toBeDisabled();
     expect(mockMutate).not.toHaveBeenCalled();
+  });
+
+  describe('in read-only mode', () => {
+    it('reads the cors section of the configuration the gateway applied', () => {
+      mockReadOnly = true;
+      mockApplied = makeData({
+        readOnly: {allowedOrigins: []},
+        writable: {allowedOrigins: ['https://applied.acme.com']},
+      });
+      mockUseGetCorsConfig.mockReturnValue({data: makeData(), isLoading: false, error: null});
+      renderWithProviders(<CorsSection />);
+
+      expect(mockUseEnvironmentResource).toHaveBeenCalledWith('server_config', 'cors');
+      expect(screen.getByTestId('environment-notice')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('https://applied.acme.com')).toHaveAttribute('readonly');
+      expect(screen.queryByDisplayValue('https://app.acme.com')).toBeNull();
+    });
+
+    it('offers no way to add or remove an origin', () => {
+      mockReadOnly = true;
+      mockUseGetCorsConfig.mockReturnValue({data: makeData(), isLoading: false, error: null});
+      renderWithProviders(<CorsSection />);
+
+      expect(screen.getByDisplayValue('https://app.acme.com')).toHaveAttribute('readonly');
+      expect(screen.queryByRole('button', {name: 'Add origin'})).toBeNull();
+      expect(screen.queryByRole('button', {name: 'Remove origin'})).toBeNull();
+      expect(screen.queryByRole('button', {name: 'Save changes'})).toBeNull();
+    });
+
+    it('shows an empty state, with the deployment notice, when the gateway applied no cors section', () => {
+      mockReadOnly = true;
+      mockMissing = true;
+      mockUseGetCorsConfig.mockReturnValue({data: makeData(), isLoading: false, error: null});
+      renderWithProviders(<CorsSection />);
+
+      expect(screen.getByTestId('cors-empty')).toHaveTextContent('No allowed origins.');
+      expect(screen.getByTestId('environment-notice')).toBeInTheDocument();
+      expect(screen.queryByDisplayValue('https://app.acme.com')).toBeNull();
+      expect(screen.queryByDisplayValue('https://console.example.com')).toBeNull();
+      expect(screen.queryByRole('button', {name: 'Add origin'})).toBeNull();
+    });
   });
 });

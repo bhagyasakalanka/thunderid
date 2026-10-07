@@ -26,9 +26,26 @@ vi.mock('@thunderid/logger/react', () => ({
   }),
 }));
 
+// A gateway selected makes the console read-only, so nothing may be imported.
+let mockEnvironmentReadOnly = false;
+
+vi.mock('@thunderid/contexts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@thunderid/contexts')>();
+  return {...actual, useEnvironment: () => ({...actual.useEnvironment(), readOnly: mockEnvironmentReadOnly})};
+});
+
 describe('ImportExportPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockEnvironmentReadOnly = false;
+  });
+
+  it('offers only export in a gateway view', () => {
+    mockEnvironmentReadOnly = true;
+    render(<ImportExportPage />);
+
+    expect(screen.queryByText('Import')).not.toBeInTheDocument();
+    expect(screen.getByText('Export')).toBeInTheDocument();
   });
 
   it('renders the page with title and subtitle', () => {

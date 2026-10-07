@@ -1,9 +1,20 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {QueryErrorNotice, UnsavedChangesBar} from '@thunderid/components';
-import {useToast} from '@thunderid/contexts';
-import {useGetTranslations, useUpdateTranslation, NamespaceConstants, I18nDefaultConstants} from '@thunderid/i18n';
+import {
+  EnvironmentDeploymentNotice,
+  QueryErrorNotice,
+  UnsavedChangesBar,
+  useEnvironmentResource,
+} from '@thunderid/components';
+import {useEnvironment, useToast} from '@thunderid/contexts';
+import {
+  useGetTranslations,
+  useUpdateTranslation,
+  NamespaceConstants,
+  I18nDefaultConstants,
+  type TranslationsResponse,
+} from '@thunderid/i18n';
 import {useLogger} from '@thunderid/logger/react';
 import {getErrorMessage} from '@thunderid/utils';
 import {Alert, Box, PageContent, useColorScheme} from '@wso2/oxygen-ui';
@@ -58,15 +69,33 @@ export default function TranslationsEditPage(): JSX.Element {
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  const {
-    data: translationsData,
-    isLoading: translationsLoading,
-    error: translationsError,
-    refetch: refetchTranslations,
-  } = useGetTranslations({
+  const {readOnly} = useEnvironment();
+  const liveTranslations = useGetTranslations({
     language: selectedLanguage ?? '',
     enabled: !!selectedLanguage,
   });
+  const {
+    data: environmentTranslations,
+    isLoading: environmentTranslationsLoading,
+    error: translationsError,
+    refetch: refetchTranslations,
+    presence,
+  } = useEnvironmentResource('translation', selectedLanguage ?? undefined, liveTranslations);
+  const isApplied = presence.source === 'applied';
+
+  // A version holds only the values the configuration sets for the language, not the built-in
+  // ones, so every key it does not set is shown as this deployment resolves it.
+  const translationsData: TranslationsResponse | undefined = useMemo(() => {
+    if (!isApplied || !environmentTranslations) {
+      return environmentTranslations;
+    }
+    const merged: Record<string, Record<string, string>> = {...(liveTranslations.data?.translations ?? {})};
+    Object.entries(environmentTranslations.translations ?? {}).forEach(([namespace, values]) => {
+      merged[namespace] = {...merged[namespace], ...values};
+    });
+    return {...environmentTranslations, translations: merged};
+  }, [isApplied, environmentTranslations, liveTranslations.data]);
+  const translationsLoading: boolean = environmentTranslationsLoading || (isApplied && liveTranslations.isLoading);
 
   // Fetch the default (en) translations for "Reset to Default"
   const {data: defaultTranslationsData, error: defaultTranslationsError} = useGetTranslations({
@@ -243,12 +272,15 @@ export default function TranslationsEditPage(): JSX.Element {
         isFallbackLanguage={selectedLanguage === I18nDefaultConstants.FALLBACK_LANGUAGE}
         hasNamespace={!!selectedNamespace}
         onBack={handleBack}
+        readOnly={readOnly}
         onResetToDefault={() => {
           handleResetToDefault().catch((_error: unknown) =>
             logger.error('Failed to reset to default', {error: _error}),
           );
         }}
       />
+
+      <EnvironmentDeploymentNotice resourceType="translation" resourceId={selectedLanguage ?? undefined} />
 
       <Box sx={{mb: 2}}>
         {saveError && (
@@ -291,9 +323,10 @@ export default function TranslationsEditPage(): JSX.Element {
             onFieldChange={handleFieldChange}
             onResetField={handleResetField}
             onJsonChange={handleJsonChange}
+            readOnly={readOnly}
           />
 
-          {hasDirtyChanges && (
+          {hasDirtyChanges && !readOnly && (
             <UnsavedChangesBar
               message={t('editor.unsavedCount', {count: dirtyKeys.length, defaultValue: '{{count}} unsaved change'})}
               resetLabel={t('actions.discardChanges', 'Discard Changes')}

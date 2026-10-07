@@ -1,8 +1,15 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {QueryErrorNotice, ResourceAvatar, SettingsCard, UnsavedChangesBar} from '@thunderid/components';
-import {useConfig} from '@thunderid/contexts';
+import {
+  EnvironmentDeploymentNotice,
+  QueryErrorNotice,
+  ResourceAvatar,
+  SettingsCard,
+  UnsavedChangesBar,
+  useEnvironmentResource,
+} from '@thunderid/components';
+import {useConfig, useEnvironment} from '@thunderid/contexts';
 import {getErrorMessage} from '@thunderid/utils';
 import {
   Alert,
@@ -28,9 +35,11 @@ import ConnectionDeleteDialog from '../components/ConnectionDeleteDialog';
 import ConnectionConstants from '../constants/connection-constants';
 import useConnectionRoutes from '../hooks/useConnectionRoutes';
 import {ConnectionTypes} from '../models/connection';
-import type {TrustedIssuerFormData} from '../models/trusted-issuer';
+import type {ConnectionResponse} from '../models/connection';
+import type {TrustedIssuer, TrustedIssuerFormData} from '../models/trusted-issuer';
 import isConflictError from '../utils/isConflictError';
 import isTrustedIssuerFormDirty from '../utils/isTrustedIssuerFormDirty';
+import mapConnectionToTrustedIssuer from '../utils/mapConnectionToTrustedIssuer';
 import validateTrustedIssuerForm, {
   type TrustedIssuerFieldErrorKind,
   type TrustedIssuerFormErrors,
@@ -44,7 +53,14 @@ export default function TrustedIssuerDetailPage(): JSX.Element {
   const productName = config.brand.product_name;
   const routes = useConnectionRoutes();
 
-  const trustedIssuerQuery = useTrustedIssuer(id);
+  const liveTrustedIssuerQuery = useTrustedIssuer(id);
+  // A version holds the issuer as the connection it is, so it is narrowed the same way the live read is.
+  const trustedIssuerQuery = useEnvironmentResource<TrustedIssuer | ConnectionResponse>(
+    'connection',
+    id,
+    liveTrustedIssuerQuery,
+  );
+  const {readOnly} = useEnvironment();
   const updateMutation = useUpdateTrustedIssuer(id ?? '');
   const deleteMutation = useDeleteConnection(ConnectionTypes.OIDC);
 
@@ -55,7 +71,11 @@ export default function TrustedIssuerDetailPage(): JSX.Element {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  const data = trustedIssuerQuery.data;
+  const data: TrustedIssuer | undefined = useMemo(
+    () =>
+      trustedIssuerQuery.data ? mapConnectionToTrustedIssuer(trustedIssuerQuery.data as ConnectionResponse) : undefined,
+    [trustedIssuerQuery.data],
+  );
 
   const baseline: TrustedIssuerFormData = useMemo(
     () => ({
@@ -166,19 +186,22 @@ export default function TrustedIssuerDetailPage(): JSX.Element {
           onRetry={() => void trustedIssuerQuery.refetch()}
         />
       ) : notFound ? (
-        <ListingTable.EmptyState
-          illustration={<AlertCircle size={40} />}
-          title={t('trustedIssuers:detail.notFound.title', 'Trusted issuer not found')}
-          description={t(
-            'trustedIssuers:detail.notFound.description',
-            'This trusted issuer may have been deleted or the link is incorrect.',
-          )}
-          action={
-            <Button variant="outlined" onClick={() => void navigate(routes.connections.list())}>
-              {t('trustedIssuers:detail.back', 'Back to connections')}
-            </Button>
-          }
-        />
+        <>
+          <EnvironmentDeploymentNotice resourceType="connection" resourceId={id} />
+          <ListingTable.EmptyState
+            illustration={<AlertCircle size={40} />}
+            title={t('trustedIssuers:detail.notFound.title', 'Trusted issuer not found')}
+            description={t(
+              'trustedIssuers:detail.notFound.description',
+              'This trusted issuer may have been deleted or the link is incorrect.',
+            )}
+            action={
+              <Button variant="outlined" onClick={() => void navigate(routes.connections.list())}>
+                {t('trustedIssuers:detail.back', 'Back to connections')}
+              </Button>
+            }
+          />
+        </>
       ) : (
         <>
           <Stack direction="row" spacing={2} alignItems="flex-start" sx={{mb: 3}}>
@@ -212,145 +235,151 @@ export default function TrustedIssuerDetailPage(): JSX.Element {
             </Alert>
           )}
 
-          <Stack direction="column" spacing={4}>
-            <SettingsCard
-              title={t('trustedIssuers:detail.general.title', 'General')}
-              description={t('trustedIssuers:detail.general.description', 'Core identity of this trusted issuer.')}
-            >
-              <Stack direction="column" spacing={3}>
-                <FormControl fullWidth required error={Boolean(nameError ?? (touched['name'] && errors.name))}>
-                  <FormLabel htmlFor="trusted-issuer-name">
-                    {t('trustedIssuers:create.form.name.label', 'Name')}
-                  </FormLabel>
-                  <TextField
-                    id="trusted-issuer-name"
-                    fullWidth
-                    value={values.name}
-                    error={Boolean(nameError ?? (touched['name'] && errors.name))}
-                    helperText={nameError ?? (touched['name'] ? fieldErrorMessage(errors.name) : undefined)}
-                    onChange={(e) => setField('name', e.target.value)}
-                    onBlur={() => setTouchedField('name')}
-                  />
-                </FormControl>
+          <EnvironmentDeploymentNotice resourceType="connection" resourceId={id} />
 
-                <FormControl fullWidth required error={Boolean(touched['issuer'] && errors.issuer)}>
-                  <FormLabel htmlFor="trusted-issuer-issuer">
-                    {t('trustedIssuers:create.form.issuer.label', 'Issuer URI')}
-                  </FormLabel>
-                  <TextField
-                    id="trusted-issuer-issuer"
-                    fullWidth
-                    value={values.issuer}
-                    error={Boolean(touched['issuer'] && errors.issuer)}
-                    helperText={
-                      (touched['issuer'] ? fieldErrorMessage(errors.issuer) : undefined) ??
-                      t(
-                        'trustedIssuers:create.form.issuer.hint',
-                        "The issuer URI from the external IdP's OpenID Connect discovery document.",
-                      )
-                    }
-                    onChange={(e) => setField('issuer', e.target.value)}
-                    onBlur={() => setTouchedField('issuer')}
-                  />
-                </FormControl>
-
-                <FormControl fullWidth required error={Boolean(touched['jwksEndpoint'] && errors.jwksEndpoint)}>
-                  <FormLabel htmlFor="trusted-issuer-jwks-endpoint">
-                    {t('trustedIssuers:create.form.jwksEndpoint.label', 'JWKS endpoint')}
-                  </FormLabel>
-                  <TextField
-                    id="trusted-issuer-jwks-endpoint"
-                    fullWidth
-                    value={values.jwksEndpoint}
-                    error={Boolean(touched['jwksEndpoint'] && errors.jwksEndpoint)}
-                    helperText={
-                      (touched['jwksEndpoint'] ? fieldErrorMessage(errors.jwksEndpoint) : undefined) ??
-                      t(
-                        'trustedIssuers:create.form.jwksEndpoint.hint',
-                        'The JWKS endpoint used to validate the signature of incoming identity assertions.',
-                      )
-                    }
-                    onChange={(e) => setField('jwksEndpoint', e.target.value)}
-                    onBlur={() => setTouchedField('jwksEndpoint')}
-                  />
-                </FormControl>
-              </Stack>
-            </SettingsCard>
-
-            <SettingsCard
-              title={t('trustedIssuers:detail.tokenExchange.title', 'Token Exchange')}
-              description={t(
-                'trustedIssuers:detail.tokenExchange.description',
-                'Exchange subject tokens from this issuer for access tokens.',
-              )}
-              enabled={values.tokenExchangeEnabled}
-              onToggle={(checked) => setField('tokenExchangeEnabled', checked)}
-            >
-              <FormControl fullWidth>
-                <FormLabel htmlFor="trusted-issuer-token-audience">
-                  {t('trustedIssuers:detail.tokenExchange.audience.label', 'Trusted token audience')}
-                </FormLabel>
-                <TextField
-                  id="trusted-issuer-token-audience"
-                  fullWidth
-                  placeholder="api://thunderid"
-                  value={values.trustedTokenAudience ?? ''}
-                  helperText={t(
-                    'trustedIssuers:detail.tokenExchange.audience.hint',
-                    "An additional audience value {{productName}} will accept in subject tokens from this issuer. Tokens whose audience is {{productName}}'s own issuer URL are always accepted.",
-                    {productName},
-                  )}
-                  onChange={(e) => setField('trustedTokenAudience', e.target.value || undefined)}
-                />
-              </FormControl>
-            </SettingsCard>
-
-            <SettingsCard
-              title={t(
-                'trustedIssuers:detail.consumption.title',
-                'Identity Assertion JWT Authorization Grant (ID-JAG)',
-              )}
-              description={t(
-                'trustedIssuers:detail.idJag.description',
-                'Accept and exchange signed identity assertions from this issuer for access tokens.',
-              )}
-              enabled={values.idJagEnabled}
-              onToggle={(checked) => setField('idJagEnabled', checked)}
-            >
-              <Typography variant="body2" color="text.secondary">
-                {t(
-                  'trustedIssuers:detail.idJag.enabledNote',
-                  'Identity assertions from this issuer are accepted via the ID-JAG protocol.',
-                )}
-              </Typography>
-            </SettingsCard>
-
-            <SettingsCard title={t('trustedIssuers:detail.dangerZone.title', 'Danger zone')}>
-              <Typography variant="h6" gutterBottom color="error">
-                {t('trustedIssuers:detail.dangerZone.delete.title', 'Delete trusted issuer')}
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{mb: 3}}>
-                {t(
-                  'trustedIssuers:detail.dangerZone.delete.description',
-                  'Applications relying on assertions from this issuer will stop receiving tokens. This cannot be undone.',
-                )}
-              </Typography>
-              <Button
-                variant="contained"
-                color="error"
-                startIcon={<Trash2 size={16} />}
-                onClick={() => {
-                  setDeleteError(null);
-                  setDeleteOpen(true);
-                }}
-                data-testid="trusted-issuer-delete-button"
+          <fieldset disabled={readOnly} style={{border: 0, margin: 0, padding: 0, minWidth: 0}}>
+            <Stack direction="column" spacing={4}>
+              <SettingsCard
+                title={t('trustedIssuers:detail.general.title', 'General')}
+                description={t('trustedIssuers:detail.general.description', 'Core identity of this trusted issuer.')}
               >
-                {t('common:actions.delete')}
-              </Button>
-            </SettingsCard>
-          </Stack>
+                <Stack direction="column" spacing={3}>
+                  <FormControl fullWidth required error={Boolean(nameError ?? (touched['name'] && errors.name))}>
+                    <FormLabel htmlFor="trusted-issuer-name">
+                      {t('trustedIssuers:create.form.name.label', 'Name')}
+                    </FormLabel>
+                    <TextField
+                      id="trusted-issuer-name"
+                      fullWidth
+                      value={values.name}
+                      error={Boolean(nameError ?? (touched['name'] && errors.name))}
+                      helperText={nameError ?? (touched['name'] ? fieldErrorMessage(errors.name) : undefined)}
+                      onChange={(e) => setField('name', e.target.value)}
+                      onBlur={() => setTouchedField('name')}
+                    />
+                  </FormControl>
 
-          {dirty && (
+                  <FormControl fullWidth required error={Boolean(touched['issuer'] && errors.issuer)}>
+                    <FormLabel htmlFor="trusted-issuer-issuer">
+                      {t('trustedIssuers:create.form.issuer.label', 'Issuer URI')}
+                    </FormLabel>
+                    <TextField
+                      id="trusted-issuer-issuer"
+                      fullWidth
+                      value={values.issuer}
+                      error={Boolean(touched['issuer'] && errors.issuer)}
+                      helperText={
+                        (touched['issuer'] ? fieldErrorMessage(errors.issuer) : undefined) ??
+                        t(
+                          'trustedIssuers:create.form.issuer.hint',
+                          "The issuer URI from the external IdP's OpenID Connect discovery document.",
+                        )
+                      }
+                      onChange={(e) => setField('issuer', e.target.value)}
+                      onBlur={() => setTouchedField('issuer')}
+                    />
+                  </FormControl>
+
+                  <FormControl fullWidth required error={Boolean(touched['jwksEndpoint'] && errors.jwksEndpoint)}>
+                    <FormLabel htmlFor="trusted-issuer-jwks-endpoint">
+                      {t('trustedIssuers:create.form.jwksEndpoint.label', 'JWKS endpoint')}
+                    </FormLabel>
+                    <TextField
+                      id="trusted-issuer-jwks-endpoint"
+                      fullWidth
+                      value={values.jwksEndpoint}
+                      error={Boolean(touched['jwksEndpoint'] && errors.jwksEndpoint)}
+                      helperText={
+                        (touched['jwksEndpoint'] ? fieldErrorMessage(errors.jwksEndpoint) : undefined) ??
+                        t(
+                          'trustedIssuers:create.form.jwksEndpoint.hint',
+                          'The JWKS endpoint used to validate the signature of incoming identity assertions.',
+                        )
+                      }
+                      onChange={(e) => setField('jwksEndpoint', e.target.value)}
+                      onBlur={() => setTouchedField('jwksEndpoint')}
+                    />
+                  </FormControl>
+                </Stack>
+              </SettingsCard>
+
+              <SettingsCard
+                title={t('trustedIssuers:detail.tokenExchange.title', 'Token Exchange')}
+                description={t(
+                  'trustedIssuers:detail.tokenExchange.description',
+                  'Exchange subject tokens from this issuer for access tokens.',
+                )}
+                enabled={values.tokenExchangeEnabled}
+                onToggle={(checked) => setField('tokenExchangeEnabled', checked)}
+              >
+                <FormControl fullWidth>
+                  <FormLabel htmlFor="trusted-issuer-token-audience">
+                    {t('trustedIssuers:detail.tokenExchange.audience.label', 'Trusted token audience')}
+                  </FormLabel>
+                  <TextField
+                    id="trusted-issuer-token-audience"
+                    fullWidth
+                    placeholder="api://thunderid"
+                    value={values.trustedTokenAudience ?? ''}
+                    helperText={t(
+                      'trustedIssuers:detail.tokenExchange.audience.hint',
+                      "An additional audience value {{productName}} will accept in subject tokens from this issuer. Tokens whose audience is {{productName}}'s own issuer URL are always accepted.",
+                      {productName},
+                    )}
+                    onChange={(e) => setField('trustedTokenAudience', e.target.value || undefined)}
+                  />
+                </FormControl>
+              </SettingsCard>
+
+              <SettingsCard
+                title={t(
+                  'trustedIssuers:detail.consumption.title',
+                  'Identity Assertion JWT Authorization Grant (ID-JAG)',
+                )}
+                description={t(
+                  'trustedIssuers:detail.idJag.description',
+                  'Accept and exchange signed identity assertions from this issuer for access tokens.',
+                )}
+                enabled={values.idJagEnabled}
+                onToggle={(checked) => setField('idJagEnabled', checked)}
+              >
+                <Typography variant="body2" color="text.secondary">
+                  {t(
+                    'trustedIssuers:detail.idJag.enabledNote',
+                    'Identity assertions from this issuer are accepted via the ID-JAG protocol.',
+                  )}
+                </Typography>
+              </SettingsCard>
+
+              {!readOnly && (
+                <SettingsCard title={t('trustedIssuers:detail.dangerZone.title', 'Danger zone')}>
+                  <Typography variant="h6" gutterBottom color="error">
+                    {t('trustedIssuers:detail.dangerZone.delete.title', 'Delete trusted issuer')}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{mb: 3}}>
+                    {t(
+                      'trustedIssuers:detail.dangerZone.delete.description',
+                      'Applications relying on assertions from this issuer will stop receiving tokens. This cannot be undone.',
+                    )}
+                  </Typography>
+                  <Button
+                    variant="contained"
+                    color="error"
+                    startIcon={<Trash2 size={16} />}
+                    onClick={() => {
+                      setDeleteError(null);
+                      setDeleteOpen(true);
+                    }}
+                    data-testid="trusted-issuer-delete-button"
+                  >
+                    {t('common:actions.delete')}
+                  </Button>
+                </SettingsCard>
+              )}
+            </Stack>
+          </fieldset>
+
+          {dirty && !readOnly && (
             <UnsavedChangesBar
               message={t('trustedIssuers:detail.saveBar.unsaved', 'You have unsaved changes')}
               resetLabel={t('trustedIssuers:detail.saveBar.reset', 'Reset')}

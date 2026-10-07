@@ -2,13 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
+  EnvironmentDeploymentNotice,
   PageLoadingAnimation,
   QueryErrorNotice,
   ResourceAvatar,
   SettingsCard,
   UnsavedChangesBar,
   getInitials,
+  useEnvironmentResource,
 } from '@thunderid/components';
+import {useEnvironment} from '@thunderid/contexts';
 import {useResolveDisplayName} from '@thunderid/hooks';
 import {useLogger} from '@thunderid/logger/react';
 import type {User} from '@thunderid/types';
@@ -92,7 +95,14 @@ export default function UserEditPage() {
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const {data: user, isLoading: isUserLoading, error: userError, refetch} = useGetUser(userId);
+  const liveUser = useGetUser(userId);
+  const {data: user, isLoading: isUserLoading, error: userError, refetch} = useEnvironmentResource<User>(
+    'user',
+    userId,
+    liveUser,
+  );
+  const {readOnly} = useEnvironment();
+  const isReadOnly = user?.isReadOnly === true || readOnly;
   const updateUserMutation = useUpdateUser();
 
   // Get all schemas to find the schema ID from the schema handle
@@ -253,6 +263,7 @@ export default function UserEditPage() {
   if (!user) {
     return (
       <PageContent>
+        <EnvironmentDeploymentNotice resourceType="user" resourceId={userId} />
         <Alert severity="warning" sx={{mb: 2}}>
           {t('users:manageUser.notFound', 'User not found')}
         </Alert>
@@ -388,12 +399,13 @@ export default function UserEditPage() {
           user={user}
           editedUser={editedUser}
           onFieldChange={handleFieldChange}
+          readOnly={isReadOnly}
         />
       ),
     },
   ];
 
-  if (!user.isReadOnly && credentialFields.length > 0) {
+  if (!isReadOnly && credentialFields.length > 0) {
     tabs.push({
       key: 'credentials',
       label: t('users:manageUser.tabs.credentials', 'Credentials'),
@@ -401,7 +413,7 @@ export default function UserEditPage() {
     });
   }
 
-  if (!user.isReadOnly) {
+  if (!isReadOnly) {
     tabs.push({
       key: 'advanced',
       label: t('users:manageUser.tabs.advanced', 'Advanced'),
@@ -433,6 +445,7 @@ export default function UserEditPage() {
 
   return (
     <PageContent>
+      <EnvironmentDeploymentNotice resourceType="user" resourceId={userId} />
       {user.isReadOnly && (
         <Alert severity="info" sx={{mb: 2}}>
           {t('common:messages.readOnlyResource', 'This resource is read-only and cannot be modified.')}
@@ -494,7 +507,7 @@ export default function UserEditPage() {
           saveLabel={t('users:manageUser.save', 'Save')}
           savingLabel={t('users:manageUser.saving', 'Saving…')}
           isSaving={updateUserMutation.isPending}
-          saveDisabled={user.isReadOnly === true}
+          saveDisabled={isReadOnly}
           error={
             updateUserMutation.error
               ? getUserErrorMessage(

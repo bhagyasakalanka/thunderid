@@ -47,7 +47,8 @@ vi.mock('../../../api/useGetServerActions', () => ({
     },
 }));
 
-vi.mock('@thunderid/react', () => ({
+vi.mock('@thunderid/react', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   useThunderID: () => ({http: {request: vi.fn()}}),
 }));
 

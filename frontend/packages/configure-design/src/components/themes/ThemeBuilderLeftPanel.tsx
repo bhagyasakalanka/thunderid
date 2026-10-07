@@ -49,6 +49,8 @@ interface ThemeBuilderLeftPanelProps {
   draftTheme: Theme | null | undefined;
   setDraftTheme: (theme: Theme) => void;
   setIsDirty: (dirty: boolean) => void;
+  /** Disables the settings, leaving the sections to browse. */
+  readOnly?: boolean;
   activeSection: ThemeSection;
   setActiveSection: (section: ThemeSection) => void;
 }
@@ -72,6 +74,7 @@ export default function ThemeBuilderLeftPanel({
   draftTheme,
   setDraftTheme,
   setIsDirty,
+  readOnly = false,
   activeSection,
   setActiveSection,
 }: ThemeBuilderLeftPanelProps): JSX.Element {
@@ -99,6 +102,7 @@ export default function ThemeBuilderLeftPanel({
             </Box>
             <Select
               value={draftTheme.defaultColorScheme ?? 'light'}
+              disabled={readOnly}
               onChange={(e) => {
                 const next = JSON.parse(JSON.stringify(draftTheme)) as Theme;
                 next.defaultColorScheme = String(e.target.value) as Theme['defaultColorScheme'];
@@ -136,6 +140,7 @@ export default function ThemeBuilderLeftPanel({
             </Typography>
             <Select
               value={draftTheme.direction ?? 'ltr'}
+              disabled={readOnly}
               onChange={(e) => {
                 const next = JSON.parse(JSON.stringify(draftTheme)) as Theme;
                 next.direction = String(e.target.value) as Theme['direction'];

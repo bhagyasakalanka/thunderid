@@ -66,6 +66,8 @@ export interface VerifiablePresentationFormProps {
   error?: string;
   /** Called whenever a field changes, so a stale save error can be cleared. */
   onErrorClear?: () => void;
+  /** Shows the definition without a way to change or save it. */
+  readOnly?: boolean;
 }
 
 interface TabPanelProps {
@@ -98,6 +100,7 @@ export default function VerifiablePresentationForm({
   onDelete = undefined,
   error = undefined,
   onErrorClear = undefined,
+  readOnly = false,
 }: VerifiablePresentationFormProps): JSX.Element {
   const {t} = useTranslation('verifiable-presentations');
 
@@ -238,6 +241,7 @@ export default function VerifiablePresentationForm({
       <TextField
         fullWidth
         id={id}
+        disabled={readOnly}
         value={value}
         placeholder={placeholder}
         helperText={helperText}
@@ -426,6 +430,7 @@ export default function VerifiablePresentationForm({
               <FormLabel htmlFor="vp-format">{t('form.format.label')}</FormLabel>
               <Select
                 id="vp-format"
+                disabled={readOnly}
                 value={format}
                 onChange={(e): void => {
                   onErrorClear?.();
@@ -443,6 +448,7 @@ export default function VerifiablePresentationForm({
       <TabPanel value={tab} index={2}>
         <ClaimsEditor
           duplicateNames={duplicateClaimNames}
+          readOnly={readOnly}
           claims={claims}
           onChange={(rows: ClaimRow[]): void => {
             onErrorClear?.();
@@ -467,7 +473,7 @@ export default function VerifiablePresentationForm({
                 control={
                   <Switch
                     checked={effectiveEnforce}
-                    disabled={trustAnchorsLoading || noTrustAnchors}
+                    disabled={readOnly || trustAnchorsLoading || noTrustAnchors}
                     onChange={(e: ChangeEvent<HTMLInputElement>): void => {
                       onErrorClear?.();
                       setEnforceTrustedIssuer(e.target.checked);
@@ -485,7 +491,7 @@ export default function VerifiablePresentationForm({
               <Autocomplete<TrustAnchor, true, false, false>
                 multiple
                 fullWidth
-                disabled={!enforceTrustedIssuer}
+                disabled={readOnly || !enforceTrustedIssuer}
                 loading={trustAnchorsLoading}
                 options={trustAnchors}
                 value={trustAnchors.filter((anchor: TrustAnchor): boolean => trustedAuthorities.includes(anchor.name))}
@@ -542,7 +548,7 @@ export default function VerifiablePresentationForm({
         </TabPanel>
       )}
 
-      {dirty && (
+      {dirty && !readOnly && (
         <UnsavedChangesBar
           message={t('form.unsavedChanges')}
           resetLabel={t('common:actions.reset')}

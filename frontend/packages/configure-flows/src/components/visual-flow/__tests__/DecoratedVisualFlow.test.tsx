@@ -261,13 +261,27 @@ vi.mock('classnames', () => ({
 
 // Mock child components
 vi.mock('../VisualFlow', () => ({
-  default: ({nodes, edges, onNodeDragStop, onNodeClick}: any) => (
+  default: ({nodes, edges, onNodeDragStop, onNodeClick, onNodesChange, onConnect, readOnly}: any) => (
     <div
       data-testid="visual-flow"
       data-nodes={JSON.stringify(nodes)}
       data-edges={JSON.stringify(edges)}
       data-has-drag-stop={!!onNodeDragStop}
+      data-has-connect={!!onConnect}
+      data-readonly={String(Boolean(readOnly))}
     >
+      <button
+        data-testid="nodes-change-trigger"
+        onClick={() =>
+          (onNodesChange as (changes: unknown[]) => void)([
+            {type: 'select', id: 'n1', selected: true},
+            {type: 'position', id: 'n1', position: {x: 1, y: 1}},
+            {type: 'remove', id: 'n1'},
+          ])
+        }
+      >
+        Nodes Change
+      </button>
       <button data-testid="node-drag-stop-trigger" onClick={onNodeDragStop}>
         Node Drag Stop
       </button>
@@ -408,6 +422,32 @@ describe('DecoratedVisualFlow', () => {
       });
     });
     cleanup();
+  });
+
+  describe('Read-only', () => {
+    it('locks the canvas, the palette and the property panel', () => {
+      const onNodesChange = vi.fn();
+      renderComponent(<DecoratedVisualFlow {...defaultProps} onNodesChange={onNodesChange} readOnly />);
+
+      const flow = screen.getByTestId('visual-flow');
+      expect(flow).toHaveAttribute('data-readonly', 'true');
+      expect(flow).toHaveAttribute('data-has-drag-stop', 'false');
+      expect(flow).toHaveAttribute('data-has-connect', 'false');
+      expect(screen.getByTestId('resource-panel')).toHaveAttribute('data-disabled', 'true');
+      expect(screen.getByTestId('resource-property-panel').closest('fieldset')).toBeDisabled();
+
+      fireEvent.click(screen.getByTestId('nodes-change-trigger'));
+      expect(onNodesChange).toHaveBeenCalledWith([{type: 'select', id: 'n1', selected: true}]);
+    });
+
+    it('passes every canvas change through when editable', () => {
+      const onNodesChange = vi.fn();
+      renderComponent(<DecoratedVisualFlow {...defaultProps} onNodesChange={onNodesChange} />);
+
+      expect(screen.getByTestId('visual-flow')).toHaveAttribute('data-readonly', 'false');
+      fireEvent.click(screen.getByTestId('nodes-change-trigger'));
+      expect((onNodesChange.mock.calls[0] as unknown[][])[0]).toHaveLength(3);
+    });
   });
 
   describe('Rendering', () => {

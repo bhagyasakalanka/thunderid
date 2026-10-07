@@ -9,9 +9,27 @@ import {describe, it, expect, vi, beforeEach} from 'vitest';
 import type {UserListResponse} from '../../models/users';
 import UsersList from '../UsersList';
 
-const {mockLoggerError} = vi.hoisted(() => ({
+const {mockLoggerError, environment} = vi.hoisted(() => ({
   mockLoggerError: vi.fn(),
+  environment: {readOnly: false, applied: undefined as unknown[] | undefined},
 }));
+
+vi.mock('@thunderid/contexts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@thunderid/contexts')>();
+  return {
+    ...actual,
+    useEnvironment: () => ({...actual.useEnvironment(), readOnly: environment.readOnly}),
+  };
+});
+
+vi.mock('@thunderid/components', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@thunderid/components')>();
+  return {
+    ...actual,
+    useEnvironmentList: (_type: string, live: {data: unknown}, toPage: (resources: unknown[]) => unknown) =>
+      environment.applied ? {...live, data: toPage(environment.applied)} : live,
+  };
+});
 
 const mockNavigate = vi.fn();
 
@@ -221,6 +239,8 @@ describe('UsersList', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    environment.readOnly = false;
+    environment.applied = undefined;
     mockUseGetUsers.mockReturnValue({
       data: mockUsersData,
       isLoading: false,
@@ -493,5 +513,20 @@ describe('UsersList', () => {
 
     const deleteButtons = screen.getAllByRole('button', {name: /delete/i});
     expect(deleteButtons.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('lists only the users the gateway runs, read-only, in read-only mode', async () => {
+    environment.readOnly = true;
+    environment.applied = [{id: 'user2', ouId: 'org2', type: 'schema2', display: 'Jane Smith'}];
+    const user = userEvent.setup();
+    render(<UsersList />);
+
+    expect(screen.getByTestId('row-user2')).toHaveTextContent('Jane Smith');
+    expect(screen.queryByTestId('row-user1')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', {name: /delete/i})).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', {name: /edit/i})).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId('row-user2'));
+    expect(mockNavigate).toHaveBeenCalledWith('/users/user2');
   });
 });

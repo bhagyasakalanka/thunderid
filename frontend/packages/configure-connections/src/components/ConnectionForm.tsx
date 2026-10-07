@@ -1,6 +1,7 @@
 // Copyright 2025 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
+import {EnvironmentValue} from '@thunderid/components';
 import {
   Box,
   Collapse,
@@ -16,7 +17,7 @@ import {
   TextField,
   Typography,
 } from '@wso2/oxygen-ui';
-import {type JSX, type ReactNode, useMemo, useState} from 'react';
+import {type CSSProperties, type JSX, type ReactNode, useMemo, useState} from 'react';
 import {Trans, useTranslation} from 'react-i18next';
 import KeyValuePairsField from './KeyValuePairsField';
 import MaskedSecretField from './MaskedSecretField';
@@ -27,7 +28,12 @@ import {type ConnectionFormValues, validateConnectionForm} from '../utils/connec
 
 const NO_EXCLUDED_FIELD_NAMES: ReadonlySet<string> = new Set();
 
+/** Lays a fieldset out as a plain box: it is only there to disable the controls in it. */
+const READ_ONLY_FIELDSET_STYLE: CSSProperties = {border: 0, margin: 0, padding: 0, minWidth: 0};
+
 interface ConnectionFormProps {
+  /** The connection's identifier when editing one, which its environment-specific values are held under. */
+  connectionId?: string;
   type: ConnectionType;
   mode: 'create' | 'edit';
   /** Full field values to display (baseline merged with any edits). */
@@ -42,11 +48,14 @@ interface ConnectionFormProps {
   /** Render the connection-name field (custom connections only; branded names are fixed). */
   showNameField?: boolean;
   excludeFieldNames?: ReadonlySet<string>;
+  /** Disables the connection's own fields. A field an environment holds its own value for stays editable. */
+  readOnly?: boolean;
   onFieldChange: (name: string, value: string) => void;
   onSecretReplacingChange: (replacing: boolean) => void;
 }
 
 export default function ConnectionForm({
+  connectionId = undefined,
   type,
   mode,
   values,
@@ -56,6 +65,7 @@ export default function ConnectionForm({
   nameError = null,
   showNameField = true,
   excludeFieldNames = NO_EXCLUDED_FIELD_NAMES,
+  readOnly = false,
   onFieldChange,
   onSecretReplacingChange,
 }: ConnectionFormProps): JSX.Element {
@@ -137,6 +147,7 @@ export default function ConnectionForm({
                 control={
                   <Switch
                     checked={values[field.name] === 'true'}
+                    disabled={readOnly}
                     onChange={(e) => setField(field.name, e.target.checked ? 'true' : 'false')}
                     slotProps={{input: {'aria-label': label, role: 'switch'}}}
                   />
@@ -152,30 +163,42 @@ export default function ConnectionForm({
           );
         } else if (field.kind === 'secret') {
           fieldContent = (
-            <MaskedSecretField
-              id={`connection-field-${field.name}`}
+            <EnvironmentValue
+              resourceType="connection"
+              resourceId={mode === 'edit' ? connectionId : undefined}
+              field={field.name}
               label={label}
-              value={values[field.name] ?? ''}
-              onChange={(value) => setField(field.name, value)}
-              hasStoredSecret={hasStoredSecret}
-              replacing={secretReplacing}
-              onReplacingChange={onSecretReplacingChange}
-              required={mode === 'create' && field.required}
-              error={fieldError(field)}
               hint={field.hintKey ? t(field.hintKey) : undefined}
-            />
+            >
+              <fieldset disabled={readOnly} style={READ_ONLY_FIELDSET_STYLE}>
+                <MaskedSecretField
+                  id={`connection-field-${field.name}`}
+                  label={label}
+                  value={values[field.name] ?? ''}
+                  onChange={(value) => setField(field.name, value)}
+                  hasStoredSecret={hasStoredSecret}
+                  replacing={secretReplacing}
+                  onReplacingChange={onSecretReplacingChange}
+                  required={mode === 'create' && field.required}
+                  error={fieldError(field)}
+                  hint={field.hintKey ? t(field.hintKey) : undefined}
+                />
+              </fieldset>
+            </EnvironmentValue>
           );
         } else if (field.kind === 'key-value') {
           fieldContent = (
-            <KeyValuePairsField
-              id={`connection-field-${field.name}`}
-              label={label}
-              value={values[field.name] ?? ''}
-              onChange={(next) => setField(field.name, next)}
-              hint={field.hintKey ? renderHint(field.hintKey) : undefined}
-              namePlaceholder={field.placeholder}
-              addLabel={field.addLabelKey ? t(field.addLabelKey) : t('form.keyValue.add')}
-            />
+            <fieldset disabled={readOnly} style={READ_ONLY_FIELDSET_STYLE}>
+              <KeyValuePairsField
+                id={`connection-field-${field.name}`}
+                label={label}
+                value={values[field.name] ?? ''}
+                onChange={(next) => setField(field.name, next)}
+                hint={field.hintKey ? renderHint(field.hintKey) : undefined}
+                namePlaceholder={field.placeholder}
+                addLabel={field.addLabelKey ? t(field.addLabelKey) : t('form.keyValue.add')}
+              />
+            </fieldset>
           );
         } else if (field.kind === 'select') {
           const error: string | undefined = fieldError(field);
@@ -185,6 +208,7 @@ export default function ConnectionForm({
               <Select
                 id={`connection-field-${field.name}`}
                 value={values[field.name] ?? ''}
+                disabled={readOnly}
                 onChange={(e) => setField(field.name, e.target.value)}
                 data-testid={`connection-field-select-${field.name}`}
               >
@@ -225,6 +249,7 @@ export default function ConnectionForm({
                 fullWidth
                 type={field.kind === 'number' ? 'number' : undefined}
                 value={values[field.name] ?? ''}
+                disabled={readOnly}
                 placeholder={field.placeholder}
                 error={Boolean(error)}
                 helperText={error ?? (field.hintKey ? renderHint(field.hintKey) : undefined)}

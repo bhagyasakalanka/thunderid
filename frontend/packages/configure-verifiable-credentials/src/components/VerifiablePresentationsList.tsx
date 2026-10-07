@@ -1,11 +1,12 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {QueryErrorNotice} from '@thunderid/components';
+import {QueryErrorNotice, useEnvironmentList} from '@thunderid/components';
+import {useEnvironment} from '@thunderid/contexts';
 import {useDataGridLocaleText} from '@thunderid/hooks';
 import {useLogger} from '@thunderid/logger/react';
-import {IconButton, Typography, Tooltip, DataGrid, ListingTable} from '@wso2/oxygen-ui';
-import {Pencil, QrCode as QrCodeIcon, Trash2} from '@wso2/oxygen-ui-icons-react';
+import {IconButton, Stack, Typography, Tooltip, DataGrid, ListingTable} from '@wso2/oxygen-ui';
+import {Eye, Pencil, QrCode as QrCodeIcon, Trash2} from '@wso2/oxygen-ui-icons-react';
 import {useMemo, useCallback, useState, type JSX} from 'react';
 import {useTranslation} from 'react-i18next';
 import {useNavigate} from 'react-router';
@@ -14,6 +15,7 @@ import VerificationDialog from './VerificationDialog';
 import useGetVerifiablePresentations from '../api/useGetVerifiablePresentations';
 import useVerifiableCredentialRoutes from '../hooks/useVerifiableCredentialRoutes';
 import type {VerifiablePresentationSummary} from '../models/vp';
+import toPresentationsPage from '../utils/toPresentationsPage';
 
 /**
  * DataGrid listing of OpenID4VP presentation definitions.
@@ -24,6 +26,7 @@ export default function VerifiablePresentationsList(): JSX.Element {
   const logger = useLogger('VerifiablePresentationsList');
   const dataGridLocaleText = useDataGridLocaleText();
   const routes = useVerifiableCredentialRoutes();
+  const {readOnly} = useEnvironment();
 
   // Resolves an error through the `verifiable-presentations` catalog. `t` defaults to the `common`
   // namespace, so this forwards explicit `ns:` prefixes unchanged and prefixes bare keys, per
@@ -34,7 +37,12 @@ export default function VerifiablePresentationsList(): JSX.Element {
     [t],
   );
 
-  const {data, isLoading, error, refetch} = useGetVerifiablePresentations();
+  const livePresentations = useGetVerifiablePresentations();
+  const {data, isLoading, error, refetch} = useEnvironmentList(
+    'presentation_definition',
+    livePresentations,
+    toPresentationsPage,
+  );
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState<boolean>(false);
@@ -69,7 +77,9 @@ export default function VerifiablePresentationsList(): JSX.Element {
         flex: 1,
         minWidth: 180,
         renderCell: (params: DataGrid.GridRenderCellParams<VerifiablePresentationSummary>): JSX.Element => (
-          <Typography variant="body2">{params.row.name ?? '-'}</Typography>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Typography variant="body2">{params.row.name ?? '-'}</Typography>
+          </Stack>
         ),
       },
       {
@@ -94,45 +104,55 @@ export default function VerifiablePresentationsList(): JSX.Element {
         hideable: false,
         renderCell: (params: DataGrid.GridRenderCellParams<VerifiablePresentationSummary>): JSX.Element => (
           <ListingTable.RowActions>
-            <Tooltip title={t('verifiable-presentations:listing.verify')}>
-              <IconButton
-                size="small"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setVerifyHandle(params.row.handle);
-                }}
-              >
-                <QrCodeIcon size={16} />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title={t('common:actions.edit')}>
-              <IconButton
-                size="small"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleEditClick(params.row.id);
-                }}
-              >
-                <Pencil size={16} />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title={t('common:actions.delete')}>
-              <IconButton
-                size="small"
-                color="error"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDeleteClick(params.row.id);
-                }}
-              >
-                <Trash2 size={16} />
-              </IconButton>
-            </Tooltip>
+            {readOnly ? (
+              <Tooltip title={t('common:status.readOnly', 'Read Only')}>
+                <IconButton size="small" disableRipple sx={{cursor: 'default'}}>
+                  <Eye size={16} />
+                </IconButton>
+              </Tooltip>
+            ) : (
+              <>
+                <Tooltip title={t('verifiable-presentations:listing.verify')}>
+                  <IconButton
+                    size="small"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setVerifyHandle(params.row.handle);
+                    }}
+                  >
+                    <QrCodeIcon size={16} />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title={t('common:actions.edit')}>
+                  <IconButton
+                    size="small"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleEditClick(params.row.id);
+                    }}
+                  >
+                    <Pencil size={16} />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title={t('common:actions.delete')}>
+                  <IconButton
+                    size="small"
+                    color="error"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteClick(params.row.id);
+                    }}
+                  >
+                    <Trash2 size={16} />
+                  </IconButton>
+                </Tooltip>
+              </>
+            )}
           </ListingTable.RowActions>
         ),
       },
     ],
-    [handleDeleteClick, handleEditClick, t],
+    [handleDeleteClick, handleEditClick, readOnly, t],
   );
 
   if (error) {

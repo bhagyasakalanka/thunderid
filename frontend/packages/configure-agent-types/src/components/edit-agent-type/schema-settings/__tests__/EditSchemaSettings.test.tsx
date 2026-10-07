@@ -390,3 +390,44 @@ describe('EditSchemaSettings (agent-type)', () => {
     expect(mockOnPropertiesChange).not.toHaveBeenCalled();
   });
 });
+
+describe('EditSchemaSettings (agent-type) when disabled', () => {
+  const properties: SchemaPropertyInput[] = [
+    {
+      id: '0',
+      name: 'email',
+      displayName: 'Email',
+      type: 'enum',
+      required: true,
+      unique: false,
+      credential: false,
+      enum: ['a'],
+      regex: '',
+    },
+    {
+      id: '1',
+      name: 'age',
+      displayName: '',
+      type: 'number',
+      required: false,
+      unique: false,
+      credential: false,
+      enum: [],
+      regex: '',
+    },
+  ];
+
+  it('disables every input and hides the add and remove actions', () => {
+    render(
+      <EditSchemaSettings properties={properties} onPropertiesChange={vi.fn()} agentTypeHandle="default" disabled />,
+    );
+
+    expect(screen.queryByRole('button', {name: /Add Property/i})).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', {name: /Remove property/i})).not.toBeInTheDocument();
+    expect(screen.queryByTestId('i18n-text-input')).not.toBeInTheDocument();
+    expect(screen.getByDisplayValue('Email')).toBeDisabled();
+    expect(screen.getByDisplayValue('email')).toBeDisabled();
+    screen.getAllByRole('checkbox').forEach((checkbox) => expect(checkbox).toBeDisabled());
+    expect(screen.getByRole('button', {name: 'Add'})).toBeDisabled();
+  });
+});

@@ -1,7 +1,14 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {PageLoadingAnimation, QueryErrorNotice, ResourceAvatar, UnsavedChangesBar} from '@thunderid/components';
+import {
+  EnvironmentDeploymentNotice,
+  PageLoadingAnimation,
+  QueryErrorNotice,
+  ResourceAvatar,
+  UnsavedChangesBar,
+  useEnvironmentResource,
+} from '@thunderid/components';
 import {useGetAgentType, useGetAgentTypes} from '@thunderid/configure-agent-types';
 import {
   getBackchannelLogoutUriServerError,
@@ -9,6 +16,7 @@ import {
   validateBackchannelLogoutUri,
 } from '@thunderid/configure-applications';
 import {dropNonConformingOptionalAttributes} from '@thunderid/configure-users';
+import {useEnvironment} from '@thunderid/contexts';
 import {useLogger} from '@thunderid/logger/react';
 import {getErrorMessage, isEqualIgnoringEmpty} from '@thunderid/utils';
 import {
@@ -78,7 +86,14 @@ export default function AgentEditPage(): JSX.Element {
   const logger = useLogger('AgentEditPage');
   const {agentId} = useParams<{agentId: string}>();
 
-  const {data: agent, isLoading, error, refetch} = useGetAgent(agentId ?? '');
+  const liveAgent = useGetAgent(agentId ?? '');
+  const {data: shownAgent, isLoading, error, refetch} = useEnvironmentResource<Agent>('agent', agentId, liveAgent);
+  const {readOnly} = useEnvironment();
+  // A gateway's view is read-only: every section already disables itself for a read-only agent.
+  const agent = useMemo(
+    () => (readOnly && shownAgent ? {...shownAgent, isReadOnly: true} : shownAgent),
+    [readOnly, shownAgent],
+  );
   const updateAgent = useUpdateAgent();
 
   // Resolves an error through the `agents` catalog. `t` defaults to the `common` namespace, so
@@ -204,6 +219,7 @@ export default function AgentEditPage(): JSX.Element {
   if (!agent) {
     return (
       <PageContent>
+        <EnvironmentDeploymentNotice resourceType="agent" resourceId={agentId} />
         <Alert severity="warning" sx={{mb: 2}}>
           {t('agents:edit.page.notFound', 'Agent not found')}
         </Alert>
@@ -408,7 +424,7 @@ export default function AgentEditPage(): JSX.Element {
 
   return (
     <PageContent>
-      {agent.isReadOnly && (
+      {shownAgent?.isReadOnly && (
         <Alert severity="info" sx={{mb: 2}}>
           {t('common:messages.readOnlyResource', 'This resource is read-only and cannot be modified.')}
         </Alert>
@@ -535,6 +551,8 @@ export default function AgentEditPage(): JSX.Element {
           </Stack>
         </PageTitle.SubHeader>
       </PageTitle>
+
+      <EnvironmentDeploymentNotice resourceType="agent" resourceId={agent.id} />
 
       <Tabs value={safeActiveTab} onChange={handleTabChange} aria-label="agent settings tabs">
         {tabs.map((tab, idx) => (

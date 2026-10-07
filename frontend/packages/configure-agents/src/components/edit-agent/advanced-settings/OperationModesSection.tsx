@@ -41,6 +41,8 @@ interface OidcDiscovery {
 }
 
 interface OperationModesSectionProps {
+  /** The agent's identifier, which its environment-specific values are held under. */
+  agentId?: string;
   oauth2Config?: OAuth2Config;
   onOAuth2ConfigChange?: (updates: Partial<OAuth2Config>) => void;
   onBackchannelLogoutUriValidationChange?: (hasError: boolean) => void;
@@ -48,6 +50,7 @@ interface OperationModesSectionProps {
 }
 
 export default function OperationModesSection({
+  agentId = undefined,
   oauth2Config = undefined,
   onOAuth2ConfigChange = undefined,
   onBackchannelLogoutUriValidationChange = undefined,
@@ -177,6 +180,7 @@ export default function OperationModesSection({
         </Box>
 
         <RedirectURIsSection
+          agentId={agentId}
           oauth2Config={oauth2Config}
           onOAuth2ConfigChange={onOAuth2ConfigChange}
           disabled={disabled}

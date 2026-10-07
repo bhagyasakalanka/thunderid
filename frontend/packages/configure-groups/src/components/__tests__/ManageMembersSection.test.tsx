@@ -43,6 +43,17 @@ vi.mock('@wso2/oxygen-ui', async () => {
   };
 });
 
+const {mockUseEnvironmentResource} = vi.hoisted(() => ({mockUseEnvironmentResource: vi.fn()}));
+
+vi.mock('@thunderid/components', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@thunderid/components')>();
+  return {
+    ...actual,
+    useEnvironmentResource: (...args: Parameters<typeof actual.useEnvironmentResource>): unknown =>
+      mockUseEnvironmentResource(...args) ?? {...args[2], presence: {source: 'live', isLoading: false}},
+  };
+});
+
 const mockUseGetGroupMembers = vi.fn();
 vi.mock('../../api/useGetGroupMembers', () => ({
   default: (...args: unknown[]): unknown => mockUseGetGroupMembers(...args),
@@ -56,6 +67,7 @@ describe('ManageMembersSection', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockUseEnvironmentResource.mockReturnValue(undefined);
     mockUseGetGroupMembers.mockReturnValue({
       data: {
         totalResults: 3,
@@ -121,5 +133,22 @@ describe('ManageMembersSection', () => {
     await user.click(removeButtons[0]);
 
     expect(defaultProps.onRemoveMember).toHaveBeenCalledWith({id: 'u1', type: 'user'});
+  });
+
+  it('reads the members as the gateway applied them, paged here', () => {
+    const applied = Array.from({length: 12}, (_, index) => ({id: `applied-${index}`, type: 'user'}));
+    mockUseEnvironmentResource.mockReturnValue({
+      data: {totalResults: 12, startIndex: 1, count: 12, members: applied},
+      isLoading: false,
+      presence: {source: 'applied', isLoading: false},
+    });
+    renderWithProviders(<ManageMembersSection {...defaultProps} isReadOnly />);
+
+    expect(mockUseEnvironmentResource).toHaveBeenCalledWith('group', 'g1', expect.anything(), 'members');
+    expect(screen.getByTestId('member-applied-0')).toBeInTheDocument();
+    expect(screen.getByTestId('member-applied-9')).toBeInTheDocument();
+    expect(screen.queryByTestId('member-applied-10')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('member-u1')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', {name: /remove/i})).not.toBeInTheDocument();
   });
 });

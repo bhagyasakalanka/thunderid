@@ -11,6 +11,16 @@ vi.mock('../../components/GroupsList', () => ({
   default: () => <div data-testid="groups-list">GroupsList Mock</div>,
 }));
 
+const {environment} = vi.hoisted(() => ({environment: {readOnly: false}}));
+
+vi.mock('@thunderid/contexts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@thunderid/contexts')>();
+  return {
+    ...actual,
+    useEnvironment: () => ({...actual.useEnvironment(), readOnly: environment.readOnly}),
+  };
+});
+
 const mockNavigate = vi.fn();
 vi.mock('react-router', async () => {
   const actual = await vi.importActual<typeof import('react-router')>('react-router');
@@ -23,6 +33,7 @@ vi.mock('react-router', async () => {
 describe('GroupsListPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    environment.readOnly = false;
     mockNavigate.mockResolvedValue(undefined);
   });
 
@@ -55,6 +66,14 @@ describe('GroupsListPage', () => {
   it('should render GroupsList component', () => {
     renderWithProviders(<GroupsListPage />);
 
+    expect(screen.getByTestId('groups-list')).toBeInTheDocument();
+  });
+
+  it('should hide the add group button in a gateway view', () => {
+    environment.readOnly = true;
+    renderWithProviders(<GroupsListPage />);
+
+    expect(screen.queryByText('Add Group')).not.toBeInTheDocument();
     expect(screen.getByTestId('groups-list')).toBeInTheDocument();
   });
 });

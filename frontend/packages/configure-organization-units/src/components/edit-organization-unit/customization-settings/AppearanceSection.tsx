@@ -26,6 +26,10 @@ interface AppearanceSectionProps {
    * @param value - The new value for the field
    */
   onFieldChange: (field: keyof OrganizationUnit, value: unknown) => void;
+  /**
+   * Whether the theme and layout cannot be changed
+   */
+  readOnly?: boolean;
 }
 
 /**
@@ -41,6 +45,7 @@ export default function AppearanceSection({
   organizationUnit,
   editedOU,
   onFieldChange,
+  readOnly = false,
 }: AppearanceSectionProps): JSX.Element {
   const {t} = useTranslation();
   const {data: themesData, isLoading: loadingThemes} = useGetThemes();
@@ -65,6 +70,7 @@ export default function AppearanceSection({
             getOptionLabel={(option) => (typeof option === 'string' ? option : option.displayName)}
             value={themeOptions.find((theme) => theme.id === (editedOU.themeId ?? organizationUnit.themeId)) ?? null}
             onChange={(_event, newValue) => onFieldChange('themeId', newValue?.id ?? '')}
+            disabled={readOnly}
             loading={loadingThemes}
             renderInput={(params) => (
               <TextField
@@ -97,6 +103,7 @@ export default function AppearanceSection({
               layoutOptions.find((layout) => layout.id === (editedOU.layoutId ?? organizationUnit.layoutId)) ?? null
             }
             onChange={(_event, newValue) => onFieldChange('layoutId', newValue?.id ?? '')}
+            disabled={readOnly}
             loading={loadingLayouts}
             renderInput={(params) => (
               <TextField

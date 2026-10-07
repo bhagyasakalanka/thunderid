@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import Editor from '@monaco-editor/react';
+import {useEnvironment} from '@thunderid/contexts';
 import {Box, Dialog, DialogContent, DialogTitle, IconButton, Stack, Tooltip, Typography} from '@wso2/oxygen-ui';
 import {Maximize, X} from '@wso2/oxygen-ui-icons-react';
 import {useCallback, useEffect, useRef, useState, type JSX} from 'react';
@@ -52,6 +53,9 @@ const EDITOR_OPTIONS = {
 };
 
 function InlineCSSField({id, content, colorMode, onChange, registerFlush}: InlineCSSFieldProps): JSX.Element {
+  // A gateway's view is read-only. The editor sits outside the panel's disabled fieldset when it is
+  // expanded into its dialog, and Monaco does not follow a fieldset either way, so it is told directly.
+  const {readOnly} = useEnvironment();
   const {t} = useTranslation('design');
   const [localContent, setLocalContent] = useState(content);
   const [expanded, setExpanded] = useState(false);
@@ -111,6 +115,7 @@ function InlineCSSField({id, content, colorMode, onChange, registerFlush}: Inlin
           onChange={handleEditorChange}
           options={{
             ...EDITOR_OPTIONS,
+            readOnly,
             lineNumbers: 'on',
             glyphMargin: false,
             lineDecorationsWidth: 4,
@@ -166,6 +171,7 @@ function InlineCSSField({id, content, colorMode, onChange, registerFlush}: Inlin
             onChange={handleEditorChange}
             options={{
               ...EDITOR_OPTIONS,
+              readOnly,
               lineNumbers: 'on',
               fixedOverflowWidgets: false,
               overflowWidgetsDomNode: undefined,

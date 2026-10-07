@@ -1,7 +1,8 @@
 // Copyright 2025 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {QueryErrorNotice} from '@thunderid/components';
+import {QueryErrorNotice, useEnvironmentList} from '@thunderid/components';
+import {useEnvironment} from '@thunderid/contexts';
 import {Button, Grid, InputAdornment, Paper, Skeleton, Stack, TextField, Typography} from '@wso2/oxygen-ui';
 import {Search, SearchX, X} from '@wso2/oxygen-ui-icons-react';
 import {type JSX, useMemo, useState} from 'react';
@@ -15,6 +16,7 @@ import {CONNECTION_VENDOR_META, getAvailableConnectionCategories} from '../confi
 import useConnectionRoutes from '../hooks/useConnectionRoutes';
 import type {ConnectionCardModel, ConnectionCategory} from '../models/connection';
 import buildConnectionCards from '../utils/buildConnectionCards';
+import toConnectionsPage from '../utils/toConnectionsPage';
 
 const SKELETON_COUNT = 6;
 
@@ -22,15 +24,20 @@ export default function ConnectionsList(): JSX.Element {
   const {t} = useTranslation('connections');
   const navigate = useNavigate();
   const routes = useConnectionRoutes();
+  const {readOnly} = useEnvironment();
 
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState<CategoryFilterValue>('all');
 
-  const connectionsQuery = useConnections();
+  const connectionsQuery = useEnvironmentList('connection', useConnections(), toConnectionsPage);
 
+  // A read-only view lists only the connections there are: a vendor with none only opens its setup.
   const cards: ConnectionCardModel[] = useMemo(
-    () => buildConnectionCards(connectionsQuery.data?.connections ?? [], CONNECTION_VENDOR_META, routes),
-    [connectionsQuery.data?.connections, routes],
+    () =>
+      buildConnectionCards(connectionsQuery.data?.connections ?? [], CONNECTION_VENDOR_META, routes).filter(
+        (card) => !readOnly || card.status === 'configured',
+      ),
+    [connectionsQuery.data?.connections, readOnly, routes],
   );
 
   const availableCategories: ConnectionCategory[] = useMemo(() => getAvailableConnectionCategories(cards), [cards]);
@@ -147,7 +154,7 @@ export default function ConnectionsList(): JSX.Element {
               <ConnectionCard card={card} onAction={handleAction} />
             </Grid>
           ))}
-          {!hasFilters && (
+          {!hasFilters && !readOnly && (
             <Grid size={{xs: 12, sm: 6, md: 4, xl: 3}}>
               <AddCustomConnectionCard onClick={() => void navigate(routes.connections.create())} />
             </Grid>

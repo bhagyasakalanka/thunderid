@@ -59,6 +59,8 @@ export interface VerifiableCredentialFormProps {
   error?: string;
   /** Called to clear a stale save error once the user edits a field or resets the form. */
   onErrorClear?: () => void;
+  /** Shows the template without a way to change or save it. */
+  readOnly?: boolean;
 }
 
 interface TabPanelProps {
@@ -91,6 +93,7 @@ export default function VerifiableCredentialForm({
   onDelete = undefined,
   error = undefined,
   onErrorClear = undefined,
+  readOnly = false,
 }: VerifiableCredentialFormProps): JSX.Element {
   const {t} = useTranslation('verifiable-credentials');
 
@@ -223,6 +226,7 @@ export default function VerifiableCredentialForm({
       <TextField
         fullWidth
         id={id}
+        disabled={readOnly}
         value={value}
         placeholder={placeholder}
         helperText={helperText}
@@ -398,7 +402,12 @@ export default function VerifiableCredentialForm({
             {text('vc-vct', t('form.vct.label'), vct, handleVctChange, 'urn:eudi:pid:de:1', true, t('form.vct.hint'))}
             <FormControl fullWidth>
               <FormLabel htmlFor="vc-format">{t('form.format.label')}</FormLabel>
-              <Select id="vc-format" value={format} onChange={(e): void => handleFormatChange(e.target.value)}>
+              <Select
+                id="vc-format"
+                disabled={readOnly}
+                value={format}
+                onChange={(e): void => handleFormatChange(e.target.value)}
+              >
                 <MenuItem value="dc+sd-jwt">{t('form.format.sdJwt')}</MenuItem>
               </Select>
               <FormHelperText>{t('form.format.hint')}</FormHelperText>
@@ -426,7 +435,7 @@ export default function VerifiableCredentialForm({
       </TabPanel>
 
       <TabPanel value={tab} index={2}>
-        <ClaimsEditor claims={claims} onChange={handleClaimsChange} nameErrors={claimNameErrors} />
+        <ClaimsEditor claims={claims} onChange={handleClaimsChange} nameErrors={claimNameErrors} readOnly={readOnly} />
       </TabPanel>
 
       {initial?.id && onDelete && (
@@ -445,7 +454,7 @@ export default function VerifiableCredentialForm({
         </TabPanel>
       )}
 
-      {dirty && (
+      {dirty && !readOnly && (
         <UnsavedChangesBar
           message={t('form.unsavedChanges')}
           resetLabel={t('common:actions.reset')}

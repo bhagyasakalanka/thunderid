@@ -23,6 +23,24 @@ const {mockNavigate, mockSetActiveSection, mockSetDraftTheme, mockSetIsDirty, mo
     },
   }));
 
+const mockEnvironment = vi.hoisted(() => ({readOnly: false}));
+
+vi.mock('@thunderid/contexts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@thunderid/contexts')>()),
+  useEnvironment: () => ({readOnly: mockEnvironment.readOnly}),
+}));
+
+vi.mock('@thunderid/components', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@thunderid/components')>()),
+  EnvironmentDeploymentNotice: ({
+    resourceType,
+    resourceId = undefined,
+  }: {
+    resourceType: string;
+    resourceId?: string;
+  }) => <div data-testid="environment-notice">{`${resourceType}/${resourceId}`}</div>,
+}));
+
 vi.mock('react-router', async () => {
   const actual = await vi.importActual('react-router');
   return {
@@ -102,6 +120,29 @@ describe('ThemeBuilderPage', () => {
     mockThemeBuilderState.activeSection = 'colors';
     mockThemeBuilderState.isDirty = false;
     mockThemeBuilderState.draftTheme = {};
+    mockEnvironment.readOnly = false;
+  });
+
+  describe('In a gateway view', () => {
+    it('hides save, revert and delete, and shows the deployment notice', () => {
+      mockEnvironment.readOnly = true;
+      mockThemeBuilderState.isReadOnly = true;
+      mockThemeBuilderState.isDirty = true;
+      render(<ThemeBuilderPage />);
+
+      expect(screen.queryByRole('button', {name: /Save/i})).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', {name: /Revert/i})).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', {name: 'Delete'})).not.toBeInTheDocument();
+      expect(screen.getByTestId('environment-notice')).toHaveTextContent('theme/theme-1');
+      expect(screen.getByTestId('config-panel').closest('fieldset')).toBeDisabled();
+    });
+
+    it('keeps save and the config panel enabled in the draft', () => {
+      render(<ThemeBuilderPage />);
+
+      expect(screen.getByRole('button', {name: /Save/i})).toBeInTheDocument();
+      expect(screen.getByTestId('config-panel').closest('fieldset')).toBeEnabled();
+    });
   });
 
   describe('Layout', () => {

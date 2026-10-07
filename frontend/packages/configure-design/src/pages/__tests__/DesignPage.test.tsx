@@ -5,7 +5,8 @@ import {fireEvent, render, screen, waitFor} from '@thunderid/test-utils';
 import {describe, it, expect, vi, beforeEach} from 'vitest';
 import DesignPage from '../DesignPage';
 
-const {mockNavigate, mockShowToast, mockRefetchThemes, mockRefetchLayouts} = vi.hoisted(() => ({
+const {mockNavigate, mockShowToast, mockRefetchThemes, mockRefetchLayouts, mockEnvironment} = vi.hoisted(() => ({
+  mockEnvironment: {readOnly: false, applied: {} as Record<string, unknown[]>},
   mockNavigate: vi.fn(),
   mockShowToast: vi.fn(),
   mockRefetchThemes: vi.fn(),
@@ -25,8 +26,15 @@ vi.mock('@thunderid/contexts', async () => {
   return {
     ...actual,
     useToast: () => ({showToast: mockShowToast}),
+    useEnvironment: () => ({readOnly: mockEnvironment.readOnly}),
   };
 });
+
+vi.mock('@thunderid/components', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@thunderid/components')>()),
+  useEnvironmentList: (type: string, live: Record<string, unknown>, toPage: (resources: unknown[]) => unknown) =>
+    mockEnvironment.readOnly ? {...live, data: toPage(mockEnvironment.applied[type] ?? [])} : live,
+}));
 
 interface MockTheme {
   id: string;
@@ -64,6 +72,38 @@ describe('DesignPage', () => {
     layoutsList = [{id: 'layout-1', handle: 'centered', displayName: 'Centered', layout: {}}];
     themesList = [];
     themesLoadingState = false;
+    mockEnvironment.readOnly = false;
+    mockEnvironment.applied = {};
+  });
+
+  it('in a gateway view, lists only the themes and layouts the gateway runs, with no adding or deleting', () => {
+    mockEnvironment.readOnly = true;
+    themesList = [
+      {id: 'theme-1', displayName: 'Midnight'},
+      {id: 'theme-2', displayName: 'Daylight'},
+    ];
+    mockEnvironment.applied = {
+      theme: [{id: 'theme-1', handle: 'midnight', displayName: 'Midnight', theme: {}}],
+      layout: [{id: 'layout-2', handle: 'split', displayName: 'Split', layout: {}}],
+    };
+    render(<DesignPage />);
+
+    expect(screen.queryByRole('button', {name: /Add Theme/i})).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', {name: 'Delete'})).not.toBeInTheDocument();
+    expect(screen.queryByText('Daylight')).not.toBeInTheDocument();
+    expect(screen.queryByText('Centered')).not.toBeInTheDocument();
+    expect(screen.getByText('Split')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Midnight'));
+    expect(mockNavigate).toHaveBeenCalledWith('/design/themes/theme-1');
+  });
+
+  it('in the draft, offers adding and deleting themes', () => {
+    themesList = [{id: 'theme-1', displayName: 'Midnight'}];
+    render(<DesignPage />);
+
+    expect(screen.getByRole('button', {name: /Add Theme/i})).toBeInTheDocument();
+    expect(screen.getByRole('button', {name: 'Delete'})).toBeInTheDocument();
   });
 
   it('renders the themes and layouts section headers', () => {

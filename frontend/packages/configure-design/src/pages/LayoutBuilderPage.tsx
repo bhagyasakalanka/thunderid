@@ -1,7 +1,13 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {BuilderLayout, BuilderStaticPanel} from '@thunderid/components';
+import {
+  BuilderLayout,
+  BuilderStaticPanel,
+  EnvironmentDeploymentNotice,
+  useEnvironmentResource,
+} from '@thunderid/components';
+import {useEnvironment} from '@thunderid/contexts';
 import {useGetThemes, useGetTheme, type Stylesheet} from '@thunderid/design';
 import {Autocomplete, Box, Button, IconButton, TextField, Tooltip, Typography, useColorScheme} from '@wso2/oxygen-ui';
 import {ArrowLeft, Crosshair, Layers, Save} from '@wso2/oxygen-ui-icons-react';
@@ -23,6 +29,7 @@ export default function LayoutBuilderPage(): JSX.Element {
   const {mode, systemMode} = useColorScheme();
   const navigate = useNavigate();
   const routes = useDesignRoutes();
+  const {readOnly} = useEnvironment();
 
   const {
     layoutId,
@@ -58,7 +65,8 @@ export default function LayoutBuilderPage(): JSX.Element {
   const themeOptions = themesData?.themes ?? [];
   const [selectedThemeId, setSelectedThemeId] = useState<string | null>(null);
   const resolvedThemeId = selectedThemeId ?? themeOptions[0]?.id ?? null;
-  const {data: themeData} = useGetTheme(resolvedThemeId ?? '');
+  const livePreviewTheme = useGetTheme(resolvedThemeId ?? '');
+  const {data: themeData} = useEnvironmentResource('theme', resolvedThemeId ?? undefined, livePreviewTheme);
   const previewTheme = themeData?.theme ?? undefined;
 
   // Extract page background from the selected screen draft
@@ -170,9 +178,11 @@ export default function LayoutBuilderPage(): JSX.Element {
       </Box>
 
       {/* Add screen */}
-      <Box sx={{px: 1.25, pb: 1.25, pt: 0.5, borderTop: '1px solid', borderColor: 'divider'}}>
-        <AddScreenRow baseScreens={baseScreenNames} onAdd={handleAddScreen} />
-      </Box>
+      {!readOnly && (
+        <Box sx={{px: 1.25, pb: 1.25, pt: 0.5, borderTop: '1px solid', borderColor: 'divider'}}>
+          <AddScreenRow baseScreens={baseScreenNames} onAdd={handleAddScreen} />
+        </Box>
+      )}
     </>
   ) : undefined;
 
@@ -241,6 +251,9 @@ export default function LayoutBuilderPage(): JSX.Element {
         },
       }}
     >
+      <Box sx={{px: 2, pt: 1, '&:empty': {display: 'none'}}}>
+        <EnvironmentDeploymentNotice resourceType="layout" resourceId={layoutId ?? undefined} />
+      </Box>
       {/* ── Top bar: back button | toolbar (portal target) | save button ──── */}
       <Box sx={{display: 'flex', alignItems: 'center', px: 2, py: 1, flexShrink: 0}}>
         <Button
@@ -254,15 +267,17 @@ export default function LayoutBuilderPage(): JSX.Element {
         </Button>
         {/* Portal target — the PreviewToolbar from GatePreview renders here */}
         <Box ref={setToolbarPortal} sx={{flex: 1, display: 'flex', justifyContent: 'center'}} />
-        <Button
-          variant="contained"
-          // size="small"
-          disabled={!isDirty}
-          startIcon={<Save size={18} />}
-          onClick={() => saveHandlerRef.current()}
-        >
-          {t('layouts.builder.actions.save.label', 'Save')}
-        </Button>
+        {!readOnly && (
+          <Button
+            variant="contained"
+            // size="small"
+            disabled={!isDirty}
+            startIcon={<Save size={18} />}
+            onClick={() => saveHandlerRef.current()}
+          >
+            {t('layouts.builder.actions.save.label', 'Save')}
+          </Button>
+        )}
       </Box>
 
       {/* ── Three-column builder area ──────────────────────────────────────── */}
@@ -293,6 +308,7 @@ export default function LayoutBuilderPage(): JSX.Element {
             >
               <LayoutConfigPanel
                 layoutId={layoutId ?? null}
+                readOnly={readOnly}
                 selectedScreen={selectedScreen}
                 onScreenChange={setSelectedScreen}
                 screenDraft={screenDraft}

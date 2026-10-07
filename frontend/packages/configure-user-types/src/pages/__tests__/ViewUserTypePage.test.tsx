@@ -50,11 +50,28 @@ const {mockAttributes} = vi.hoisted(() => ({
 
 vi.mock('../../constants/attributes', () => ({default: mockAttributes}));
 
+const {environment} = vi.hoisted(() => ({
+  // What the selected environment shows: readOnly and applied are set by a gateway view test.
+  environment: {readOnly: false, applied: undefined as unknown, missing: false},
+}));
+
+vi.mock('@thunderid/contexts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@thunderid/contexts')>();
+  return {
+    ...actual,
+    useEnvironment: () => ({...actual.useEnvironment(), readOnly: environment.readOnly}),
+  };
+});
+
 vi.mock('@thunderid/components', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@thunderid/components')>();
   return {
     ...actual,
     CopyableId: vi.fn(({value}: {value: string}) => <span data-testid="copyable-id">{value}</span>),
+    EnvironmentDeploymentNotice: () =>
+      environment.readOnly ? <div data-testid="environment-deployment-notice" /> : null,
+    useEnvironmentResource: (_type: string, _id: string, live: {data: unknown}) =>
+      environment.applied || environment.missing ? {...live, data: environment.applied} : live,
   };
 });
 
@@ -170,6 +187,9 @@ describe('ViewUserTypePage', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    environment.readOnly = false;
+    environment.applied = undefined;
+    environment.missing = false;
     mockUseGetUserType.mockReturnValue({
       data: mockUserType,
       isLoading: false,
@@ -257,6 +277,15 @@ describe('ViewUserTypePage', () => {
         expect(mockNavigate).toHaveBeenCalledWith('/user-types');
       });
     });
+  });
+
+  it('shows the not found state with the deployment notice for a user type the gateway does not run', () => {
+    environment.readOnly = true;
+    environment.missing = true;
+    render(<ViewUserTypePage />);
+
+    expect(screen.getByText('User type not found')).toBeInTheDocument();
+    expect(screen.getByTestId('environment-deployment-notice')).toBeInTheDocument();
   });
 
   describe('Header and Navigation', () => {
@@ -1735,6 +1764,39 @@ describe('ViewUserTypePage', () => {
       await waitFor(() => {
         expect(mockNavigate).toHaveBeenCalledWith('/user-types');
       });
+    });
+  });
+
+  it('shows no deployment notice and keeps the name editable in the draft', () => {
+    render(<ViewUserTypePage />);
+
+    expect(screen.queryByTestId('environment-deployment-notice')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', {name: 'Edit user type name'})).toBeInTheDocument();
+  });
+
+  describe('Gateway view', () => {
+    beforeEach(() => {
+      environment.readOnly = true;
+      environment.applied = {...mockUserType, displayName: 'Applied Schema'};
+    });
+
+    it('shows the user type as the gateway applied it, with the deployment notice', () => {
+      render(<ViewUserTypePage />);
+
+      expect(screen.getByTestId('environment-deployment-notice')).toBeInTheDocument();
+      expect(screen.getByText('Applied Schema')).toBeInTheDocument();
+      expect(screen.queryByText('This resource is read-only and cannot be modified.')).not.toBeInTheDocument();
+    });
+
+    it('hides the name edit and delete, and disables the general settings', async () => {
+      const user = userEvent.setup();
+      render(<ViewUserTypePage />);
+
+      expect(screen.queryByRole('button', {name: 'Edit user type name'})).not.toBeInTheDocument();
+      expect(screen.getByRole('combobox')).toHaveAttribute('aria-disabled', 'true');
+
+      await user.click(screen.getByRole('tab', {name: /advanced/i}));
+      expect(screen.queryByText('Delete User Type')).not.toBeInTheDocument();
     });
   });
 });

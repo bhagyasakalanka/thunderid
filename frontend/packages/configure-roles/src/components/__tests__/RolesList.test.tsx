@@ -13,6 +13,27 @@ const {mockLoggerError} = vi.hoisted(() => ({
 }));
 
 // Mock the dependencies
+const {environment} = vi.hoisted(() => ({
+  environment: {readOnly: false, applied: undefined as unknown[] | undefined},
+}));
+
+vi.mock('@thunderid/contexts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@thunderid/contexts')>();
+  return {
+    ...actual,
+    useEnvironment: () => ({...actual.useEnvironment(), readOnly: environment.readOnly}),
+  };
+});
+
+vi.mock('@thunderid/components', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@thunderid/components')>();
+  return {
+    ...actual,
+    useEnvironmentList: (_type: string, live: {data: unknown}, toPage: (resources: unknown[]) => unknown) =>
+      environment.applied ? {...live, data: toPage(environment.applied)} : live,
+  };
+});
+
 vi.mock('../../api/useGetRoles');
 vi.mock('react-router', async () => {
   const actual = await vi.importActual('react-router');
@@ -156,6 +177,8 @@ describe('RolesList', () => {
   beforeEach(() => {
     mockNavigate = vi.fn();
     mockLoggerError.mockReset();
+    environment.readOnly = false;
+    environment.applied = undefined;
     vi.mocked(useNavigate).mockReturnValue(mockNavigate as unknown as NavigateFunction);
     vi.mocked(useDataGridLocaleText).mockReturnValue({});
   });
@@ -364,5 +387,27 @@ describe('RolesList', () => {
     });
 
     expect(screen.getByRole('grid')).toBeInTheDocument();
+  });
+
+  it('should list only the roles the gateway runs, read-only, in read-only mode', async () => {
+    environment.readOnly = true;
+    environment.applied = [{id: 'role-2', name: 'Viewer Role as applied', ouId: 'ou-2', permissions: []}];
+    const user = userEvent.setup();
+    vi.mocked(useGetRoles).mockReturnValue({
+      data: mockRolesData,
+      isLoading: false,
+      error: null,
+    } as ReturnType<typeof useGetRoles>);
+    renderComponent();
+
+    expect(screen.getByText('Viewer Role as applied')).toBeInTheDocument();
+    expect(screen.queryByText('Admin Role')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', {name: /^edit$/i})).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', {name: /^delete$/i})).not.toBeInTheDocument();
+
+    await user.click(screen.getByText('Viewer Role as applied'));
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/roles/role-2');
+    });
   });
 });

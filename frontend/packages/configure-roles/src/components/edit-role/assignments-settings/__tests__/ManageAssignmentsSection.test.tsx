@@ -11,7 +11,16 @@ vi.mock('@thunderid/hooks', () => ({
   useDataGridLocaleText: vi.fn(),
 }));
 
+const {applied} = vi.hoisted(() => ({
+  // The role's assignments as a gateway applied them, set by a gateway view test.
+  applied: {current: undefined as unknown},
+}));
+
 vi.mock('@thunderid/components', () => ({
+  useEnvironmentResource: (_type: string, _id: string, live: Record<string, unknown>) =>
+    applied.current
+      ? {...live, data: applied.current, presence: {source: 'applied', isLoading: false}}
+      : {...live, presence: {source: 'live', isLoading: false}},
   SettingsCard: ({
     title,
     description,
@@ -128,6 +137,7 @@ describe('ManageAssignmentsSection', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+    applied.current = undefined;
   });
 
   describe('Rendering', () => {
@@ -261,6 +271,40 @@ describe('ManageAssignmentsSection', () => {
       renderComponent();
 
       expect(screen.getByRole('grid')).toBeInTheDocument();
+    });
+  });
+
+  describe('Gateway view', () => {
+    it('should show the assignments of the tab type as the gateway applied them', () => {
+      applied.current = {
+        totalResults: 3,
+        startIndex: 1,
+        count: 3,
+        assignments: [
+          {id: 'applied-user', type: 'user', display: 'Applied User'},
+          {id: 'applied-group', type: 'group', display: 'Applied Group'},
+          {id: 'applied-app', type: 'app', display: 'Applied App'},
+        ],
+      };
+      renderComponent({isReadOnly: true});
+
+      expect(screen.getByText('Applied User')).toBeInTheDocument();
+      expect(screen.queryByText('Applied Group')).not.toBeInTheDocument();
+      expect(screen.queryByText('Alice')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', {name: /remove/i})).not.toBeInTheDocument();
+    });
+
+    it('should page the applied assignments here', () => {
+      applied.current = {
+        totalResults: 12,
+        startIndex: 1,
+        count: 12,
+        assignments: Array.from({length: 12}, (_, index) => ({id: `u-${index}`, type: 'user', display: `User ${index}`})),
+      };
+      renderComponent();
+
+      expect(screen.getByText('User 9')).toBeInTheDocument();
+      expect(screen.queryByText('User 10')).not.toBeInTheDocument();
     });
   });
 });

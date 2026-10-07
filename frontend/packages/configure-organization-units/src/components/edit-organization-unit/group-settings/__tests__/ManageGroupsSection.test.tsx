@@ -10,6 +10,16 @@ import ManageGroupsSection from '../ManageGroupsSection';
 
 // Mock the useGetOrganizationUnitGroups hook
 const mockUseGetOrganizationUnitGroups = vi.fn();
+const {environment} = vi.hoisted(() => ({environment: {applied: undefined as unknown[] | undefined}}));
+vi.mock('@thunderid/components', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@thunderid/components')>();
+  return {
+    ...actual,
+    useEnvironmentList: (_type: string, live: {data: unknown}, toPage: (resources: unknown[]) => unknown) =>
+      environment.applied ? {...live, data: toPage(environment.applied)} : live,
+  };
+});
+
 vi.mock('@/api/useGetOrganizationUnitGroups', () => ({
   default: (id: string): unknown => mockUseGetOrganizationUnitGroups(id),
 }));
@@ -34,6 +44,7 @@ describe('ManageGroupsSection', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    environment.applied = undefined;
   });
 
   it('should render the manage groups section', () => {
@@ -165,5 +176,22 @@ describe('ManageGroupsSection', () => {
     expect(screen.getAllByText('group-1').length).toBeGreaterThan(0);
     expect(screen.getAllByText('group-2').length).toBeGreaterThan(0);
     expect(screen.getAllByText('group-3').length).toBeGreaterThan(0);
+  });
+
+  it("should list only the gateway's groups of this organization unit in read-only mode", () => {
+    mockUseGetOrganizationUnitGroups.mockReturnValue({
+      data: {groups: mockGroups},
+      isLoading: false,
+    });
+    environment.applied = [
+      {id: 'group-9', name: 'Applied Group', ouId: 'ou-123', members: []},
+      {id: 'group-8', name: 'Elsewhere', ouId: 'ou-other'},
+    ];
+
+    renderWithProviders(<ManageGroupsSection organizationUnitId="ou-123" />);
+
+    expect(screen.getByText('group-9')).toBeInTheDocument();
+    expect(screen.queryByText('group-1')).not.toBeInTheDocument();
+    expect(screen.queryByText('Elsewhere')).not.toBeInTheDocument();
   });
 });

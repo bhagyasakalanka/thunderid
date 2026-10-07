@@ -1,14 +1,14 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {SettingsCard, getInitials} from '@thunderid/components';
+import {SettingsCard, getInitials, useEnvironmentResource} from '@thunderid/components';
 import {useDataGridLocaleText} from '@thunderid/hooks';
 import {Box, Avatar, DataGrid, IconButton} from '@wso2/oxygen-ui';
 import {AppWindow, Bot, Trash2, UserRound, UsersRound} from '@wso2/oxygen-ui-icons-react';
 import {useState, useMemo, type JSX, type ReactNode} from 'react';
 import {useTranslation} from 'react-i18next';
 import useGetGroupMembers from '../../../api/useGetGroupMembers';
-import type {Member} from '../../../models/group';
+import type {Member, MemberListResponse} from '../../../models/group';
 
 interface ManageMembersSectionProps {
   groupId: string;
@@ -37,7 +37,22 @@ export default function ManageMembersSection({
     }),
     [paginationModel],
   );
-  const {data: membersData, isLoading} = useGetGroupMembers(groupId, membersParams);
+  const liveMembers = useGetGroupMembers(groupId, membersParams);
+  const {
+    data: membersData,
+    isLoading,
+    presence,
+  } = useEnvironmentResource<MemberListResponse>('group', groupId, liveMembers, 'members');
+  // The version holds every member in one page, so it is paged here.
+  const isApplied = presence.source === 'applied';
+  const members = useMemo(
+    () =>
+      isApplied
+        ? (membersData?.members ?? []).slice(membersParams.offset, membersParams.offset + membersParams.limit)
+        : (membersData?.members ?? []),
+    [isApplied, membersData, membersParams],
+  );
+  const memberCount = isApplied ? (membersData?.members?.length ?? 0) : (membersData?.totalResults ?? 0);
 
   const baseColumns: DataGrid.GridColDef<Member>[] = useMemo(
     () => [
@@ -138,12 +153,12 @@ export default function ManageMembersSection({
     >
       <Box sx={{height: 400, width: '100%'}}>
         <DataGrid.DataGrid
-          rows={membersData?.members ?? []}
+          rows={members}
           columns={columns}
           loading={isLoading}
           getRowId={(row): string => row.id}
           paginationMode="server"
-          rowCount={membersData?.totalResults ?? 0}
+          rowCount={memberCount}
           paginationModel={paginationModel}
           onPaginationModelChange={setPaginationModel}
           pageSizeOptions={[5, 10, 25]}

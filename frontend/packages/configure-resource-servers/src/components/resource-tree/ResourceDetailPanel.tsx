@@ -1,7 +1,7 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {useToast} from '@thunderid/contexts';
+import {useEnvironment, useToast} from '@thunderid/contexts';
 import {useLogger} from '@thunderid/logger/react';
 import {getErrorMessage} from '@thunderid/utils';
 import {
@@ -57,6 +57,7 @@ function DetailForm({selectedNode, resourceServer, onRefresh}: DetailFormProps):
   const {t} = useTranslation();
   const {showToast} = useToast();
   const logger = useLogger('ResourceDetailPanel');
+  const {readOnly} = useEnvironment();
 
   const initial = deriveInitialValues(selectedNode);
   const [name, setName] = useState(initial.name);
@@ -163,7 +164,7 @@ function DetailForm({selectedNode, resourceServer, onRefresh}: DetailFormProps):
     }
   };
 
-  const isReadOnly = Boolean(resourceServer.isReadOnly);
+  const isReadOnly = resourceServer.isReadOnly === true || readOnly;
   const isPending =
     updateRs.isPending || updateResource.isPending || updateServerAction.isPending || updateResourceAction.isPending;
 
@@ -224,7 +225,7 @@ function DetailForm({selectedNode, resourceServer, onRefresh}: DetailFormProps):
         </Typography>
       )}
 
-      {isReadOnly && selectedNode.type === 'server' && (
+      {resourceServer.isReadOnly && selectedNode.type === 'server' && (
         <Alert severity="info">
           {t('resourceServers:detail.readOnlyWarning', 'This is a system resource server and cannot be modified.')}
         </Alert>

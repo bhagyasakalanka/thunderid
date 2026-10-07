@@ -7,7 +7,9 @@ import {useCallback, type JSX} from 'react';
 import {Trans, useTranslation} from 'react-i18next';
 import {Link} from 'react-router';
 import useGetAgentRoles from '../../../api/useGetAgentRoles';
+import useAgentMemberships from '../../../hooks/useAgentMemberships';
 import useAgentRoutes from '../../../hooks/useAgentRoutes';
+import {toAgentRolesPage} from '../../../utils/toAgentMemberships';
 
 interface AgentRolesSectionProps {
   agentId: string;
@@ -16,7 +18,10 @@ interface AgentRolesSectionProps {
 export default function AgentRolesSection({agentId}: AgentRolesSectionProps): JSX.Element {
   const routes = useAgentRoutes();
   const {t} = useTranslation();
-  const {data, isLoading, error, refetch} = useGetAgentRoles(agentId, {limit: 100, offset: 0});
+  const {data, isLoading, error, refetch} = useAgentMemberships(
+    useGetAgentRoles(agentId, {limit: 100, offset: 0}),
+    (configuration) => toAgentRolesPage(configuration, agentId, 100, 0),
+  );
   const roles = data?.roles ?? [];
 
   // Resolves an error through the `agents` catalog. `t` defaults to the `common` namespace, so

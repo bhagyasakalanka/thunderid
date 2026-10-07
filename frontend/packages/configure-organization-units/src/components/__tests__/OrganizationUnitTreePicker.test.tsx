@@ -45,6 +45,15 @@ vi.mock('@/api/useGetChildOrganizationUnits', () => ({
     },
 }));
 
+// The organization units the gateway runs, set by a read-only test.
+const {environment} = vi.hoisted(() => ({environment: {appliedUnits: undefined as unknown[] | undefined}}));
+vi.mock('@/hooks/useAppliedOrganizationUnits', () => ({
+  default: () =>
+    environment.appliedUnits
+      ? {data: environment.appliedUnits, isLoading: false, error: null, refetch: vi.fn()}
+      : undefined,
+}));
+
 // Mock ThunderID — stable reference to avoid useCallback churn
 const mockHttpRequest = vi.fn();
 const stableHttp = {request: mockHttpRequest};
@@ -89,6 +98,7 @@ describe('OrganizationUnitTreePicker', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    environment.appliedUnits = undefined;
     mockUseGetOrganizationUnits.mockReturnValue({
       data: mockOUData,
       isLoading: false,
@@ -1075,6 +1085,53 @@ describe('OrganizationUnitTreePicker', () => {
       await waitFor(() => {
         expect(screen.getByText(t('organizationUnits:listing.treeView.noChildren'))).toBeInTheDocument();
       });
+    });
+  });
+
+  describe('in read-only mode', () => {
+    const liveChildren: OrganizationUnitListResponse = {
+      totalResults: 1,
+      startIndex: 1,
+      count: 1,
+      organizationUnits: [
+        {id: 'live-child', handle: 'live', name: 'Live Child', description: null, parent: 'root-ou-1'},
+      ],
+    };
+
+    beforeEach(() => {
+      mockUseGetChildOrganizationUnits.mockReturnValue({data: liveChildren, isLoading: false, error: null});
+      environment.appliedUnits = [
+        {id: 'root-ou-1', handle: 'root', name: 'Root OU', parent: null},
+        {id: 'applied-child', handle: 'applied-child', name: 'Applied Child', parent: 'root-ou-1'},
+        {id: 'applied-grandchild', handle: 'applied-grandchild', name: 'Applied Grandchild', parent: 'applied-child'},
+        {id: 'elsewhere', handle: 'elsewhere', name: 'Elsewhere', parent: null},
+      ];
+    });
+
+    it('should list the child organization units the gateway runs when it shows applied units', async () => {
+      renderWithProviders(<OrganizationUnitTreePicker {...defaultProps} rootOuId="root-ou-1" hideRoot showApplied />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Applied Child')).toBeInTheDocument();
+      });
+      expect(screen.queryByText('Live Child')).not.toBeInTheDocument();
+      expect(screen.queryByText('Elsewhere')).not.toBeInTheDocument();
+
+      fireEvent.click(document.querySelectorAll('.MuiTreeItem-iconContainer')[0]);
+
+      await waitFor(() => {
+        expect(screen.getByText('Applied Grandchild')).toBeInTheDocument();
+      });
+      expect(mockHttpRequest).not.toHaveBeenCalled();
+    });
+
+    it('should keep a picker live', async () => {
+      renderWithProviders(<OrganizationUnitTreePicker {...defaultProps} rootOuId="root-ou-1" hideRoot />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Live Child')).toBeInTheDocument();
+      });
+      expect(screen.queryByText('Applied Child')).not.toBeInTheDocument();
     });
   });
 });

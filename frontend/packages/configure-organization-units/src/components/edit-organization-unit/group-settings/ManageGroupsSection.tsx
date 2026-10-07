@@ -1,13 +1,14 @@
 // Copyright 2025 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {QueryErrorNotice, SettingsCard, getInitials} from '@thunderid/components';
+import {QueryErrorNotice, SettingsCard, getInitials, useEnvironmentList} from '@thunderid/components';
 import {useDataGridLocaleText} from '@thunderid/hooks';
-import {Box, DataGrid, Avatar} from '@wso2/oxygen-ui';
+import {Box, DataGrid, Avatar, Stack, Typography} from '@wso2/oxygen-ui';
 import {useMemo, type JSX} from 'react';
 import {useTranslation} from 'react-i18next';
 import useGetOrganizationUnitGroups from '../../../api/useGetOrganizationUnitGroups';
-import type {Group} from '../../../models/group';
+import type {Group, GroupListResponse} from '../../../models/group';
+import toOrganizationUnitGroupPage from '../../../utils/toOrganizationUnitGroupPage';
 
 /**
  * Props for the {@link ManageGroupsSection} component.
@@ -34,7 +35,18 @@ export default function ManageGroupsSection({organizationUnitId}: ManageGroupsSe
   const {t} = useTranslation();
   const dataGridLocaleText = useDataGridLocaleText();
 
-  const {data: groupsData, isLoading, error, refetch} = useGetOrganizationUnitGroups(organizationUnitId);
+  const {
+    data: groupsData,
+    isLoading,
+    error,
+    refetch,
+  } = useEnvironmentList(
+    'group',
+    useGetOrganizationUnitGroups(organizationUnitId),
+    // The live list is its first page, so the gateway's is too.
+    (resources: unknown[]): GroupListResponse =>
+      toOrganizationUnitGroupPage(resources, organizationUnitId, {limit: 30, offset: 0}),
+  );
 
   const columns: DataGrid.GridColDef<Group>[] = useMemo(
     () => [
@@ -76,6 +88,13 @@ export default function ManageGroupsSection({organizationUnitId}: ManageGroupsSe
         headerName: t('organizationUnits:edit.groups.sections.manage.listing.columns.name'),
         flex: 1,
         minWidth: 200,
+        renderCell: (params: DataGrid.GridRenderCellParams<Group>): JSX.Element => (
+          <Stack direction="row" alignItems="center" spacing={1} sx={{height: '100%'}}>
+            <Typography variant="body2" noWrap>
+              {params.row.name}
+            </Typography>
+          </Stack>
+        ),
       },
       {
         field: 'id',

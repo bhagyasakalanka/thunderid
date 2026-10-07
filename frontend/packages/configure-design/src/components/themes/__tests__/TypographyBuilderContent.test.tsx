@@ -44,7 +44,8 @@ function makeFullTypography(): Record<string, unknown> {
 }
 
 // useFontStylesheetLink needs a ConfigProvider, which this test tree doesn't otherwise set up.
-vi.mock('@thunderid/contexts', () => ({
+vi.mock('@thunderid/contexts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@thunderid/contexts')>()),
   useConfig: () => ({config: {brand: {product_name: 'ThunderID'}}}),
 }));
 

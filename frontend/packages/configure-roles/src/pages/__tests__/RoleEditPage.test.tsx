@@ -10,6 +10,11 @@ import type {UpdateRoleRequest} from '../../models/requests';
 import type {Role} from '../../models/role';
 import RoleEditPage from '../RoleEditPage';
 
+const {environment} = vi.hoisted(() => ({
+  // What the selected environment shows: readOnly and applied are set by a gateway view test.
+  environment: {readOnly: false, applied: undefined as unknown, missing: false},
+}));
+
 // Mock dependencies
 vi.mock('../../api/useGetRole');
 vi.mock('../../api/useUpdateRole');
@@ -31,29 +36,36 @@ vi.mock('../../components/edit-role/general-settings/EditGeneralSettings', () =>
 }));
 
 vi.mock('../../components/edit-role/advanced-settings/EditAdvancedSettings', () => ({
-  default: ({onDeleteClick}: {onDeleteClick: () => void}) => (
+  default: ({onDeleteClick = undefined}: {onDeleteClick?: () => void}) => (
     <div data-testid="edit-advanced-settings">
-      <button type="button" onClick={onDeleteClick}>
-        Delete
-      </button>
+      {onDeleteClick && (
+        <button type="button" onClick={onDeleteClick}>
+          Delete
+        </button>
+      )}
     </div>
   ),
 }));
 
 vi.mock('../../components/edit-role/assignments-settings/EditAssignmentsSettings', () => ({
-  default: () => <div data-testid="edit-assignments-settings">Assignments Settings</div>,
+  default: ({isReadOnly = false}: {isReadOnly?: boolean}) => (
+    <div data-testid="edit-assignments-settings" data-read-only={String(isReadOnly)}>
+      Assignments Settings
+    </div>
+  ),
 }));
 
 vi.mock('../../components/edit-role/permissions-settings/EditPermissionsSettings', () => ({
   default: ({
     permissions,
     onPermissionsChange,
+    isReadOnly = false,
   }: {
     permissions: ResourcePermissions[];
     onPermissionsChange: (p: ResourcePermissions[]) => void;
     isReadOnly?: boolean;
   }) => (
-    <div data-testid="permissions-settings">
+    <div data-testid="permissions-settings" data-read-only={String(isReadOnly)}>
       <span data-testid="permissions-selected">{JSON.stringify(permissions)}</span>
       <button
         type="button"
@@ -76,6 +88,9 @@ vi.mock('../../components/edit-role/permissions-settings/EditPermissionsSettings
 vi.mock('@thunderid/components', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@thunderid/components')>()),
   CopyableId: vi.fn(() => null),
+  EnvironmentDeploymentNotice: () => (environment.readOnly ? <div data-testid="environment-deployment-notice" /> : null),
+  useEnvironmentResource: (_type: string, _id: string, live: {data: unknown}) =>
+    environment.applied || environment.missing ? {...live, data: environment.applied} : live,
   PageLoadingAnimation: vi.fn(() => <div data-testid="page-loading-animation" />),
   UnsavedChangesBar: vi.fn(
     ({
@@ -139,6 +154,7 @@ vi.mock('@thunderid/contexts', async (importOriginal) => {
   return {
     ...actual,
     useToast: () => ({showToast: mockShowToast}),
+    useEnvironment: () => ({...actual.useEnvironment(), readOnly: environment.readOnly}),
   };
 });
 
@@ -160,6 +176,9 @@ describe('RoleEditPage', () => {
 
   beforeEach(() => {
     mockNavigate = vi.fn();
+    environment.readOnly = false;
+    environment.applied = undefined;
+    environment.missing = false;
 
     vi.mocked(useParams).mockReturnValue({roleId: 'role-1'});
     vi.mocked(useNavigate).mockReturnValue(mockNavigate as unknown as NavigateFunction);
@@ -526,5 +545,55 @@ describe('RoleEditPage', () => {
       // Catalog selected should return to role.permissions
       expect(screen.getByTestId('permissions-selected')).toHaveTextContent(JSON.stringify(mockRole.permissions));
     });
+  });
+
+  it('shows the not found state with the deployment notice for a role the gateway does not run', () => {
+    environment.readOnly = true;
+    environment.missing = true;
+    render(<RoleEditPage />);
+
+    expect(screen.getByText('Role not found')).toBeInTheDocument();
+    expect(screen.getByTestId('environment-deployment-notice')).toBeInTheDocument();
+  });
+
+  describe('Gateway view', () => {
+    beforeEach(() => {
+      environment.readOnly = true;
+      environment.applied = {...mockRole, name: 'Applied Role', description: 'As applied'};
+    });
+
+    it('should show the role as the gateway applied it, with the deployment notice', () => {
+      render(<RoleEditPage />);
+
+      expect(screen.getByTestId('environment-deployment-notice')).toBeInTheDocument();
+      expect(screen.getByText('Applied Role')).toBeInTheDocument();
+      expect(screen.getByText('As applied')).toBeInTheDocument();
+      expect(screen.queryByText('This resource is read-only and cannot be modified.')).not.toBeInTheDocument();
+    });
+
+    it('should make every tab read-only and hide delete', () => {
+      render(<RoleEditPage />);
+
+      expect(screen.queryByRole('button', {name: 'Edit role name'})).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', {name: 'Edit role description'})).not.toBeInTheDocument();
+      expect(screen.getByTestId('permissions-settings')).toHaveAttribute('data-read-only', 'true');
+      expect(screen.getByTestId('edit-assignments-settings')).toHaveAttribute('data-read-only', 'true');
+      expect(screen.queryByRole('button', {name: 'Delete'})).not.toBeInTheDocument();
+    });
+
+    it('should disable save', () => {
+      render(<RoleEditPage />);
+
+      fireEvent.click(screen.getByTestId('permissions-change'));
+      expect(screen.getByRole('button', {name: 'Save Changes'})).toBeDisabled();
+    });
+  });
+
+  it('should keep the role editable in the draft', () => {
+    render(<RoleEditPage />);
+
+    expect(screen.queryByTestId('environment-deployment-notice')).not.toBeInTheDocument();
+    expect(screen.getByTestId('permissions-settings')).toHaveAttribute('data-read-only', 'false');
+    expect(screen.getByTestId('edit-assignments-settings')).toHaveAttribute('data-read-only', 'false');
   });
 });

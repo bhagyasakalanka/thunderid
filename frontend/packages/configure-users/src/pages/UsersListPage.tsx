@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {ExternalLink} from '@thunderid/components';
+import {useEnvironment} from '@thunderid/contexts';
 import {useLogger} from '@thunderid/logger/react';
 import {Button, PageContent, PageTitle} from '@wso2/oxygen-ui';
 import {Plus} from '@wso2/oxygen-ui-icons-react';
@@ -15,6 +16,7 @@ export default function UsersListPage() {
   const {t} = useTranslation();
   const logger = useLogger('UsersListPage');
   const routes = useUserRoutes();
+  const {readOnly} = useEnvironment();
 
   return (
     <PageContent>
@@ -24,8 +26,9 @@ export default function UsersListPage() {
         <PageTitle.SubHeader>
           {t('users:subtitle')} <ExternalLink docKey="users" />
         </PageTitle.SubHeader>
-        <PageTitle.Actions>
-          <Button
+        {!readOnly && (
+          <PageTitle.Actions>
+            <Button
             variant="contained"
             startIcon={<Plus size={20} />}
             onClick={() => {
@@ -37,8 +40,9 @@ export default function UsersListPage() {
             }}
           >
             {t('users:addUser')}
-          </Button>
-        </PageTitle.Actions>
+            </Button>
+          </PageTitle.Actions>
+        )}
       </PageTitle>
 
       <UsersList />

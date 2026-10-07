@@ -104,6 +104,8 @@ const AUTHZEN_PDP_API_KEY_WITH_NULL_HEADERS = {
 };
 
 const mockParams: {type: string; id: string} = {type: 'google', id: 'g1'};
+const mockEnvironment: {readOnly: boolean} = {readOnly: false};
+const mockApplied: {data: Record<string, unknown> | undefined; missing: boolean} = {data: undefined, missing: false};
 const mockConn: {data: Record<string, unknown>} = {data: CONNECTION};
 
 vi.mock('react-router', async (importOriginal) => ({
@@ -115,9 +117,24 @@ vi.mock('@thunderid/contexts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@thunderid/contexts')>()),
   useConfig: () => ({getGateCallbackUrl: () => 'https://id.acme.io/gate/callback'}),
   useToast: () => ({showToast: vi.fn()}),
+  useEnvironment: () => ({readOnly: mockEnvironment.readOnly}),
 }));
 vi.mock('@thunderid/components', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@thunderid/components')>()),
+  // In a gateway's view the applied copy stands in for the live read; in the draft the live read is used.
+  useEnvironmentResource: (_type: string, _id: string | undefined, live: Record<string, unknown>) => {
+    if (mockApplied.missing) return {...live, data: undefined, presence: {source: 'missing'}};
+    return mockApplied.data
+      ? {...live, data: mockApplied.data, presence: {source: 'applied'}}
+      : {...live, presence: {}};
+  },
+  EnvironmentDeploymentNotice: ({
+    resourceType,
+    resourceId = undefined,
+  }: {
+    resourceType: string;
+    resourceId?: string;
+  }) => <div data-testid="environment-notice">{`${resourceType}/${resourceId}`}</div>,
   SettingsCard: ({title, children}: {title: string; children: ReactNode}) => (
     <section aria-label={title}>{children}</section>
   ),
@@ -152,12 +169,14 @@ vi.mock('../../components/ConnectionForm', () => ({
   default: function StubConnectionForm({
     onFieldChange,
     nameError,
+    readOnly,
   }: {
     onFieldChange: (name: string, value: string) => void;
     nameError?: string | null;
+    readOnly?: boolean;
   }) {
     return (
-      <div data-testid="stub-connection-form">
+      <div data-testid="stub-connection-form" data-readonly={String(Boolean(readOnly))}>
         <button type="button" data-testid="edit-client-id" onClick={() => onFieldChange('clientId', 'changed')}>
           edit
         </button>
@@ -292,6 +311,9 @@ describe('ConnectionDetailPage', () => {
     mockParams.type = 'google';
     mockParams.id = 'g1';
     mockConn.data = CONNECTION;
+    mockEnvironment.readOnly = false;
+    mockApplied.data = undefined;
+    mockApplied.missing = false;
     updateMutationState.isPending = false;
     updateMutationState.isError = false;
   });
@@ -645,5 +667,54 @@ describe('ConnectionDetailPage', () => {
 
     const payload = updateMock.mock.calls[0][0] as Record<string, unknown>;
     expect(payload).toMatchObject({authentication: {scheme: 'NONE'}});
+  });
+
+  describe('in a gateway view', () => {
+    beforeEach(() => {
+      mockEnvironment.readOnly = true;
+    });
+
+    it('shows the connection as the gateway applied it, with the deployment notice', () => {
+      mockApplied.data = {...CONNECTION, name: 'Google as applied'};
+      render(<ConnectionDetailPage />);
+      expect(screen.getByText('Google as applied')).toBeInTheDocument();
+      expect(screen.getByTestId('environment-notice')).toHaveTextContent('connection/g1');
+    });
+
+    it('shows the not-found state with the deployment notice when the gateway does not run the connection', () => {
+      mockApplied.missing = true;
+      render(<ConnectionDetailPage />);
+      expect(screen.getByText('Connection not found')).toBeInTheDocument();
+      expect(screen.getByTestId('environment-notice')).toHaveTextContent('connection/g1');
+      expect(screen.queryByTestId('stub-connection-form')).not.toBeInTheDocument();
+    });
+
+    it('makes the connection form read-only and hides the advanced tab with its delete', () => {
+      render(<ConnectionDetailPage />);
+      expect(screen.getByTestId('stub-connection-form')).toHaveAttribute('data-readonly', 'true');
+      expect(screen.queryByTestId('connection-tab-advanced')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('connection-delete-button')).not.toBeInTheDocument();
+    });
+
+    it('never shows the save bar', () => {
+      render(<ConnectionDetailPage />);
+      fireEvent.click(screen.getByTestId('edit-client-id'));
+      expect(screen.queryByTestId('save-bar')).not.toBeInTheDocument();
+    });
+
+    it('disables the controls of the other tabs', () => {
+      mockParams.type = 'authzen-pdp';
+      mockParams.id = 'pdp1';
+      mockConn.data = AUTHZEN_PDP_CONNECTION;
+      render(<ConnectionDetailPage />);
+      fireEvent.click(screen.getByTestId('connection-tab-subject-mapping'));
+      expect(screen.getByTestId('edit-subject-mapping').closest('fieldset')).toBeDisabled();
+    });
+  });
+
+  it('in the draft, keeps the form editable and leaves the general tab outside any disabled fieldset', () => {
+    render(<ConnectionDetailPage />);
+    expect(screen.getByTestId('stub-connection-form')).toHaveAttribute('data-readonly', 'false');
+    expect(screen.getByTestId('edit-client-id').closest('fieldset')).toBeNull();
   });
 });

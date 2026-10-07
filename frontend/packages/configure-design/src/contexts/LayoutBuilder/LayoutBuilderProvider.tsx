@@ -1,7 +1,8 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {QueryErrorNotice} from '@thunderid/components';
+import {QueryErrorNotice, useEnvironmentResource} from '@thunderid/components';
+import {useEnvironment} from '@thunderid/contexts';
 import {useGetLayout} from '@thunderid/design';
 import {useState, useMemo, useCallback, type PropsWithChildren} from 'react';
 import {useTranslation} from 'react-i18next';
@@ -47,7 +48,19 @@ export type LayoutBuilderProviderProps = PropsWithChildren;
 export default function LayoutBuilderProvider({children}: LayoutBuilderProviderProps) {
   const {t} = useTranslation('design');
   const {layoutId = ''} = useParams<{layoutId: string}>();
-  const {data: layoutData, isLoading, error, refetch} = useGetLayout(layoutId);
+  const liveLayout = useGetLayout(layoutId);
+  const {
+    data: layoutData,
+    isLoading,
+    error,
+    refetch,
+    presence,
+  } = useEnvironmentResource('layout', layoutId, liveLayout);
+  const {readOnly} = useEnvironment();
+  // Where the layout is shown from. The draft is taken afresh when that changes, so a gateway's layout
+  // is never shown with edits made to another environment's.
+  const source = `${presence.gateway?.id ?? ''}:${presence.source}`;
+  const [draftSource, setDraftSource] = useState<string>(source);
 
   const [draftLayout, setDraftLayout] = useState<LayoutConfig | null>(
     () => (layoutData?.layout as LayoutConfig) ?? null,
@@ -65,8 +78,11 @@ export default function LayoutBuilderProvider({children}: LayoutBuilderProviderP
   const [prevLayoutData, setPrevLayoutData] = useState(layoutData);
   if (prevLayoutData !== layoutData) {
     setPrevLayoutData(layoutData);
-    if (layoutData?.layout && !draftLayout) {
+    if (layoutData?.layout && (!draftLayout || draftSource !== source)) {
       setDraftLayout(layoutData.layout as LayoutConfig);
+      setExtraScreens({});
+      setIsDirty(false);
+      setDraftSource(source);
     }
   }
 
@@ -148,6 +164,9 @@ export default function LayoutBuilderProvider({children}: LayoutBuilderProviderP
     return Object.keys(allScreens).filter((name) => !allScreens[name]?.['extends']);
   }, [getAllScreens]);
 
+  // A gateway's view is read-only: an edit made through the builder is dropped.
+  const ignoreEdit = useCallback((): void => undefined, []);
+
   const contextValue: LayoutBuilderContextType = useMemo(
     () => ({
       layoutId,
@@ -155,7 +174,7 @@ export default function LayoutBuilderProvider({children}: LayoutBuilderProviderP
       originalLayout: layoutData?.layout as LayoutConfig | null,
       displayName,
       draftLayout,
-      setDraftLayout,
+      setDraftLayout: readOnly ? ignoreEdit : setDraftLayout,
       isDirty,
       setIsDirty,
       selectedScreen: effectiveSelectedScreen,
@@ -163,16 +182,18 @@ export default function LayoutBuilderProvider({children}: LayoutBuilderProviderP
       screenDraft,
       setScreenDraft,
       extraScreens,
-      setExtraScreens,
+      setExtraScreens: readOnly ? ignoreEdit : setExtraScreens,
       isSaving,
       setIsSaving,
       resetDraft,
-      addScreen,
-      updateDraftLayout,
+      addScreen: readOnly ? ignoreEdit : addScreen,
+      updateDraftLayout: readOnly ? ignoreEdit : updateDraftLayout,
       getAllScreens,
       getBaseScreenNames,
     }),
     [
+      readOnly,
+      ignoreEdit,
       layoutId,
       handle,
       layoutData?.layout,

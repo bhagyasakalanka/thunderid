@@ -9,6 +9,19 @@ import {describe, it, expect, beforeEach, afterEach, vi} from 'vitest';
 import GroupConstraints from '../../constants/group-constraints';
 import GroupEditPage from '../GroupEditPage';
 
+const {environment} = vi.hoisted(() => ({
+  // What the selected environment shows: readOnly and applied are set by a gateway view test.
+  environment: {readOnly: false, applied: undefined as unknown, missing: false},
+}));
+
+vi.mock('@thunderid/contexts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@thunderid/contexts')>();
+  return {
+    ...actual,
+    useEnvironment: () => ({...actual.useEnvironment(), readOnly: environment.readOnly}),
+  };
+});
+
 vi.mock('@thunderid/components', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@thunderid/components')>();
   return {
@@ -28,6 +41,10 @@ vi.mock('@thunderid/components', async (importOriginal) => {
         {value}
       </span>
     )),
+    EnvironmentDeploymentNotice: () =>
+      environment.readOnly ? <div data-testid="environment-deployment-notice" /> : null,
+    useEnvironmentResource: (_type: string, _id: string, live: {data: unknown}) =>
+      environment.applied || environment.missing ? {...live, data: environment.applied} : live,
   };
 });
 
@@ -114,19 +131,21 @@ vi.mock('../../components/edit-group/general-settings/EditGeneralSettings', () =
 }));
 
 vi.mock('../../components/edit-group/members-settings/EditMembersSettings', () => ({
-  default: ({group}: {group: {id: string; name: string}}) => (
-    <div data-testid="members-settings">
+  default: ({group, isReadOnly = false}: {group: {id: string; name: string}; isReadOnly?: boolean}) => (
+    <div data-testid="members-settings" data-read-only={String(isReadOnly)}>
       <span>Members of {group.name}</span>
     </div>
   ),
 }));
 
 vi.mock('../../components/edit-group/advanced-settings/EditAdvancedSettings', () => ({
-  default: ({onDeleteClick}: {onDeleteClick: () => void}) => (
+  default: ({onDeleteClick = undefined}: {onDeleteClick?: () => void}) => (
     <div data-testid="advanced-settings">
-      <button type="button" data-testid="delete-click" onClick={onDeleteClick}>
-        Delete
-      </button>
+      {onDeleteClick && (
+        <button type="button" data-testid="delete-click" onClick={onDeleteClick}>
+          Delete
+        </button>
+      )}
     </div>
   ),
 }));
@@ -146,6 +165,9 @@ describe('GroupEditPage', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    environment.readOnly = false;
+    environment.applied = undefined;
+    environment.missing = false;
     mockIsPending = false;
     mockUpdateError = null;
     mockNavigate.mockResolvedValue(undefined);
@@ -680,6 +702,53 @@ describe('GroupEditPage', () => {
       expect(
         screen.getByText('A group with this name already exists in this organization unit. Choose a different name.'),
       ).toBeInTheDocument();
+    });
+  });
+
+  it('should show no deployment notice and keep members editable in the draft', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<GroupEditPage />);
+
+    expect(screen.queryByTestId('environment-deployment-notice')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', {name: 'Edit group name'})).toBeInTheDocument();
+    await user.click(screen.getByText('Members'));
+    expect(screen.getByTestId('members-settings')).toHaveAttribute('data-read-only', 'false');
+  });
+
+  it('shows the not found state with the deployment notice for a group the gateway does not run', () => {
+    environment.readOnly = true;
+    environment.missing = true;
+    renderWithProviders(<GroupEditPage />);
+
+    expect(screen.getByText('Group not found')).toBeInTheDocument();
+    expect(screen.getByTestId('environment-deployment-notice')).toBeInTheDocument();
+  });
+
+  describe('in a gateway view', () => {
+    beforeEach(() => {
+      environment.readOnly = true;
+      environment.applied = {...mockGroup, name: 'Applied Group', description: 'As applied'};
+    });
+
+    it('should show the group as the gateway applied it, with the deployment notice', () => {
+      renderWithProviders(<GroupEditPage />);
+
+      expect(screen.getByTestId('environment-deployment-notice')).toBeInTheDocument();
+      expect(screen.getAllByText('Applied Group').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByText('As applied')).toBeInTheDocument();
+      expect(screen.queryByText('This resource is read-only and cannot be modified.')).not.toBeInTheDocument();
+    });
+
+    it('should hide the name and description edits, delete, and member changes', async () => {
+      const user = userEvent.setup();
+      renderWithProviders(<GroupEditPage />);
+
+      expect(screen.queryByRole('button', {name: 'Edit group name'})).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', {name: 'Edit group description'})).not.toBeInTheDocument();
+      await user.click(screen.getByText('Members'));
+      expect(screen.getByTestId('members-settings')).toHaveAttribute('data-read-only', 'true');
+      await user.click(screen.getByText('Advanced'));
+      expect(screen.queryByTestId('delete-click')).not.toBeInTheDocument();
     });
   });
 });

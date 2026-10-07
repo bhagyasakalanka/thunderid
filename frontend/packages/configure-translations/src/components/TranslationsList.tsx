@@ -1,18 +1,20 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {QueryErrorNotice, ResourceAvatar} from '@thunderid/components';
+import {QueryErrorNotice, ResourceAvatar, useEnvironmentList} from '@thunderid/components';
+import {useEnvironment} from '@thunderid/contexts';
 import {useDataGridLocaleText} from '@thunderid/hooks';
 import {getDisplayNameForCode, toFlagEmoji, useGetLanguages} from '@thunderid/i18n';
 import {useLogger} from '@thunderid/logger/react';
-import {Chip, DataGrid, IconButton, ListingTable, Tooltip} from '@wso2/oxygen-ui';
-import {Pencil, Trash2} from '@wso2/oxygen-ui-icons-react';
+import {Chip, DataGrid, IconButton, ListingTable, Stack, Tooltip} from '@wso2/oxygen-ui';
+import {Eye, Pencil, Trash2} from '@wso2/oxygen-ui-icons-react';
 import {useCallback, useMemo, useState, type JSX} from 'react';
 import {useTranslation} from 'react-i18next';
 import {useNavigate} from 'react-router';
 import TranslationConstants from '../constants/translation-constants';
 import TranslationDeleteDialog from '@/components/TranslationDeleteDialog';
 import useTranslationRoutes from '@/hooks/useTranslationRoutes';
+import toLanguagesPage from '@/utils/toLanguagesPage';
 
 export default function TranslationsList(): JSX.Element {
   const {t} = useTranslation('translations');
@@ -20,11 +22,13 @@ export default function TranslationsList(): JSX.Element {
   const logger = useLogger('TranslationsList');
   const dataGridLocaleText = useDataGridLocaleText();
   const routes = useTranslationRoutes();
+  const {readOnly} = useEnvironment();
 
   const [selectedLanguage, setSelectedLanguage] = useState<string | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState<boolean>(false);
 
-  const {data, isLoading, error, refetch} = useGetLanguages();
+  const liveLanguages = useGetLanguages();
+  const {data, isLoading, error, refetch} = useEnvironmentList('translation', liveLanguages, toLanguagesPage);
 
   const handleEditClick = useCallback(
     (language: string): void => {
@@ -71,12 +75,14 @@ export default function TranslationsList(): JSX.Element {
             }
             primary={getDisplayNameForCode(params.row.code)}
             secondary={
-              <Chip
-                label={params.row.code}
-                size="small"
-                variant="outlined"
-                sx={{fontSize: '0.7rem', fontFamily: 'monospace', height: 18}}
-              />
+              <Stack direction="row" spacing={0.5} alignItems="center">
+                <Chip
+                  label={params.row.code}
+                  size="small"
+                  variant="outlined"
+                  sx={{fontSize: '0.7rem', fontFamily: 'monospace', height: 18}}
+                />
+              </Stack>
             }
           />
         ),
@@ -90,38 +96,54 @@ export default function TranslationsList(): JSX.Element {
         sortable: false,
         filterable: false,
         hideable: false,
-        renderCell: (params: DataGrid.GridRenderCellParams<{id: string; code: string}>): JSX.Element => (
-          <ListingTable.RowActions>
-            <Tooltip title={t('common:actions.edit')}>
-              <IconButton
-                size="small"
-                aria-label={t('common:actions.edit')}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleEditClick(params.row.code);
-                }}
-              >
-                <Pencil size={16} />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title={t('common:actions.delete')}>
-              <IconButton
-                size="small"
-                color="error"
-                aria-label={t('common:actions.delete')}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDeleteClick(params.row.code);
-                }}
-              >
-                <Trash2 size={16} />
-              </IconButton>
-            </Tooltip>
-          </ListingTable.RowActions>
-        ),
+        renderCell: (params: DataGrid.GridRenderCellParams<{id: string; code: string}>): JSX.Element =>
+          readOnly ? (
+            <ListingTable.RowActions>
+              <Tooltip title={t('common:actions.view', 'View')}>
+                <IconButton
+                  size="small"
+                  aria-label={t('common:actions.view', 'View')}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleEditClick(params.row.code);
+                  }}
+                >
+                  <Eye size={16} />
+                </IconButton>
+              </Tooltip>
+            </ListingTable.RowActions>
+          ) : (
+            <ListingTable.RowActions>
+              <Tooltip title={t('common:actions.edit')}>
+                <IconButton
+                  size="small"
+                  aria-label={t('common:actions.edit')}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleEditClick(params.row.code);
+                  }}
+                >
+                  <Pencil size={16} />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title={t('common:actions.delete')}>
+                <IconButton
+                  size="small"
+                  color="error"
+                  aria-label={t('common:actions.delete')}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteClick(params.row.code);
+                  }}
+                >
+                  <Trash2 size={16} />
+                </IconButton>
+              </Tooltip>
+            </ListingTable.RowActions>
+          ),
       },
     ],
-    [handleDeleteClick, handleEditClick, t],
+    [handleDeleteClick, handleEditClick, readOnly, t],
   );
 
   if (error) {

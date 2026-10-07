@@ -1,6 +1,7 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
+import {EnvironmentValue} from '@thunderid/components';
 import type {OAuth2Config} from '@thunderid/configure-applications';
 import {
   Alert,
@@ -22,6 +23,8 @@ import type {OAuthAgentConfig} from '../../../models/agent';
 const REDIRECT_USING_GRANTS = ['authorization_code'];
 
 interface RedirectURIsSectionProps {
+  /** The agent's identifier, which its environment-specific values are held under. */
+  agentId?: string;
   oauth2Config?: OAuthAgentConfig;
   onOAuth2ConfigChange?: (updates: Partial<OAuth2Config>) => void;
   /**
@@ -39,6 +42,7 @@ const isValidURL = (value: string): boolean => {
 };
 
 export default function RedirectURIsSection({
+  agentId = undefined,
   oauth2Config = undefined,
   onOAuth2ConfigChange = undefined,
   disabled = false,
@@ -121,56 +125,61 @@ export default function RedirectURIsSection({
     commit(next);
   };
 
+  const title = t('agents:edit.advanced.redirectUris.title', 'Authorized redirect URIs');
+  const description = t('agents:edit.advanced.redirectUris.description', 'For use with requests from a web server');
+
   return (
-    <Box>
-      <FormLabel>{t('agents:edit.advanced.redirectUris.title', 'Authorized redirect URIs')}</FormLabel>
-      <Typography variant="caption" color="text.secondary" sx={{display: 'block', mt: 0.5, mb: 1.5}}>
-        {t('agents:edit.advanced.redirectUris.description', 'For use with requests from a web server')}
-      </Typography>
-      <FormControl fullWidth>
-        <Stack spacing={2}>
-          {isMissingRequiredUri && (
-            <Alert severity="error" data-testid="agent-redirect-uris-required">
-              {t(
-                'agents:edit.advanced.redirectUris.required',
-                'The Authorization Code grant requires at least one valid redirect URI.',
-              )}
-            </Alert>
-          )}
-          {uris.map((uri, index) => (
-            // eslint-disable-next-line react/no-array-index-key
-            <Stack key={index} direction="row" spacing={1} alignItems="flex-start">
-              <FormControl fullWidth required sx={{flex: 1}}>
-                <TextField
-                  fullWidth
-                  id={`agent-redirect-uri-${index}`}
-                  value={uri}
-                  onChange={(e) => handleChange(index, e.target.value)}
-                  onBlur={() => handleBlur(index)}
-                  error={!!errors[index]}
-                  helperText={errors[index]}
-                  placeholder="https://example.com/callback"
-                  disabled={!isEditable}
-                />
-              </FormControl>
-              {isEditable && (
-                <Tooltip title={t('common:actions.delete', 'Delete')}>
-                  <IconButton onClick={() => handleRemove(index)} color="error" sx={{mt: 1}}>
-                    <Trash size={20} />
-                  </IconButton>
-                </Tooltip>
-              )}
-            </Stack>
-          ))}
-          {isEditable && (
-            <Box>
-              <Button variant="text" color="primary" startIcon={<Plus />} onClick={handleAdd} size="small">
-                {t('agents:edit.advanced.redirectUris.addUri', 'Add URI')}
-              </Button>
-            </Box>
-          )}
-        </Stack>
-      </FormControl>
-    </Box>
+    <EnvironmentValue resourceType="agent" resourceId={agentId} field="redirectUris" label={title} hint={description}>
+      <Box>
+        <FormLabel>{title}</FormLabel>
+        <Typography variant="caption" color="text.secondary" sx={{display: 'block', mt: 0.5, mb: 1.5}}>
+          {description}
+        </Typography>
+        <FormControl fullWidth>
+          <Stack spacing={2}>
+            {isMissingRequiredUri && (
+              <Alert severity="error" data-testid="agent-redirect-uris-required">
+                {t(
+                  'agents:edit.advanced.redirectUris.required',
+                  'The Authorization Code grant requires at least one valid redirect URI.',
+                )}
+              </Alert>
+            )}
+            {uris.map((uri, index) => (
+              // eslint-disable-next-line react/no-array-index-key
+              <Stack key={index} direction="row" spacing={1} alignItems="flex-start">
+                <FormControl fullWidth required sx={{flex: 1}}>
+                  <TextField
+                    fullWidth
+                    id={`agent-redirect-uri-${index}`}
+                    value={uri}
+                    onChange={(e) => handleChange(index, e.target.value)}
+                    onBlur={() => handleBlur(index)}
+                    error={!!errors[index]}
+                    helperText={errors[index]}
+                    placeholder="https://example.com/callback"
+                    disabled={!isEditable}
+                  />
+                </FormControl>
+                {isEditable && (
+                  <Tooltip title={t('common:actions.delete', 'Delete')}>
+                    <IconButton onClick={() => handleRemove(index)} color="error" sx={{mt: 1}}>
+                      <Trash size={20} />
+                    </IconButton>
+                  </Tooltip>
+                )}
+              </Stack>
+            ))}
+            {isEditable && (
+              <Box>
+                <Button variant="text" color="primary" startIcon={<Plus />} onClick={handleAdd} size="small">
+                  {t('agents:edit.advanced.redirectUris.addUri', 'Add URI')}
+                </Button>
+              </Box>
+            )}
+          </Stack>
+        </FormControl>
+      </Box>
+    </EnvironmentValue>
   );
 }

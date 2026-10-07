@@ -1,11 +1,12 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {QueryErrorNotice} from '@thunderid/components';
+import {QueryErrorNotice, useEnvironmentList} from '@thunderid/components';
+import {useEnvironment} from '@thunderid/contexts';
 import {useDataGridLocaleText} from '@thunderid/hooks';
 import {useLogger} from '@thunderid/logger/react';
-import {IconButton, Typography, Tooltip, DataGrid, ListingTable} from '@wso2/oxygen-ui';
-import {Pencil, QrCode as QrCodeIcon, Trash2} from '@wso2/oxygen-ui-icons-react';
+import {IconButton, Stack, Typography, Tooltip, DataGrid, ListingTable} from '@wso2/oxygen-ui';
+import {Eye, Pencil, QrCode as QrCodeIcon, Trash2} from '@wso2/oxygen-ui-icons-react';
 import {useMemo, useCallback, useState, type JSX} from 'react';
 import {useTranslation} from 'react-i18next';
 import {useNavigate} from 'react-router';
@@ -14,6 +15,7 @@ import VerifiableCredentialDeleteDialog from './VerifiableCredentialDeleteDialog
 import useGetVerifiableCredentials from '../api/useGetVerifiableCredentials';
 import useVerifiableCredentialRoutes from '../hooks/useVerifiableCredentialRoutes';
 import type {VerifiableCredentialSummary} from '../models/vc';
+import toCredentialsPage from '../utils/toCredentialsPage';
 
 /**
  * DataGrid listing of OpenID4VCI credential configurations.
@@ -24,8 +26,14 @@ export default function VerifiableCredentialsList(): JSX.Element {
   const logger = useLogger('VerifiableCredentialsList');
   const dataGridLocaleText = useDataGridLocaleText();
   const routes = useVerifiableCredentialRoutes();
+  const {readOnly} = useEnvironment();
 
-  const {data, isLoading, error, refetch} = useGetVerifiableCredentials();
+  const liveCredentials = useGetVerifiableCredentials();
+  const {data, isLoading, error, refetch} = useEnvironmentList(
+    'credential_configuration',
+    liveCredentials,
+    toCredentialsPage,
+  );
 
   // Resolves an error through the `verifiable-credentials` catalog. `t` defaults to the `common`
   // namespace, so this forwards explicit `ns:` prefixes unchanged and prefixes bare keys with
@@ -69,7 +77,9 @@ export default function VerifiableCredentialsList(): JSX.Element {
         flex: 1,
         minWidth: 180,
         renderCell: (params: DataGrid.GridRenderCellParams<VerifiableCredentialSummary>): JSX.Element => (
-          <Typography variant="body2">{params.row.name ?? '-'}</Typography>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Typography variant="body2">{params.row.name ?? '-'}</Typography>
+          </Stack>
         ),
       },
       {
@@ -94,45 +104,55 @@ export default function VerifiableCredentialsList(): JSX.Element {
         hideable: false,
         renderCell: (params: DataGrid.GridRenderCellParams<VerifiableCredentialSummary>): JSX.Element => (
           <ListingTable.RowActions>
-            <Tooltip title={t('verifiable-credentials:listing.offer')}>
-              <IconButton
-                size="small"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setOfferHandle(params.row.handle);
-                }}
-              >
-                <QrCodeIcon size={16} />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title={t('common:actions.edit')}>
-              <IconButton
-                size="small"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleEditClick(params.row.id);
-                }}
-              >
-                <Pencil size={16} />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title={t('common:actions.delete')}>
-              <IconButton
-                size="small"
-                color="error"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDeleteClick(params.row.id);
-                }}
-              >
-                <Trash2 size={16} />
-              </IconButton>
-            </Tooltip>
+            {readOnly ? (
+              <Tooltip title={t('common:status.readOnly', 'Read Only')}>
+                <IconButton size="small" disableRipple sx={{cursor: 'default'}}>
+                  <Eye size={16} />
+                </IconButton>
+              </Tooltip>
+            ) : (
+              <>
+                <Tooltip title={t('verifiable-credentials:listing.offer')}>
+                  <IconButton
+                    size="small"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOfferHandle(params.row.handle);
+                    }}
+                  >
+                    <QrCodeIcon size={16} />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title={t('common:actions.edit')}>
+                  <IconButton
+                    size="small"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleEditClick(params.row.id);
+                    }}
+                  >
+                    <Pencil size={16} />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title={t('common:actions.delete')}>
+                  <IconButton
+                    size="small"
+                    color="error"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteClick(params.row.id);
+                    }}
+                  >
+                    <Trash2 size={16} />
+                  </IconButton>
+                </Tooltip>
+              </>
+            )}
           </ListingTable.RowActions>
         ),
       },
     ],
-    [handleDeleteClick, handleEditClick, t],
+    [handleDeleteClick, handleEditClick, readOnly, t],
   );
 
   if (error) {

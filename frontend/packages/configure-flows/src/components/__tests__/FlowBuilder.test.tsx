@@ -160,6 +160,7 @@ vi.mock('../FlowCanvas', () => ({
     triggerAutoLayoutOnLoad,
     mutateComponents,
     isDirty,
+    readOnly,
   }: {
     flowTitle: string;
     flowHandle: string;
@@ -175,10 +176,11 @@ vi.mock('../FlowCanvas', () => ({
     triggerAutoLayoutOnLoad?: boolean;
     mutateComponents: (components: Element[]) => Element[];
     isDirty?: boolean;
+    readOnly?: boolean;
   }) => {
     onNodesChangeCapture.current = onNodesChange;
     return (
-      <div data-testid="flow-builder">
+      <div data-testid="flow-builder" data-can-save={String(Boolean(onSave))} data-readonly={String(Boolean(readOnly))}>
         <div data-testid="flow-title">{flowTitle}</div>
         <div data-testid="flow-handle">{flowHandle}</div>
         <div data-testid="auto-layout">{String(triggerAutoLayoutOnLoad)}</div>
@@ -538,6 +540,29 @@ vi.mock('../../api/useGetFlowById', () => ({
     error: mockGetFlowByIdError.value,
     refetch: mockRefetchFlowById,
   }),
+}));
+
+const mockEnvironment = vi.hoisted(() => ({readOnly: false, applied: null as unknown, missing: false}));
+
+vi.mock('@thunderid/contexts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@thunderid/contexts')>()),
+  useEnvironment: () => ({readOnly: mockEnvironment.readOnly}),
+}));
+
+// In a gateway's view the flow it applied stands in for the live read; in the draft the live read is used.
+vi.mock('@thunderid/components', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@thunderid/components')>()),
+  useEnvironmentResource: (_type: string, _id: string | undefined, live: Record<string, unknown>) => {
+    if (mockEnvironment.missing) return {...live, data: undefined, presence: {source: 'missing'}};
+    return mockEnvironment.applied ? {...live, data: mockEnvironment.applied, presence: {source: 'applied'}} : live;
+  },
+  EnvironmentDeploymentNotice: ({
+    resourceType,
+    resourceId = undefined,
+  }: {
+    resourceType: string;
+    resourceId?: string;
+  }) => <div data-testid="environment-notice">{`${resourceType}/${resourceId}`}</div>,
 }));
 
 vi.mock('@thunderid/configure-connections', async (importOriginal) => ({
@@ -6450,5 +6475,51 @@ describe('Read Error State', () => {
     render(<FlowBuilder />);
 
     expect(screen.getByTestId('flow-builder')).toBeInTheDocument();
+  });
+});
+
+describe('FlowBuilder in a gateway view', () => {
+  beforeEach(() => {
+    mockUseParams.mockReturnValue({flowId: 'flow-1'});
+    mockUseNodesState.mockReturnValue([[], mockSetNodes, vi.fn()]);
+    mockUseEdgesState.mockReturnValue([[], mockSetEdges, vi.fn()]);
+    mockUseFlowConfig.mockImplementation(getDefaultFlowConfigMock);
+    mockExistingFlowData.value = {id: 'flow-1', name: 'Live Flow', handle: 'live-flow', nodes: []};
+  });
+
+  afterEach(() => {
+    mockEnvironment.readOnly = false;
+    mockEnvironment.applied = null;
+    mockEnvironment.missing = false;
+    mockExistingFlowData.value = null;
+  });
+
+  it('shows no flow, not the live one, and the deployment notice when the gateway does not run it', async () => {
+    mockEnvironment.readOnly = true;
+    mockEnvironment.missing = true;
+    render(<FlowBuilder />);
+
+    await waitFor(() => expect(screen.getByTestId('environment-notice')).toHaveTextContent('flow/flow-1'));
+    expect(screen.queryByText('Live Flow')).not.toBeInTheDocument();
+    expect(screen.getByTestId('flow-builder')).toHaveAttribute('data-can-save', 'false');
+  });
+
+  it('shows the flow the gateway applied, with no save, and the deployment notice', async () => {
+    mockEnvironment.readOnly = true;
+    mockEnvironment.applied = {id: 'flow-1', name: 'Applied Flow', handle: 'applied-flow', nodes: []};
+    render(<FlowBuilder />);
+
+    await waitFor(() => expect(screen.getByTestId('flow-title')).toHaveTextContent('Applied Flow'));
+    expect(screen.getByTestId('flow-builder')).toHaveAttribute('data-can-save', 'false');
+    expect(screen.getByTestId('flow-builder')).toHaveAttribute('data-readonly', 'true');
+    expect(screen.getByTestId('environment-notice')).toHaveTextContent('flow/flow-1');
+  });
+
+  it('keeps the save in the draft', async () => {
+    render(<FlowBuilder />);
+
+    await waitFor(() => expect(screen.getByTestId('flow-title')).toHaveTextContent('Live Flow'));
+    expect(screen.getByTestId('flow-builder')).toHaveAttribute('data-can-save', 'true');
+    expect(screen.getByTestId('flow-builder')).toHaveAttribute('data-readonly', 'false');
   });
 });

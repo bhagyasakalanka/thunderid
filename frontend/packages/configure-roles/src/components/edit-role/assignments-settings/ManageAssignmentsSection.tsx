@@ -1,14 +1,44 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {SettingsCard} from '@thunderid/components';
+import {SettingsCard, useEnvironmentResource} from '@thunderid/components';
 import {useDataGridLocaleText} from '@thunderid/hooks';
 import {Box, Avatar, DataGrid, IconButton, Tabs, Tab} from '@wso2/oxygen-ui';
 import {AppWindow, Bot, Trash2, UserRound, UsersRound} from '@wso2/oxygen-ui-icons-react';
 import {useState, useMemo, type JSX, type ReactNode, type SyntheticEvent} from 'react';
 import {useTranslation} from 'react-i18next';
-import useGetRoleAssignments from '../../../api/useGetRoleAssignments';
-import type {RoleAssignment} from '../../../models/role';
+import useGetRoleAssignments, {type UseGetRoleAssignmentsParams} from '../../../api/useGetRoleAssignments';
+import type {RoleAssignment, RoleAssignmentListResponse} from '../../../models/role';
+
+/**
+ * One page of a role's assignments of one type, as the selected environment has them. The version a
+ * gateway applied holds every assignment in one page, so it is filtered and paged here.
+ */
+function useAssignmentsPage(params: UseGetRoleAssignmentsParams): {
+  data?: RoleAssignmentListResponse;
+  isLoading: boolean;
+} {
+  const live = useGetRoleAssignments(params);
+  const {data, isLoading, presence} = useEnvironmentResource<RoleAssignmentListResponse>(
+    'role',
+    params.roleId,
+    live,
+    'assignments',
+  );
+
+  if (presence.source !== 'applied' || !data) {
+    return {data, isLoading};
+  }
+
+  const {limit = 30, offset = 0} = params;
+  const ofType = data.assignments.filter((assignment) => assignment.type === params.type);
+  const page = ofType.slice(offset, offset + limit);
+
+  return {
+    data: {...data, totalResults: ofType.length, startIndex: offset + 1, count: page.length, assignments: page},
+    isLoading,
+  };
+}
 
 interface ManageAssignmentsSectionProps {
   roleId: string;
@@ -90,10 +120,10 @@ export default function ManageAssignmentsSection({
     [roleId, agentPaginationModel],
   );
 
-  const {data: userAssignmentsData, isLoading: isUsersLoading} = useGetRoleAssignments(userAssignmentsParams);
-  const {data: groupAssignmentsData, isLoading: isGroupsLoading} = useGetRoleAssignments(groupAssignmentsParams);
-  const {data: appAssignmentsData, isLoading: isAppsLoading} = useGetRoleAssignments(appAssignmentsParams);
-  const {data: agentAssignmentsData, isLoading: isAgentsLoading} = useGetRoleAssignments(agentAssignmentsParams);
+  const {data: userAssignmentsData, isLoading: isUsersLoading} = useAssignmentsPage(userAssignmentsParams);
+  const {data: groupAssignmentsData, isLoading: isGroupsLoading} = useAssignmentsPage(groupAssignmentsParams);
+  const {data: appAssignmentsData, isLoading: isAppsLoading} = useAssignmentsPage(appAssignmentsParams);
+  const {data: agentAssignmentsData, isLoading: isAgentsLoading} = useAssignmentsPage(agentAssignmentsParams);
 
   const baseColumns: DataGrid.GridColDef<RoleAssignment>[] = useMemo(
     () => [

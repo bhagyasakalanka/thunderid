@@ -57,6 +57,38 @@ const translations = {
     // Dictionary
     'dictionary.unknown': 'Unknown',
 
+    // Environment: the gateway whose values and endpoints the console shows
+    'environment.default': '{{name}} (default)',
+    'environment.deployment.notDeployed': 'Not in {{environment}}. The version {{environment}} applied does not include it.',
+    'environment.edit.description': 'Only {{environment}} holds this value.',
+    'environment.edit.error': 'The value could not be saved. Please try again.',
+    'environment.edit.listDescription': 'Only {{environment}} holds this value. Enter one per line.',
+    'environment.edit.title': '{{label}} in {{environment}}',
+    'environment.gateway': 'Gateway',
+    'environment.label': 'Environment',
+    'environment.mode.banner':
+      'Read-only: {{environment}}, version {{version}}. Only values held by {{environment}} can be set here. Switch to Write mode to edit.',
+    'environment.mode.label': 'Mode',
+    'environment.mode.nothingApplied':
+      'Read-only: {{environment}}. Nothing has been applied to {{environment}} yet. Switch to Write mode to edit.',
+    'environment.mode.readOnly': 'Read-only',
+    'environment.mode.switchToWrite': 'Switch to Write mode',
+    'environment.mode.write': 'Write',
+    'environment.regenerate.copyNow': 'Copy it now. It is not shown again.',
+    'environment.regenerate.description':
+      'A new {{label}} replaces the one {{environment}} holds. Anything still using the old one stops working there.',
+    'environment.regenerate.done': 'Done',
+    'environment.regenerate.title': 'Regenerate {{label}} in {{environment}}',
+    'environment.selected': '{{label}}: {{name}}',
+    'environment.value.caption': 'As {{environment}} holds it.',
+    'environment.value.edit': 'Edit',
+    'environment.value.loadError': 'The values {{environment}} holds could not be read.',
+    'environment.value.notSet': 'Not set in {{environment}}. Applying the configuration to it is refused until it is.',
+    'environment.value.notSetElsewhere':
+      'Not set in {{environment}}. A new resource has its values set on {{default}}, the default gateway, only. Applying the configuration to {{environment}} is refused until it is set here.',
+    'environment.value.regenerate': 'Regenerate',
+    'environment.value.set': 'Set value',
+
     // Short action words (used as button labels, etc.)
     show: 'Show',
     publish: 'Publish',
@@ -5418,6 +5450,7 @@ const translations = {
       'Manage which origins are allowed to access your APIs. Each entry is either an exact origin or a regular expression.',
     'cors.readOnlyHint': "Some origins are read-only because they're managed declaratively.",
     'cors.addOrigin': 'Add origin',
+    'cors.empty': 'No allowed origins.',
     'cors.originPlaceholder': 'https://app.example.com',
     'cors.regexPlaceholder': '^https://[a-z0-9-]+\\.example\\.com$',
     'cors.removeOrigin': 'Remove origin',

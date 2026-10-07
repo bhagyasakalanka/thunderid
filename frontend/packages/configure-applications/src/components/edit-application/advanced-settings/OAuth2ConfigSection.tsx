@@ -1,7 +1,7 @@
 // Copyright 2025-2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {OAuth2Logo, SettingsCard} from '@thunderid/components';
+import {EnvironmentValue, OAuth2Logo, SettingsCard} from '@thunderid/components';
 import {useThunderID} from '@thunderid/react';
 import {
   Box,
@@ -54,6 +54,10 @@ interface OidcDiscovery {
  * Props for the {@link OAuth2ConfigSection} component.
  */
 interface OAuth2ConfigSectionProps {
+  /**
+   * The application's identifier, which its environment-specific values are held under.
+   */
+  applicationId?: string;
   /**
    * OAuth2 configuration to display
    */
@@ -113,6 +117,7 @@ export default function OAuth2ConfigSection({
   disabled = false,
   allowedGrantTypes = undefined,
   showRedirectUris = true,
+  applicationId = undefined,
   onValidationChange = undefined,
 }: OAuth2ConfigSectionProps) {
   const {t} = useTranslation();
@@ -402,57 +407,65 @@ export default function OAuth2ConfigSection({
         </FormControl>
 
         {showRedirectUris && (
-          <FormControl fullWidth>
-            <FormLabel htmlFor="redirect-uris-section">{t('applications:edit.general.redirectUris.title')}</FormLabel>
-            <Typography variant="caption" color="text.secondary" sx={{display: 'block', mb: 2}}>
-              {t('applications:edit.general.redirectUris.description')}
-            </Typography>
+          <EnvironmentValue
+            resourceType="application"
+            resourceId={applicationId}
+            field="redirectUris"
+            label={t('applications:edit.general.redirectUris.title')}
+            hint={t('applications:edit.general.redirectUris.description')}
+          >
+            <FormControl fullWidth>
+              <FormLabel htmlFor="redirect-uris-section">{t('applications:edit.general.redirectUris.title')}</FormLabel>
+              <Typography variant="caption" color="text.secondary" sx={{display: 'block', mb: 2}}>
+                {t('applications:edit.general.redirectUris.description')}
+              </Typography>
 
-            <Stack spacing={2} id="redirect-uris-section">
-              {displayRedirectUris.map((uri, index) => (
-                // IMPORTANT: Do not remove the suppression since it affects functionality.
-                // eslint-disable-next-line react/no-array-index-key
-                <Stack key={index} direction="row" spacing={1} alignItems="flex-start">
-                  <FormControl fullWidth required sx={{flex: 1}}>
-                    <TextField
-                      fullWidth
-                      id={`redirect-uri-${index}-input`}
-                      value={uri}
-                      onChange={(e) => handleUriChange(index, e.target.value)}
-                      onBlur={() => handleUriBlur(index)}
-                      error={!!uriErrors[index]}
-                      helperText={uriErrors[index]}
-                      placeholder="https://example.com/callback"
-                      disabled={!isEditable}
-                    />
-                  </FormControl>
-                  <Tooltip title={t('common:actions.delete')}>
-                    <IconButton
-                      onClick={() => handleRemoveUri(index)}
-                      color="error"
-                      sx={{mt: 1}}
-                      disabled={!isEditable}
-                    >
-                      <Trash size={20} />
-                    </IconButton>
-                  </Tooltip>
-                </Stack>
-              ))}
+              <Stack spacing={2} id="redirect-uris-section">
+                {displayRedirectUris.map((uri, index) => (
+                  // IMPORTANT: Do not remove the suppression since it affects functionality.
+                  // eslint-disable-next-line react/no-array-index-key
+                  <Stack key={index} direction="row" spacing={1} alignItems="flex-start">
+                    <FormControl fullWidth required sx={{flex: 1}}>
+                      <TextField
+                        fullWidth
+                        id={`redirect-uri-${index}-input`}
+                        value={uri}
+                        onChange={(e) => handleUriChange(index, e.target.value)}
+                        onBlur={() => handleUriBlur(index)}
+                        error={!!uriErrors[index]}
+                        helperText={uriErrors[index]}
+                        placeholder="https://example.com/callback"
+                        disabled={!isEditable}
+                      />
+                    </FormControl>
+                    <Tooltip title={t('common:actions.delete')}>
+                      <IconButton
+                        onClick={() => handleRemoveUri(index)}
+                        color="error"
+                        sx={{mt: 1}}
+                        disabled={!isEditable}
+                      >
+                        <Trash size={20} />
+                      </IconButton>
+                    </Tooltip>
+                  </Stack>
+                ))}
 
-              <Box>
-                <Button
-                  variant="text"
-                  color="primary"
-                  startIcon={<Plus />}
-                  onClick={handleAddUri}
-                  size="small"
-                  disabled={!isEditable}
-                >
-                  {t('applications:edit.general.redirectUris.addUri')}
-                </Button>
-              </Box>
-            </Stack>
-          </FormControl>
+                <Box>
+                  <Button
+                    variant="text"
+                    color="primary"
+                    startIcon={<Plus />}
+                    onClick={handleAddUri}
+                    size="small"
+                    disabled={!isEditable}
+                  >
+                    {t('applications:edit.general.redirectUris.addUri')}
+                  </Button>
+                </Box>
+              </Stack>
+            </FormControl>
+          </EnvironmentValue>
         )}
 
         {showRedirectUris && (

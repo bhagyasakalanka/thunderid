@@ -7,6 +7,15 @@ import UsersListPage from '../UsersListPage';
 
 const mockNavigate = vi.fn();
 const mockLoggerError = vi.fn();
+const {environment} = vi.hoisted(() => ({environment: {readOnly: false}}));
+
+vi.mock('@thunderid/contexts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@thunderid/contexts')>();
+  return {
+    ...actual,
+    useEnvironment: () => ({...actual.useEnvironment(), readOnly: environment.readOnly}),
+  };
+});
 
 // Mock logger
 vi.mock('@thunderid/logger/react', () => ({
@@ -36,6 +45,7 @@ describe('UsersListPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockLoggerError.mockReset();
+    environment.readOnly = false;
   });
 
   it('renders page title', () => {
@@ -117,5 +127,13 @@ describe('UsersListPage', () => {
         expect.objectContaining({error: navigationError}),
       );
     });
+  });
+
+  it('hides the add user button in a gateway view', () => {
+    environment.readOnly = true;
+    render(<UsersListPage />);
+
+    expect(screen.queryByRole('button', {name: /add user/i})).not.toBeInTheDocument();
+    expect(screen.getByTestId('users-list')).toBeInTheDocument();
   });
 });

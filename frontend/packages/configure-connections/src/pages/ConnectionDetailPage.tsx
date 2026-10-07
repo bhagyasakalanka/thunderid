@@ -1,8 +1,14 @@
 // Copyright 2025 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {QueryErrorNotice, SettingsCard, UnsavedChangesBar} from '@thunderid/components';
-import {useConfig} from '@thunderid/contexts';
+import {
+  EnvironmentDeploymentNotice,
+  QueryErrorNotice,
+  SettingsCard,
+  UnsavedChangesBar,
+  useEnvironmentResource,
+} from '@thunderid/components';
+import {useConfig, useEnvironment} from '@thunderid/contexts';
 import {getErrorMessage} from '@thunderid/utils';
 import {Alert, Box, Button, ListingTable, PageContent, Skeleton, Stack, Tab, Tabs, Typography} from '@wso2/oxygen-ui';
 import {AlertCircle, ChevronLeft, Trash2} from '@wso2/oxygen-ui-icons-react';
@@ -51,12 +57,24 @@ interface TabPanelProps {
   children: ReactNode;
   index: number;
   value: number;
+  /** Disables every control in the panel. */
+  readOnly?: boolean;
 }
 
-function TabPanel({children, value, index}: TabPanelProps): JSX.Element {
+function TabPanel({children, value, index, readOnly = false}: TabPanelProps): JSX.Element {
   return (
     <div role="tabpanel" hidden={value !== index} id={`connection-tabpanel-${index}`}>
-      {value === index && <Box sx={{py: 3}}>{children}</Box>}
+      {value === index && (
+        <Box sx={{py: 3}}>
+          {readOnly ? (
+            <fieldset disabled style={{border: 0, margin: 0, padding: 0, minWidth: 0}}>
+              {children}
+            </fieldset>
+          ) : (
+            children
+          )}
+        </Box>
+      )}
     </div>
   );
 }
@@ -99,7 +117,9 @@ export default function ConnectionDetailPage(): JSX.Element | null {
   // Branded vendors are singletons and route without an id — resolve the single instance.
   const instancesQuery = useConnectionInstances(connectionType, {enabled: Boolean(meta) && !id});
   const resolvedId: string | undefined = id ?? instancesQuery.data?.[0]?.id;
-  const connectionQuery = useConnection(connectionType, resolvedId);
+  const liveConnectionQuery = useConnection(connectionType, resolvedId);
+  const connectionQuery = useEnvironmentResource('connection', resolvedId, liveConnectionQuery);
+  const {readOnly} = useEnvironment();
 
   const [activeTab, setActiveTab] = useState(0);
   const [editedValues, setEditedValues] = useState<ConnectionFormValues>({});
@@ -373,19 +393,22 @@ export default function ConnectionDetailPage(): JSX.Element | null {
           onRetry={() => void connectionQuery.refetch()}
         />
       ) : notFound ? (
-        <ListingTable.EmptyState
-          illustration={<AlertCircle size={40} />}
-          title={t('detail.notFound.title', 'Connection not found')}
-          description={t(
-            'detail.notFound.description',
-            'This connection may have been deleted or the link is incorrect.',
-          )}
-          action={
-            <Button variant="outlined" onClick={() => void navigate(routes.connections.list())}>
-              {t('detail.backToConnections')}
-            </Button>
-          }
-        />
+        <>
+          <EnvironmentDeploymentNotice resourceType="connection" resourceId={resolvedId} />
+          <ListingTable.EmptyState
+            illustration={<AlertCircle size={40} />}
+            title={t('detail.notFound.title', 'Connection not found')}
+            description={t(
+              'detail.notFound.description',
+              'This connection may have been deleted or the link is incorrect.',
+            )}
+            action={
+              <Button variant="outlined" onClick={() => void navigate(routes.connections.list())}>
+                {t('detail.backToConnections')}
+              </Button>
+            }
+          />
+        </>
       ) : (
         <>
           <Stack direction="row" spacing={2} alignItems="flex-start" sx={{mb: 3}}>
@@ -422,6 +445,8 @@ export default function ConnectionDetailPage(): JSX.Element | null {
             </Alert>
           )}
 
+          <EnvironmentDeploymentNotice resourceType="connection" resourceId={resolvedId} />
+
           <Tabs
             value={activeTab}
             onChange={(_e: SyntheticEvent, v: number) => setActiveTab(v)}
@@ -450,11 +475,13 @@ export default function ConnectionDetailPage(): JSX.Element | null {
                 data-testid="connection-tab-subject-mapping"
               />
             )}
-            <Tab
-              label={t('detail.tabs.advanced', 'Advanced')}
-              sx={{textTransform: 'none'}}
-              data-testid="connection-tab-advanced"
-            />
+            {!readOnly && (
+              <Tab
+                label={t('detail.tabs.advanced', 'Advanced')}
+                sx={{textTransform: 'none'}}
+                data-testid="connection-tab-advanced"
+              />
+            )}
           </Tabs>
 
           <TabPanel value={activeTab} index={0}>
@@ -487,6 +514,7 @@ export default function ConnectionDetailPage(): JSX.Element | null {
                 }
               >
                 <ConnectionForm
+                  connectionId={resolvedId}
                   type={connectionType}
                   mode="edit"
                   values={values}
@@ -496,6 +524,7 @@ export default function ConnectionDetailPage(): JSX.Element | null {
                   nameError={nameError}
                   showNameField={isCustom}
                   excludeFieldNames={supportsAuthentication ? AUTHENTICATION_METHOD_FIELD_NAMES : undefined}
+                  readOnly={readOnly}
                   onFieldChange={(name, value) => {
                     clearSaveError();
                     setEditedValues((prev) => ({...prev, [name]: value}));
@@ -507,7 +536,7 @@ export default function ConnectionDetailPage(): JSX.Element | null {
           </TabPanel>
 
           {supportsAuthentication && (
-            <TabPanel value={activeTab} index={authenticationTabIndex}>
+            <TabPanel value={activeTab} index={authenticationTabIndex} readOnly={readOnly}>
               <SettingsCard
                 title={t('detail.authentication.title', 'Authentication')}
                 description={t(
@@ -551,7 +580,7 @@ export default function ConnectionDetailPage(): JSX.Element | null {
           )}
 
           {supportsAttributes && (
-            <TabPanel value={activeTab} index={attributeMappingTabIndex}>
+            <TabPanel value={activeTab} index={attributeMappingTabIndex} readOnly={readOnly}>
               <Stack direction="column" spacing={4}>
                 <AttributeMappingSection
                   key={`attrs-${resolvedId}-${attrsKey}`}
@@ -584,7 +613,7 @@ export default function ConnectionDetailPage(): JSX.Element | null {
           )}
 
           {supportsSubjectMapping && (
-            <TabPanel value={activeTab} index={subjectMappingTabIndex}>
+            <TabPanel value={activeTab} index={subjectMappingTabIndex} readOnly={readOnly}>
               <SubjectMappingSection
                 values={subjectMappingValues}
                 onChange={(field, value) => {
@@ -595,32 +624,34 @@ export default function ConnectionDetailPage(): JSX.Element | null {
             </TabPanel>
           )}
 
-          <TabPanel value={activeTab} index={advancedTabIndex}>
-            <Stack direction="column" spacing={4}>
-              <SettingsCard title={t('detail.dangerZone.title')} description={t('detail.dangerZone.description')}>
-                <Typography variant="h6" gutterBottom color="error">
-                  {t('detail.dangerZone.delete.title')}
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{mb: 3}}>
-                  {t('detail.dangerZone.delete.description')}
-                </Typography>
-                <Button
-                  variant="contained"
-                  color="error"
-                  startIcon={<Trash2 size={16} />}
-                  onClick={() => {
-                    setDeleteError(null);
-                    setDeleteOpen(true);
-                  }}
-                  data-testid="connection-delete-button"
-                >
-                  {t('form.actions.delete')}
-                </Button>
-              </SettingsCard>
-            </Stack>
-          </TabPanel>
+          {!readOnly && (
+            <TabPanel value={activeTab} index={advancedTabIndex}>
+              <Stack direction="column" spacing={4}>
+                <SettingsCard title={t('detail.dangerZone.title')} description={t('detail.dangerZone.description')}>
+                  <Typography variant="h6" gutterBottom color="error">
+                    {t('detail.dangerZone.delete.title')}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{mb: 3}}>
+                    {t('detail.dangerZone.delete.description')}
+                  </Typography>
+                  <Button
+                    variant="contained"
+                    color="error"
+                    startIcon={<Trash2 size={16} />}
+                    onClick={() => {
+                      setDeleteError(null);
+                      setDeleteOpen(true);
+                    }}
+                    data-testid="connection-delete-button"
+                  >
+                    {t('form.actions.delete')}
+                  </Button>
+                </SettingsCard>
+              </Stack>
+            </TabPanel>
+          )}
 
-          {dirty && (
+          {dirty && !readOnly && (
             <UnsavedChangesBar
               message={t('detail.saveBar.unsaved', 'You have unsaved changes.')}
               resetLabel={t('detail.saveBar.reset', 'Reset')}

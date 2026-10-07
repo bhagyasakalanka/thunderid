@@ -1,7 +1,7 @@
 // Copyright 2025-2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {SettingsCard} from '@thunderid/components';
+import {EnvironmentValue, SettingsCard} from '@thunderid/components';
 import {useConfig} from '@thunderid/contexts';
 import {Button, FormControl, FormLabel, Stack, TextField, Typography} from '@wso2/oxygen-ui';
 import {useCallback, useState} from 'react';
@@ -214,13 +214,31 @@ export default function EditCredentialsSettings({
             'Unique identifier used to reference this application.',
           )}
         >
-          <CopyableField
-            id="app-credentials-identifier"
-            label={identifierLabel}
-            value={identifierValue}
-            copyAriaLabel={`${copyLabel} ${identifierLabel}`}
-            hint={identifierHint}
-          />
+          {useClientIdAsIdentifier ? (
+            <EnvironmentValue
+              resourceType="application"
+              resourceId={application.id}
+              field="clientId"
+              label={identifierLabel}
+              hint={identifierHint}
+            >
+              <CopyableField
+                id="app-credentials-identifier"
+                label={identifierLabel}
+                value={identifierValue}
+                copyAriaLabel={`${copyLabel} ${identifierLabel}`}
+                hint={identifierHint}
+              />
+            </EnvironmentValue>
+          ) : (
+            <CopyableField
+              id="app-credentials-identifier"
+              label={identifierLabel}
+              value={identifierValue}
+              copyAriaLabel={`${copyLabel} ${identifierLabel}`}
+              hint={identifierHint}
+            />
+          )}
         </SettingsCard>
 
         {showSecretSection && (
@@ -231,31 +249,39 @@ export default function EditCredentialsSettings({
               'Regenerating the secret immediately invalidates the current one and cannot be undone.',
             )}
           >
-            <FormControl fullWidth>
-              <FormLabel htmlFor="app-credentials-secret">{secretLabel}</FormLabel>
-              <Typography variant="caption" color="text.secondary" sx={{display: 'block', mb: 1}}>
-                {secretHint}
-              </Typography>
-              <Stack direction="row" spacing={1}>
-                <TextField
-                  fullWidth
-                  id="app-credentials-secret"
-                  value="••••••••••••••••"
-                  InputProps={{readOnly: true}}
-                  disabled
-                  sx={{flex: '0 0 80%', '& input': {fontFamily: 'monospace', fontSize: '0.875rem'}}}
-                />
-                <Button
-                  variant="contained"
-                  color="error"
-                  onClick={handleSecretRegenerateClick}
-                  disabled={Boolean(application.isReadOnly) || isSystemConsoleClient}
-                  sx={{flex: '0 0 20%'}}
-                >
-                  {t('applications:edit.general.sections.dangerZone.regenerateSecret.button', 'Regenerate')}
-                </Button>
-              </Stack>
-            </FormControl>
+            <EnvironmentValue
+              resourceType="application"
+              resourceId={isConfidentialClient ? application.id : undefined}
+              field="clientSecret"
+              label={secretLabel}
+              hint={secretHint}
+            >
+              <FormControl fullWidth>
+                <FormLabel htmlFor="app-credentials-secret">{secretLabel}</FormLabel>
+                <Typography variant="caption" color="text.secondary" sx={{display: 'block', mb: 1}}>
+                  {secretHint}
+                </Typography>
+                <Stack direction="row" spacing={1}>
+                  <TextField
+                    fullWidth
+                    id="app-credentials-secret"
+                    value="••••••••••••••••"
+                    InputProps={{readOnly: true}}
+                    disabled
+                    sx={{flex: '0 0 80%', '& input': {fontFamily: 'monospace', fontSize: '0.875rem'}}}
+                  />
+                  <Button
+                    variant="contained"
+                    color="error"
+                    onClick={handleSecretRegenerateClick}
+                    disabled={Boolean(application.isReadOnly) || isSystemConsoleClient}
+                    sx={{flex: '0 0 20%'}}
+                  >
+                    {t('applications:edit.general.sections.dangerZone.regenerateSecret.button', 'Regenerate')}
+                  </Button>
+                </Stack>
+              </FormControl>
+            </EnvironmentValue>
           </SettingsCard>
         )}
 

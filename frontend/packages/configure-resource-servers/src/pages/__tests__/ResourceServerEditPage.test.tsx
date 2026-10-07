@@ -41,12 +41,16 @@ vi.mock('@thunderid/react', async (importOriginal) => {
   };
 });
 
+// A gateway selected makes the page read-only.
+let mockEnvironmentReadOnly = false;
+
 vi.mock('@thunderid/contexts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@thunderid/contexts')>();
   return {
     ...actual,
     useConfig: () => ({getServerUrl: () => 'http://localhost:8090'}),
     useToast: () => ({showToast: vi.fn()}),
+    useEnvironment: () => ({...actual.useEnvironment(), readOnly: mockEnvironmentReadOnly}),
   };
 });
 
@@ -185,6 +189,7 @@ const mockMcpResourceServer: ResourceServer = {
 describe('ResourceServerEditPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockEnvironmentReadOnly = false;
     mockUseGetResourceServer.mockReturnValue({
       data: mockResourceServer,
       isLoading: false,
@@ -664,5 +669,66 @@ describe('ResourceServerEditPage', () => {
     fireEvent.click(screen.getByRole('button', {name: 'Reset'}));
 
     expect(mockUpdateReset).toHaveBeenCalled();
+  });
+
+  describe('in a gateway view', () => {
+    const appliedResourceServer: ResourceServer = {...mockResourceServer, name: 'Applied Dodos'};
+
+    beforeEach(() => {
+      mockEnvironmentReadOnly = true;
+      vi.mocked(componentsModule.useEnvironmentResource).mockImplementation(
+        (resourceType, _resourceId, live) =>
+          ({
+            ...live,
+            data: resourceType === 'resource_server' ? appliedResourceServer : live.data,
+            presence: {source: 'applied', isLoading: false},
+          }) as ReturnType<typeof componentsModule.useEnvironmentResource>,
+      );
+      vi.mocked(componentsModule.EnvironmentDeploymentNotice).mockImplementation(() => (
+        <div data-testid="environment-notice" />
+      ));
+    });
+
+    it('shows the resource server as the gateway applied it, with the deployment notice', () => {
+      renderWithProviders(<ResourceServerEditPage />);
+
+      expect(componentsModule.useEnvironmentResource).toHaveBeenCalledWith(
+        'resource_server',
+        'rs-1',
+        expect.anything(),
+      );
+      expect(screen.getByText('Applied Dodos')).toBeInTheDocument();
+      expect(screen.getByTestId('environment-notice')).toBeInTheDocument();
+      expect(screen.queryByText(/This resource is read-only and cannot be modified/i)).not.toBeInTheDocument();
+    });
+
+    it('offers no editing, default or delete action', () => {
+      renderWithProviders(<ResourceServerEditPage />);
+
+      expect(screen.queryByRole('button', {name: 'Set as default'})).not.toBeInTheDocument();
+      expect(screen.getByText('Applied Dodos').parentElement?.querySelector('button')).toBeNull();
+      fireEvent.click(screen.getByRole('tab', {name: 'Advanced'}));
+      expect(screen.queryByText('Danger Zone')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', {name: /Delete resource server/i})).not.toBeInTheDocument();
+    });
+
+    it('shows the not-found state with the deployment notice when the gateway does not run it', () => {
+      vi.mocked(componentsModule.useEnvironmentResource).mockImplementation(
+        (resourceType, _resourceId, live) =>
+          ({
+            ...live,
+            data: resourceType === 'resource_server' ? undefined : live.data,
+            isLoading: false,
+            error: null,
+            presence: {source: 'missing', isLoading: false},
+          }) as ReturnType<typeof componentsModule.useEnvironmentResource>,
+      );
+
+      renderWithProviders(<ResourceServerEditPage />);
+
+      expect(screen.getByText('Resource server not found.')).toBeInTheDocument();
+      expect(screen.getByTestId('environment-notice')).toBeInTheDocument();
+      expect(screen.queryByText('Applied Dodos')).not.toBeInTheDocument();
+    });
   });
 });

@@ -1,7 +1,8 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {QueryErrorNotice} from '@thunderid/components';
+import {QueryErrorNotice, useEnvironmentResource} from '@thunderid/components';
+import {useEnvironment} from '@thunderid/contexts';
 import {useGetTheme, type Theme} from '@thunderid/design';
 import {useState, useMemo, useCallback, type PropsWithChildren} from 'react';
 import {useTranslation} from 'react-i18next';
@@ -48,7 +49,13 @@ export type ThemeBuilderProviderProps = PropsWithChildren;
 export default function ThemeBuilderProvider({children}: ThemeBuilderProviderProps) {
   const {t} = useTranslation('design');
   const {themeId = ''} = useParams<{themeId: string}>();
-  const {data: themeData, isLoading, error, refetch} = useGetTheme(themeId);
+  const liveTheme = useGetTheme(themeId);
+  const {data: themeData, isLoading, error, refetch, presence} = useEnvironmentResource('theme', themeId, liveTheme);
+  const {readOnly} = useEnvironment();
+  // Where the theme is shown from. The draft is taken afresh when that changes, so a gateway's theme
+  // is never shown with edits made to another environment's.
+  const source = `${presence.gateway?.id ?? ''}:${presence.source}`;
+  const [draftSource, setDraftSource] = useState<string>(source);
 
   const [draftTheme, setDraftTheme] = useState<Theme | null>(() => themeData?.theme ?? null);
   const [isDirty, setIsDirty] = useState<boolean>(false);
@@ -61,7 +68,7 @@ export default function ThemeBuilderProvider({children}: ThemeBuilderProviderPro
 
   const handle = themeData?.handle ?? null;
   const displayName = themeData?.displayName ?? null;
-  const isReadOnly = themeData?.isReadOnly ?? false;
+  const isReadOnly = (themeData?.isReadOnly ?? false) || readOnly;
 
   const [prevThemeData, setPrevThemeData] = useState(themeData);
 
@@ -71,8 +78,10 @@ export default function ThemeBuilderProvider({children}: ThemeBuilderProviderPro
     if (themeData?.theme?.defaultColorScheme === 'dark') {
       setPreviewColorScheme('dark');
     }
-    if (themeData?.theme && !draftTheme) {
+    if (themeData?.theme && (!draftTheme || draftSource !== source)) {
       setDraftTheme(themeData.theme);
+      setIsDirty(false);
+      setDraftSource(source);
     }
   }
 
@@ -116,6 +125,9 @@ export default function ThemeBuilderProvider({children}: ThemeBuilderProviderPro
     setIsDirty(true);
   }, []);
 
+  // A gateway's view is read-only: an edit made through the builder is dropped.
+  const ignoreEdit = useCallback((): void => undefined, []);
+
   const contextValue: ThemeBuilderContextType = useMemo(
     () => ({
       themeId,
@@ -124,9 +136,9 @@ export default function ThemeBuilderProvider({children}: ThemeBuilderProviderPro
       displayName,
       isReadOnly,
       draftTheme,
-      setDraftTheme,
+      setDraftTheme: readOnly ? ignoreEdit : setDraftTheme,
       isDirty,
-      setIsDirty,
+      setIsDirty: readOnly ? ignoreEdit : setIsDirty,
       activeSection,
       setActiveSection,
       previewColorScheme,
@@ -136,9 +148,11 @@ export default function ThemeBuilderProvider({children}: ThemeBuilderProviderPro
       isSaving,
       setIsSaving,
       resetDraft,
-      updateDraftTheme,
+      updateDraftTheme: readOnly ? ignoreEdit : updateDraftTheme,
     }),
     [
+      readOnly,
+      ignoreEdit,
       themeId,
       handle,
       themeData?.theme,

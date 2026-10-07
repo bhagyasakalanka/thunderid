@@ -18,6 +18,8 @@ export interface EditGeneralSettingsProps {
   editedDisplayAttribute: string | undefined;
   onFieldChange: (field: string, value: unknown) => void;
   eligibleDisplayProperties: SchemaPropertyInput[];
+  /** Whether the settings cannot be changed: the user type is read-only, or a gateway is shown. */
+  readOnly?: boolean;
 }
 
 /**
@@ -31,6 +33,7 @@ export default function EditGeneralSettings({
   editedDisplayAttribute,
   onFieldChange,
   eligibleDisplayProperties,
+  readOnly = userType.isReadOnly === true,
 }: EditGeneralSettingsProps): JSX.Element {
   const {t} = useTranslation();
   const {resolveDisplayName} = useResolveDisplayName({handlers: {t}});
@@ -75,7 +78,7 @@ export default function EditGeneralSettings({
       >
         <OrganizationUnitTreePicker
           value={effectiveOuId}
-          onChange={userType.isReadOnly ? () => undefined : (selectedOuId) => onFieldChange('ouId', selectedOuId)}
+          onChange={readOnly ? () => undefined : (selectedOuId) => onFieldChange('ouId', selectedOuId)}
           maxHeight={400}
         />
       </SettingsCard>
@@ -88,7 +91,7 @@ export default function EditGeneralSettings({
           'Allow users to self-register with this user type.',
         )}
         enabled={effectiveAllowSelfRegistration}
-        onToggle={userType.isReadOnly ? undefined : (enabled) => onFieldChange('allowSelfRegistration', enabled)}
+        onToggle={readOnly ? undefined : (enabled) => onFieldChange('allowSelfRegistration', enabled)}
       >
         <Typography variant="body2" color="text.secondary">
           {t('userTypes:edit.general.selfRegistration.enabledHint', 'Users can register themselves as this user type.')}
@@ -106,7 +109,7 @@ export default function EditGeneralSettings({
         <Select
           value={effectiveDisplayAttribute}
           onChange={(event) => onFieldChange('displayAttribute', event.target.value)}
-          disabled={userType.isReadOnly}
+          disabled={readOnly}
           size="small"
           fullWidth
           displayEmpty

@@ -12,14 +12,37 @@ vi.mock('@thunderid/react', {spy: true});
 // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- vi.mock({spy:true}) type inference doesn't resolve for this package's conditional exports
 vi.mocked(thunderIdReactModule.useThunderID).mockImplementation(() => ({http: {request: vi.fn()}}) as never);
 
+// Read-only mode makes the list read-only, and lists only the resource servers the gateway applied.
+let mockEnvironmentReadOnly = false;
+const mockAppliedResourceServers: unknown[] = [
+  {
+    id: 'rs-applied',
+    name: 'Applied API',
+    identifier: 'https://applied.example.com',
+    ouId: 'ou-1',
+    delimiter: ':',
+    type: 'API',
+    authorizationEngine: {type: 'rbac'},
+  },
+];
+
 vi.mock('@thunderid/contexts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@thunderid/contexts')>();
   return {
     ...actual,
     useConfig: () => ({getServerUrl: () => 'http://localhost:8090'}),
     useToast: () => ({showToast: vi.fn()}),
+    useEnvironment: () => ({...actual.useEnvironment(), readOnly: mockEnvironmentReadOnly}),
   };
 });
+
+vi.mock('@thunderid/components', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@thunderid/components')>()),
+  useEnvironmentList: (_type: string, live: object, toPage: (resources: unknown[]) => unknown) =>
+    mockEnvironmentReadOnly
+      ? {data: toPage(mockAppliedResourceServers), isLoading: false, error: null, refetch: vi.fn()}
+      : live,
+}));
 
 vi.mock('@thunderid/logger/react', () => ({
   useLogger: () => ({error: vi.fn(), info: vi.fn(), debug: vi.fn()}),
@@ -89,6 +112,7 @@ const twoRowsResponse: ResourceServerListResponse = {
 describe('ResourceServersList', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockEnvironmentReadOnly = false;
     mockUseGetResourceServers.mockReturnValue({
       data: twoRowsResponse,
       isLoading: false,
@@ -174,6 +198,26 @@ describe('ResourceServersList', () => {
     fireEvent.click(screen.getByRole('button', {name: /Refresh/i}));
 
     expect(mockRefetch).toHaveBeenCalled();
+  });
+
+  it('offers no row actions in read-only mode and lists only the applied resource servers', () => {
+    mockEnvironmentReadOnly = true;
+    renderWithProviders(<ResourceServersList />);
+
+    expect(screen.getByText('Applied API')).toBeInTheDocument();
+    expect(screen.queryByText('Payments API')).not.toBeInTheDocument();
+    expect(screen.queryByText('System MCP')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', {name: 'Delete'})).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', {name: 'Edit'})).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', {name: 'More actions'})).not.toBeInTheDocument();
+  });
+
+  it('lists the live resource servers in write mode', () => {
+    renderWithProviders(<ResourceServersList />);
+
+    expect(screen.getByText('Payments API')).toBeInTheDocument();
+    expect(screen.queryByText('Applied API')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', {name: 'More actions'})).toBeInTheDocument();
   });
 });
 

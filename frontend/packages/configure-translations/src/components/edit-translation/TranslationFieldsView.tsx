@@ -24,6 +24,8 @@ export interface TranslationFieldsViewProps {
   onChange: (key: string, value: string) => void;
   /** Callback invoked when the user resets a field back to its saved value. */
   onResetField: (key: string) => void;
+  /** Shows the values without letting them be edited or keys be added. */
+  readOnly?: boolean;
 }
 
 /**
@@ -71,6 +73,7 @@ export default function TranslationFieldsView({
   isCustomNamespace,
   onChange,
   onResetField,
+  readOnly = false,
 }: TranslationFieldsViewProps): JSX.Element {
   const {t} = useTranslation('translations');
 
@@ -105,7 +108,7 @@ export default function TranslationFieldsView({
 
   return (
     <Box sx={{display: 'flex', flexDirection: 'column', gap: 2}}>
-      {isCustomNamespace && (
+      {isCustomNamespace && !readOnly && (
         <Box>
           {!addingKey ? (
             <Button
@@ -205,6 +208,7 @@ export default function TranslationFieldsView({
                   minRows={1}
                   maxRows={5}
                   value={value}
+                  disabled={readOnly}
                   onChange={(e) => onChange(key, e.target.value)}
                   sx={{
                     '& .MuiOutlinedInput-root': isDirty

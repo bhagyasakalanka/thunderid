@@ -8,10 +8,33 @@ import {describe, it, expect, beforeEach, vi} from 'vitest';
 import type {TrustedIssuer} from '../../models/trusted-issuer';
 import TrustedIssuerDetailPage from '../TrustedIssuerDetailPage';
 
-const {mockMutate, mockRefetch, mockDeleteMutate} = vi.hoisted(() => ({
+const {mockMutate, mockRefetch, mockDeleteMutate, mockEnvironment} = vi.hoisted(() => ({
   mockMutate: vi.fn(),
   mockRefetch: vi.fn(),
   mockDeleteMutate: vi.fn(),
+  mockEnvironment: {readOnly: false, applied: undefined as Record<string, unknown> | undefined, missing: false},
+}));
+
+vi.mock('@thunderid/contexts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@thunderid/contexts')>()),
+  useEnvironment: () => ({readOnly: mockEnvironment.readOnly}),
+}));
+
+vi.mock('@thunderid/components', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@thunderid/components')>()),
+  useEnvironmentResource: (_type: string, _id: string | undefined, live: Record<string, unknown>) => {
+    if (mockEnvironment.missing) return {...live, data: undefined, presence: {source: 'missing'}};
+    return mockEnvironment.applied
+      ? {...live, data: mockEnvironment.applied, presence: {source: 'applied'}}
+      : {...live, presence: {source: 'live'}};
+  },
+  EnvironmentDeploymentNotice: ({
+    resourceType,
+    resourceId = undefined,
+  }: {
+    resourceType: string;
+    resourceId?: string;
+  }) => <div data-testid="environment-notice">{`${resourceType}/${resourceId}`}</div>,
 }));
 
 const TRUSTED_ISSUER: TrustedIssuer = {
@@ -66,6 +89,9 @@ describe('TrustedIssuerDetailPage', () => {
     mockMutate.mockReset();
     mockRefetch.mockReset();
     mockDeleteMutate.mockReset();
+    mockEnvironment.readOnly = false;
+    mockEnvironment.applied = undefined;
+    mockEnvironment.missing = false;
     vi.mocked(useNavigate).mockReturnValue(mockNavigate as unknown as NavigateFunction);
     vi.mocked(useParams).mockReturnValue({id: 'ti-1'} as unknown as Params);
     vi.mocked(useTrustedIssuer).mockReturnValue({
@@ -154,5 +180,44 @@ describe('TrustedIssuerDetailPage', () => {
 
     expect(mockDeleteMutate).toHaveBeenCalledWith('ti-1', expect.any(Object));
     expect(mockNavigate).toHaveBeenCalledWith('/connections');
+  });
+
+  describe('in a gateway view', () => {
+    beforeEach(() => {
+      mockEnvironment.readOnly = true;
+    });
+
+    it('shows the issuer from the connection the gateway applied, with the deployment notice', () => {
+      mockEnvironment.applied = {
+        id: 'ti-1',
+        type: 'oidc',
+        name: 'Acme Okta as applied',
+        issuer: 'https://applied.okta.com',
+        jwksEndpoint: 'https://applied.okta.com/keys',
+        idJagEnabled: true,
+      };
+      render(<TrustedIssuerDetailPage />);
+
+      expect(screen.getByRole('heading', {name: 'Acme Okta as applied'})).toBeInTheDocument();
+      expect(screen.getByLabelText(/^Issuer URI/)).toHaveValue('https://applied.okta.com');
+      expect(screen.getByTestId('environment-notice')).toHaveTextContent('connection/ti-1');
+    });
+
+    it('shows the not-found state with the deployment notice when the gateway does not run the issuer', () => {
+      mockEnvironment.missing = true;
+      render(<TrustedIssuerDetailPage />);
+
+      expect(screen.getByText('Trusted issuer not found')).toBeInTheDocument();
+      expect(screen.getByTestId('environment-notice')).toHaveTextContent('connection/ti-1');
+      expect(screen.queryByRole('heading', {name: 'Acme Okta'})).not.toBeInTheDocument();
+    });
+
+    it('disables the fields and hides the delete', () => {
+      render(<TrustedIssuerDetailPage />);
+
+      expect(screen.getByLabelText(/^Name/)).toBeDisabled();
+      expect(screen.queryByTestId('trusted-issuer-delete-button')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('save-bar')).not.toBeInTheDocument();
+    });
   });
 });

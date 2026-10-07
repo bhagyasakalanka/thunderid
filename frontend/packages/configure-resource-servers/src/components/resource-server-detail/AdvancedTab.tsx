@@ -1,7 +1,8 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {SettingsCard} from '@thunderid/components';
+import {EnvironmentValue, SettingsCard} from '@thunderid/components';
+import {useEnvironment} from '@thunderid/contexts';
 import {FormControl, FormHelperText, FormLabel, MenuItem, Select, Stack, TextField} from '@wso2/oxygen-ui';
 import type {JSX} from 'react';
 import {useTranslation} from 'react-i18next';
@@ -32,12 +33,25 @@ export default function AdvancedTab({
   onPDPConnectionChange,
 }: AdvancedTabProps): JSX.Element {
   const {t} = useTranslation();
+  const {readOnly} = useEnvironment();
+  const isReadOnly = resourceServer.isReadOnly === true || readOnly;
   const pdpConnections = useAuthZENPDPConnections();
   const connectionRoutes = useResourceServerConnectionRoutes();
   const authorizationEngineValue =
     authorizationEngine === AuthorizationEngines.AUTHZEN_PDP && pdpConnectionId
       ? `${PDP_OPTION_PREFIX}${pdpConnectionId}`
       : authorizationEngine;
+  const identifierLabel: string = t('resourceServers:edit.advanced.identifier.label', 'Identifier (Audience)');
+  const identifierHint: string =
+    resourceServer.type === 'MCP'
+      ? t(
+          'resourceServers:edit.advanced.identifier.hintMcp',
+          'A unique value that identifies this MCP server. When set as an URI, enables RFC 8707 resource indicator support in OAuth2 authorization requests.',
+        )
+      : t(
+          'resourceServers:edit.advanced.identifier.hint',
+          'A unique value that identifies this resource server. When set as an URI, enables RFC 8707 resource indicator support in OAuth2 authorization requests.',
+        );
   const hasSelectedPDP =
     authorizationEngine === AuthorizationEngines.AUTHZEN_PDP &&
     pdpConnectionId &&
@@ -59,35 +73,31 @@ export default function AdvancedTab({
               )
         }
       >
-        <FormControl fullWidth>
-          <FormLabel htmlFor="resource-server-identifier">
-            {t('resourceServers:edit.advanced.identifier.label', 'Identifier (Audience)')}
-          </FormLabel>
-          <TextField
-            id="resource-server-identifier"
-            value={identifier}
-            onChange={(e) => onIdentifierChange(e.target.value)}
-            fullWidth
-            size="small"
-            placeholder={
-              resourceServer.type === 'MCP'
-                ? t('resourceServers:edit.advanced.identifier.placeholderMcp', 'https://mcp.example.com')
-                : t('resourceServers:edit.advanced.identifier.placeholder', 'https://api.example.com')
-            }
-            helperText={
-              resourceServer.type === 'MCP'
-                ? t(
-                    'resourceServers:edit.advanced.identifier.hintMcp',
-                    'A unique value that identifies this MCP server. When set as an URI, enables RFC 8707 resource indicator support in OAuth2 authorization requests.',
-                  )
-                : t(
-                    'resourceServers:edit.advanced.identifier.hint',
-                    'A unique value that identifies this resource server. When set as an URI, enables RFC 8707 resource indicator support in OAuth2 authorization requests.',
-                  )
-            }
-            disabled={resourceServer.isReadOnly}
-          />
-        </FormControl>
+        <EnvironmentValue
+          resourceType="resource_server"
+          resourceId={resourceServer.id}
+          field="identifier"
+          label={identifierLabel}
+          hint={identifierHint}
+        >
+          <FormControl fullWidth>
+            <FormLabel htmlFor="resource-server-identifier">{identifierLabel}</FormLabel>
+            <TextField
+              id="resource-server-identifier"
+              value={identifier}
+              onChange={(e) => onIdentifierChange(e.target.value)}
+              fullWidth
+              size="small"
+              placeholder={
+                resourceServer.type === 'MCP'
+                  ? t('resourceServers:edit.advanced.identifier.placeholderMcp', 'https://mcp.example.com')
+                  : t('resourceServers:edit.advanced.identifier.placeholder', 'https://api.example.com')
+              }
+              helperText={identifierHint}
+              disabled={isReadOnly}
+            />
+          </FormControl>
+        </EnvironmentValue>
         <FormControl fullWidth error={Boolean(pdpConnections.error)} sx={{mt: 3}}>
           <FormLabel id="resource-server-authorization-engine-label">
             {t('resourceServers:edit.advanced.authorizationEngine.label', 'Authorization engine')}
@@ -107,7 +117,7 @@ export default function AdvancedTab({
               onPDPConnectionChange('');
             }}
             size="small"
-            disabled={Boolean(resourceServer.isReadOnly) || pdpConnections.isLoading}
+            disabled={isReadOnly || pdpConnections.isLoading}
           >
             <MenuItem value={AuthorizationEngines.RBAC}>
               {t('resourceServers:edit.advanced.authorizationEngine.option.rbac', 'Local - Role Based Access Control')}

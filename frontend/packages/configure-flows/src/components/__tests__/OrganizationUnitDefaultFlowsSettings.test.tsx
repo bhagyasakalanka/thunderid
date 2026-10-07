@@ -11,6 +11,13 @@ import OrganizationUnitDefaultFlowsSettings from '../OrganizationUnitDefaultFlow
 
 vi.mock('../../api/useGetFlows');
 
+const mockEnvironment = vi.hoisted(() => ({readOnly: false}));
+
+vi.mock('@thunderid/contexts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@thunderid/contexts')>()),
+  useEnvironment: () => ({readOnly: mockEnvironment.readOnly}),
+}));
+
 type MockedUseGetFlows = ReturnType<typeof useGetFlows>;
 
 vi.mock('@thunderid/components', async (importOriginal) => ({
@@ -59,10 +66,27 @@ describe('OrganizationUnitDefaultFlowsSettings', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockEnvironment.readOnly = false;
     vi.mocked(useGetFlows).mockReturnValue({
       data: {flows: mockFlows},
       isLoading: false,
     } as MockedUseGetFlows);
+  });
+
+  it('should disable the pickers and drop the toggles in a gateway view', () => {
+    mockEnvironment.readOnly = true;
+    render(
+      <MemoryRouter>
+        <OrganizationUnitDefaultFlowsSettings
+          organizationUnit={mockOrganizationUnit}
+          editedOU={{}}
+          onFieldChange={mockOnFieldChange}
+        />
+      </MemoryRouter>,
+    );
+
+    screen.getAllByRole('combobox').forEach((input) => expect(input).toBeDisabled());
+    expect(screen.queryByLabelText('toggle-Sign-up Flow')).not.toBeInTheDocument();
   });
 
   it('should render all four flow sections', () => {

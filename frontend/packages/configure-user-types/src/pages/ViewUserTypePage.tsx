@@ -1,7 +1,14 @@
 // Copyright 2025-2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {PageLoadingAnimation, QueryErrorNotice, UnsavedChangesBar} from '@thunderid/components';
+import {
+  EnvironmentDeploymentNotice,
+  PageLoadingAnimation,
+  QueryErrorNotice,
+  UnsavedChangesBar,
+  useEnvironmentResource,
+} from '@thunderid/components';
+import {useEnvironment} from '@thunderid/contexts';
 import {useLogger} from '@thunderid/logger/react';
 import {getErrorMessage, isEqualIgnoringEmpty} from '@thunderid/utils';
 import {
@@ -34,7 +41,13 @@ import EditSchemaSettings from '../components/edit-user-type/schema-settings/Edi
 import UserTypeDeleteDialog from '../components/edit-user-type/UserTypeDeleteDialog';
 import UserTypeConstraints from '../constants/user-type-constraints';
 import useUserTypeRoutes from '../hooks/useUserTypeRoutes';
-import type {PropertyDefinition, UserTypeDefinition, PropertyType, SchemaPropertyInput} from '../types/user-types';
+import type {
+  ApiUserType,
+  PropertyDefinition,
+  UserTypeDefinition,
+  PropertyType,
+  SchemaPropertyInput,
+} from '../types/user-types';
 import getBreakingSchemaChanges from '../utils/getBreakingSchemaChanges';
 
 interface TabPanelProps {
@@ -133,7 +146,15 @@ export default function ViewUserTypePage(): JSX.Element {
   const routes = useUserTypeRoutes();
   const listUrl = routes.list();
 
-  const {data: userType, isLoading, error: fetchError, refetch} = useGetUserType(id);
+  const liveUserType = useGetUserType(id);
+  const {
+    data: userType,
+    isLoading,
+    error: fetchError,
+    refetch,
+  } = useEnvironmentResource<ApiUserType>('user_type', id, liveUserType);
+  const {readOnly} = useEnvironment();
+  const isReadOnly = userType?.isReadOnly === true || readOnly;
   const updateUserTypeMutation = useUpdateUserType();
 
   // Resolves an error through the `userTypes` catalog. `t` defaults to the `common` namespace, so
@@ -385,6 +406,7 @@ export default function ViewUserTypePage(): JSX.Element {
   if (!userType) {
     return (
       <PageContent>
+        <EnvironmentDeploymentNotice resourceType="user_type" resourceId={id} />
         <Alert severity="warning" sx={{mb: 2}}>
           {t('userTypes:edit.notFound', 'User type not found')}
         </Alert>
@@ -402,6 +424,7 @@ export default function ViewUserTypePage(): JSX.Element {
 
   return (
     <PageContent>
+      <EnvironmentDeploymentNotice resourceType="user_type" resourceId={id} />
       {userType.isReadOnly && (
         <Alert severity="info" sx={{mb: 2}}>
           {t('common:messages.readOnlyResource', 'This resource is read-only and cannot be modified.')}
@@ -437,7 +460,7 @@ export default function ViewUserTypePage(): JSX.Element {
             ) : (
               <>
                 <Typography variant="h3">{effectiveName}</Typography>
-                {!userType.isReadOnly && (
+                {!isReadOnly && (
                   <IconButton
                     size="small"
                     aria-label={t('userTypes:edit.editName', 'Edit user type name')}
@@ -491,6 +514,7 @@ export default function ViewUserTypePage(): JSX.Element {
             editedDisplayAttribute={editedUserType.displayAttribute}
             onFieldChange={handleFieldChange}
             eligibleDisplayProperties={eligibleDisplayProperties}
+            readOnly={isReadOnly}
           />
         </TabPanel>
 
@@ -499,12 +523,12 @@ export default function ViewUserTypePage(): JSX.Element {
             properties={effectiveProperties}
             onPropertiesChange={handlePropertiesChange}
             userTypeHandle={userType.handle}
-            disabled={userType.isReadOnly}
+            disabled={isReadOnly}
           />
         </TabPanel>
 
         <TabPanel value={activeTab} index={2}>
-          <EditAdvancedSettings onDeleteClick={userType.isReadOnly ? undefined : () => setDeleteDialogOpen(true)} />
+          <EditAdvancedSettings onDeleteClick={isReadOnly ? undefined : () => setDeleteDialogOpen(true)} />
         </TabPanel>
       </>
 
@@ -556,7 +580,7 @@ export default function ViewUserTypePage(): JSX.Element {
           saveLabel={t('common:actions.save', 'Save')}
           savingLabel={t('common:status.saving', 'Saving...')}
           isSaving={updateUserTypeMutation.isPending}
-          saveDisabled={userType.isReadOnly === true}
+          saveDisabled={isReadOnly}
           error={
             validationError ??
             (updateUserTypeMutation.error

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {fireEvent, render, screen} from '@thunderid/test-utils';
-import {type ComponentProps, useState} from 'react';
+import {type ComponentProps, type ReactNode, useState} from 'react';
 import {describe, expect, it, vi} from 'vitest';
 import ConnectionForm from '../ConnectionForm';
 
@@ -33,6 +33,18 @@ vi.mock('@thunderid/contexts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@thunderid/contexts')>()),
   useToast: () => ({showToast: vi.fn()}),
 }));
+
+const environmentValue = vi.hoisted(() => ({held: false}));
+
+// A field a gateway holds its own value for is shown as that gateway's value instead of the form's own field.
+vi.mock('@thunderid/components', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@thunderid/components')>();
+  return {
+    ...actual,
+    EnvironmentValue: ({field, children}: {field: string; children: ReactNode}) =>
+      environmentValue.held ? <input aria-label={`${field} for the gateway`} /> : children,
+  };
+});
 
 function getConnectionField(id: string): HTMLElement {
   const field = document.getElementById(`connection-field-${id}`);
@@ -390,6 +402,34 @@ describe('ConnectionForm', () => {
 
       expect(getConnectionField('httpHeaders-name-1')).toHaveValue('X-ABC');
       expect(onFieldChange).toHaveBeenLastCalledWith('httpHeaders', 'X-ABC: text/html application/json');
+    });
+  });
+
+  describe('read-only', () => {
+    const editProps = {
+      ...baseProps,
+      mode: 'edit' as const,
+      connectionId: 'g1',
+      hasStoredSecret: true,
+      values: {...baseProps.values, name: 'Google', clientId: 'cid', scopes: 'openid'},
+      readOnly: true,
+    };
+
+    it("disables the connection's own fields", () => {
+      environmentValue.held = false;
+      render(<ConnectionForm {...editProps} />);
+
+      expect(getConnectionField('clientId')).toBeDisabled();
+      expect(getConnectionField('scopes')).toBeDisabled();
+      expect(screen.getByTestId('connection-field-clientSecret-replace')).toBeDisabled();
+    });
+
+    it("keeps a gateway's own value editable", () => {
+      environmentValue.held = true;
+      render(<ConnectionForm {...editProps} />);
+
+      expect(screen.getByLabelText('clientSecret for the gateway')).toBeEnabled();
+      environmentValue.held = false;
     });
   });
 });

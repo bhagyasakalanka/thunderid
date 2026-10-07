@@ -7,7 +7,9 @@ import {useCallback, type JSX} from 'react';
 import {Trans, useTranslation} from 'react-i18next';
 import {Link} from 'react-router';
 import useGetAgentGroups from '../../../api/useGetAgentGroups';
+import useAgentMemberships from '../../../hooks/useAgentMemberships';
 import useAgentRoutes from '../../../hooks/useAgentRoutes';
+import {toAgentGroupsPage} from '../../../utils/toAgentMemberships';
 
 interface AgentGroupsSectionProps {
   agentId: string;
@@ -16,7 +18,10 @@ interface AgentGroupsSectionProps {
 export default function AgentGroupsSection({agentId}: AgentGroupsSectionProps): JSX.Element {
   const routes = useAgentRoutes();
   const {t} = useTranslation();
-  const {data, isLoading, error, refetch} = useGetAgentGroups(agentId, {limit: 100, offset: 0});
+  const {data, isLoading, error, refetch} = useAgentMemberships(
+    useGetAgentGroups(agentId, {limit: 100, offset: 0}),
+    (configuration) => toAgentGroupsPage(configuration, agentId, 100, 0),
+  );
   const groups = data?.groups ?? [];
 
   // Resolves an error through the `agents` catalog. `t` defaults to the `common` namespace, so

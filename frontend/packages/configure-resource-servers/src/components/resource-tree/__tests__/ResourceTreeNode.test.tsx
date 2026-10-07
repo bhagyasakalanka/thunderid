@@ -6,7 +6,8 @@ import {describe, it, expect, vi, beforeEach} from 'vitest';
 import type {Resource, Action, ResourceListResponse, ActionListResponse} from '../../../models/resource-server';
 import {ResourceNode, ActionNode} from '../ResourceTreeNode';
 
-vi.mock('@thunderid/react', () => ({
+vi.mock('@thunderid/react', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   useThunderID: () => ({http: {request: vi.fn()}}),
 }));
 
@@ -33,9 +34,33 @@ vi.mock('../../../api/useDeleteAction', () => ({
   default: () => ({mutate: mockDeleteAction, isPending: false}),
 }));
 
+// The live children of a resource, and whether the selected gateway applied the resource server.
+let mockLiveChildren: Resource[] = [];
+let mockApplied = false;
+
 vi.mock('../../../api/useGetResources', () => ({
-  default: () => ({data: {resources: []} as ResourceListResponse, isLoading: false}),
+  default: (_resourceServerId: string, parentId?: string, enabled = true) => ({
+    data: {resources: enabled && parentId === 'r-1' ? mockLiveChildren : []} as ResourceListResponse,
+    isLoading: false,
+  }),
 }));
+
+vi.mock('@thunderid/components', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@thunderid/components')>();
+  return {
+    ...actual,
+    useEnvironmentPresence: (resourceType: string, resourceId?: string) =>
+      mockApplied ? {source: 'applied', isLoading: false} : actual.useEnvironmentPresence(resourceType, resourceId),
+    useEnvironmentResource: (resourceType: string, resourceId: string, live: object, part?: string) =>
+      mockApplied && part === 'resources/r-1/actions'
+        ? {...live, data: {actions: [{id: 'rs-1_documents_view', name: 'View as applied', handle: 'view'}]}}
+        : mockApplied && part === 'resources/r-1/resources'
+          ? {...live, data: {resources: [{id: 'rs-1_archive', name: 'Archive as applied', handle: 'archive'}]}}
+          : mockApplied
+            ? {...live, data: undefined}
+            : actual.useEnvironmentResource(resourceType, resourceId, live as never, part),
+  };
+});
 
 vi.mock('../../../api/useGetResourceActions', () => ({
   default: () => ({data: {actions: []} as ActionListResponse, isLoading: false}),
@@ -68,6 +93,26 @@ describe('ResourceNode', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockLiveChildren = [];
+    mockApplied = false;
+  });
+
+  it('lists its live children and actions in the draft', () => {
+    mockLiveChildren = [{id: 'r-2', name: 'Drafts', handle: 'drafts', permission: 'api/documents/drafts'}];
+    renderWithProviders(<ResourceNode {...defaultProps} />);
+
+    expect(screen.getByText('Drafts')).toBeInTheDocument();
+    expect(screen.queryByText('View as applied')).not.toBeInTheDocument();
+  });
+
+  it('shows the children and actions the gateway applied, not the live ones, in a gateway view', () => {
+    mockApplied = true;
+    mockLiveChildren = [{id: 'r-2', name: 'Drafts', handle: 'drafts', permission: 'api/documents/drafts'}];
+    renderWithProviders(<ResourceNode {...defaultProps} readOnly />);
+
+    expect(screen.getByText('View as applied')).toBeInTheDocument();
+    expect(screen.getByText('Archive as applied')).toBeInTheDocument();
+    expect(screen.queryByText('Drafts')).not.toBeInTheDocument();
   });
 
   it('renders the resource name', () => {

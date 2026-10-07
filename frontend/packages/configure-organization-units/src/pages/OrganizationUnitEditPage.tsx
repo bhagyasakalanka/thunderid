@@ -1,7 +1,15 @@
 // Copyright 2025-2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {PageLoadingAnimation, QueryErrorNotice, ResourceAvatar, UnsavedChangesBar} from '@thunderid/components';
+import {
+  EnvironmentDeploymentNotice,
+  PageLoadingAnimation,
+  QueryErrorNotice,
+  ResourceAvatar,
+  UnsavedChangesBar,
+  useEnvironmentResource,
+} from '@thunderid/components';
+import {useEnvironment} from '@thunderid/contexts';
 import {useLogger} from '@thunderid/logger/react';
 import {getErrorMessage, isEqualIgnoringEmpty} from '@thunderid/utils';
 import {
@@ -99,7 +107,15 @@ export default function OrganizationUnitEditPage({
   const navigationState = location.state as OUNavigationState | null;
   const fromOU = navigationState?.fromOU;
 
-  const {data: organizationUnit, isLoading, error: fetchError, refetch} = useGetOrganizationUnit(id);
+  const liveOrganizationUnit = useGetOrganizationUnit(id);
+  const {
+    data: organizationUnit,
+    isLoading,
+    error: fetchError,
+    refetch,
+  } = useEnvironmentResource<OrganizationUnit>('organization_unit', id, liveOrganizationUnit);
+  const {readOnly} = useEnvironment();
+  const isReadOnly = organizationUnit?.isReadOnly === true || readOnly;
   const updateOrganizationUnit = useUpdateOrganizationUnit();
   const {resetTreeState} = useOrganizationUnit();
 
@@ -262,6 +278,7 @@ export default function OrganizationUnitEditPage({
   if (!organizationUnit) {
     return (
       <PageContent>
+        <EnvironmentDeploymentNotice resourceType="organization_unit" resourceId={id} />
         <Alert severity="warning" sx={{mb: 2}}>
           {t('organizationUnits:edit.page.notFound')}
         </Alert>
@@ -281,6 +298,7 @@ export default function OrganizationUnitEditPage({
 
   return (
     <PageContent>
+      <EnvironmentDeploymentNotice resourceType="organization_unit" resourceId={id} />
       {organizationUnit.isReadOnly && (
         <Alert severity="info" sx={{mb: 2}}>
           {t('common:messages.readOnlyResource', 'This resource is read-only and cannot be modified.')}
@@ -296,7 +314,7 @@ export default function OrganizationUnitEditPage({
             size={55}
             variant="rounded"
             supportedShapes={['rounded']}
-            editable={!organizationUnit.isReadOnly}
+            editable={!isReadOnly}
             value={editedOU.logoUrl ?? organizationUnit.logoUrl ?? undefined}
             fallback={OrganizationUnitTreeConstants.DEFAULT_AVATAR}
             editAriaLabel={t('organizationUnits:edit.page.logoUpdate.label', 'Update Logo')}
@@ -338,7 +356,7 @@ export default function OrganizationUnitEditPage({
             ) : (
               <>
                 <Typography variant="h3">{editedOU.name ?? organizationUnit.name}</Typography>
-                {!organizationUnit.isReadOnly && (
+                {!isReadOnly && (
                   <IconButton
                     size="small"
                     onClick={() => {
@@ -396,7 +414,7 @@ export default function OrganizationUnitEditPage({
                   {(editedOU.description !== undefined ? editedOU.description : organizationUnit.description) ??
                     t('organizationUnits:edit.page.description.empty')}
                 </Typography>
-                {!organizationUnit.isReadOnly && (
+                {!isReadOnly && (
                   <IconButton
                     size="small"
                     onClick={() => {
@@ -504,12 +522,13 @@ export default function OrganizationUnitEditPage({
             organizationUnit={organizationUnit}
             editedOU={editedOU}
             onFieldChange={handleFieldChange}
+            readOnly={isReadOnly}
           />
         </TabPanel>
 
         {/* Advanced Tab */}
         <TabPanel value={activeTab} index={renderDefaultFlowsSettings ? 6 : 5}>
-          {!organizationUnit.isReadOnly && <DangerZoneSection onDeleteClick={() => setDeleteDialogOpen(true)} />}
+          {!isReadOnly && <DangerZoneSection onDeleteClick={() => setDeleteDialogOpen(true)} />}
         </TabPanel>
       </>
 
@@ -529,7 +548,7 @@ export default function OrganizationUnitEditPage({
           saveLabel={t('organizationUnits:edit.actions.save.label')}
           savingLabel={t('organizationUnits:edit.actions.saving.label')}
           isSaving={updateOrganizationUnit.isPending}
-          saveDisabled={organizationUnit.isReadOnly === true}
+          saveDisabled={isReadOnly}
           error={
             updateOrganizationUnit.error
               ? getErrorMessage(

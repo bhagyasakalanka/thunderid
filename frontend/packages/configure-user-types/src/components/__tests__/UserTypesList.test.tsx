@@ -134,6 +134,27 @@ vi.mock('@wso2/oxygen-ui', async () => {
   };
 });
 
+const {environment} = vi.hoisted(() => ({
+  environment: {readOnly: false, applied: undefined as unknown[] | undefined},
+}));
+
+vi.mock('@thunderid/contexts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@thunderid/contexts')>();
+  return {
+    ...actual,
+    useEnvironment: () => ({...actual.useEnvironment(), readOnly: environment.readOnly}),
+  };
+});
+
+vi.mock('@thunderid/components', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@thunderid/components')>();
+  return {
+    ...actual,
+    useEnvironmentList: (_type: string, live: {data: unknown}, toPage: (resources: unknown[]) => unknown) =>
+      environment.applied ? {...live, data: toPage(environment.applied)} : live,
+  };
+});
+
 // Mock react-router
 vi.mock('react-router', async () => {
   const actual = await vi.importActual<typeof import('react-router')>('react-router');
@@ -210,6 +231,8 @@ describe('UserTypesList', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    environment.readOnly = false;
+    environment.applied = undefined;
     mockUseGetUserTypes.mockReturnValue({
       data: mockUserTypesData,
       isLoading: false,
@@ -559,6 +582,32 @@ describe('UserTypesList', () => {
           userTypeId: 'schema1',
         }),
       );
+    });
+  });
+
+  it('lists only the user types the gateway runs, read-only, in read-only mode', async () => {
+    environment.readOnly = true;
+    environment.applied = [
+      {
+        id: 'schema2',
+        handle: 'contractor',
+        displayName: 'Contractor as applied',
+        ouId: 'child-ou',
+        allowSelfRegistration: true,
+        schema: {},
+      },
+    ];
+    const user = userEvent.setup();
+    render(<UserTypesList />);
+
+    expect(screen.getByTestId('row-schema2')).toHaveTextContent('Contractor as applied');
+    expect(screen.queryByTestId('row-schema1')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', {name: /delete/i})).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', {name: /edit/i})).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId('row-schema2'));
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/user-types/schema2');
     });
   });
 });

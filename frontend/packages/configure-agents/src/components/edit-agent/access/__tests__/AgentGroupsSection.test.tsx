@@ -5,8 +5,19 @@ import {render, screen} from '@thunderid/test-utils';
 import {describe, it, expect, vi, beforeEach} from 'vitest';
 import AgentGroupsSection from '../AgentGroupsSection';
 
-const {mockUseGetAgentGroups} = vi.hoisted(() => ({
+const {mockUseGetAgentGroups, mockEnvironment} = vi.hoisted(() => ({
   mockUseGetAgentGroups: vi.fn(),
+  mockEnvironment: {gateway: undefined as {id: string} | undefined, configuration: undefined as unknown},
+}));
+
+vi.mock('@thunderid/contexts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@thunderid/contexts')>()),
+  useEnvironment: () => ({gateway: mockEnvironment.gateway, readOnly: Boolean(mockEnvironment.gateway)}),
+}));
+
+vi.mock('@thunderid/components', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@thunderid/components')>()),
+  useAppliedConfiguration: () => ({data: mockEnvironment.configuration, isLoading: false, error: null}),
 }));
 
 vi.mock('../../../../api/useGetAgentGroups', () => ({
@@ -16,6 +27,8 @@ vi.mock('../../../../api/useGetAgentGroups', () => ({
 describe('AgentGroupsSection', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockEnvironment.gateway = undefined;
+    mockEnvironment.configuration = undefined;
   });
 
   it('shows a loading indicator while groups are loading', () => {
@@ -131,5 +144,34 @@ describe('AgentGroupsSection', () => {
     render(<AgentGroupsSection agentId="agent-1" />);
 
     expect(screen.getByRole('link', {name: 'Groups page'})).toHaveAttribute('href', '/groups');
+  });
+  it('in read-only mode, shows the groups from the configuration the gateway runs', () => {
+    mockUseGetAgentGroups.mockReturnValue({
+      data: {totalResults: 1, startIndex: 1, count: 1, groups: [{id: 'g9', name: 'live-group', ouId: 'ou-1'}]},
+      isLoading: false,
+    });
+    mockEnvironment.gateway = {id: 'gw-1'};
+    mockEnvironment.configuration = {
+      gatewayId: 'gw-1',
+      resources: [
+        {
+          resourceType: 'group',
+          id: 'g1',
+          resource: {id: 'g1', name: 'applied-agents', ouId: 'ou-1'},
+          parts: {members: {members: [{id: 'agent-1', type: 'agent'}]}},
+        },
+        {
+          resourceType: 'role',
+          id: 'r1',
+          resource: {id: 'r1', name: 'applied-role'},
+          parts: {assignments: {assignments: [{id: 'g1', type: 'group'}]}},
+        },
+      ],
+    };
+
+    render(<AgentGroupsSection agentId="agent-1" />);
+
+    expect(screen.getByText('applied-agents')).toBeInTheDocument();
+    expect(screen.queryByText('live-group')).not.toBeInTheDocument();
   });
 });

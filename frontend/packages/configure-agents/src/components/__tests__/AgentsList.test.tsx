@@ -8,9 +8,27 @@ import {describe, it, expect, beforeEach, vi} from 'vitest';
 import type {AgentListResponse} from '../../models/agent';
 import AgentsList from '../AgentsList';
 
-const {mockLoggerError} = vi.hoisted(() => ({
+const {mockLoggerError, environment} = vi.hoisted(() => ({
   mockLoggerError: vi.fn(),
+  environment: {readOnly: false, applied: [] as unknown[]},
 }));
+
+vi.mock('@thunderid/contexts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@thunderid/contexts')>();
+  return {
+    ...actual,
+    useEnvironment: () => ({...actual.useEnvironment(), readOnly: environment.readOnly}),
+  };
+});
+
+vi.mock('@thunderid/components', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@thunderid/components')>();
+  return {
+    ...actual,
+    useEnvironmentList: (_type: string, live: Record<string, unknown>, toPage: (resources: unknown[]) => unknown) =>
+      environment.readOnly ? {...live, data: toPage(environment.applied)} : live,
+  };
+});
 
 // Mock the dependencies
 vi.mock('../../api/useGetAgents');
@@ -172,6 +190,8 @@ describe('AgentsList', () => {
   };
 
   beforeEach(() => {
+    environment.readOnly = false;
+    environment.applied = [];
     mockNavigate = vi.fn();
     mockLoggerError.mockReset();
     vi.mocked(useNavigate).mockReturnValue(mockNavigate as unknown as NavigateFunction);
@@ -406,5 +426,34 @@ describe('AgentsList', () => {
     renderComponent();
 
     expect(screen.getByRole('grid')).toBeInTheDocument();
+  });
+
+  describe('in a gateway view', () => {
+    beforeEach(() => {
+      vi.mocked(useGetAgents).mockReturnValue({
+        data: mockAgentsData,
+        isLoading: false,
+        error: null,
+      } as ReturnType<typeof useGetAgents>);
+    });
+
+    it('lists only the agents the gateway runs, with no edit or delete actions', () => {
+      environment.readOnly = true;
+      environment.applied = [{id: 'agent-2', ouId: 'ou-2', type: 'default', name: 'Test Agent 2'}];
+
+      renderComponent();
+
+      expect(screen.queryByText('Test Agent 1')).not.toBeInTheDocument();
+      expect(screen.getByText('Test Agent 2')).toBeInTheDocument();
+      expect(screen.queryByRole('button', {name: /^edit$/i})).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', {name: /^delete$/i})).not.toBeInTheDocument();
+    });
+
+    it('keeps the live list and the row actions in write mode', () => {
+      renderComponent();
+
+      expect(screen.getByText('Test Agent 1')).toBeInTheDocument();
+      expect(screen.getAllByRole('button', {name: /^edit$/i})).toHaveLength(2);
+    });
   });
 });

@@ -1,6 +1,7 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
+import {useEnvironmentResource} from '@thunderid/components';
 import {useGetLayout} from '@thunderid/design';
 import {Box, CircularProgress, Stack, Typography} from '@wso2/oxygen-ui';
 import {type JSX} from 'react';
@@ -387,7 +388,8 @@ function LayoutPreviewContent({
   screenDraft = undefined,
 }: Omit<LayoutPreviewPanelProps, 'showRulers'>): JSX.Element {
   const {t} = useTranslation('design');
-  const {data: layout, isLoading} = useGetLayout(layoutId ?? '');
+  const liveLayout = useGetLayout(layoutId ?? '');
+  const {data: layout, isLoading} = useEnvironmentResource('layout', layoutId ?? undefined, liveLayout);
 
   if (!layoutId) {
     return (

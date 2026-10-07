@@ -8,8 +8,10 @@ import {describe, it, expect, vi, beforeEach} from 'vitest';
 import type {ApiUserType, UserTypeListResponse} from '../../models/users';
 import UserEditPage from '../UserEditPage';
 
-const {mockLoggerError, stagingCallbackIdentities} = vi.hoisted(() => ({
+const {mockLoggerError, stagingCallbackIdentities, environment} = vi.hoisted(() => ({
   mockLoggerError: vi.fn(),
+  // What the selected environment shows: readOnly and applied are set by a gateway view test.
+  environment: {readOnly: false, applied: undefined as unknown, missing: false},
   // Every distinct onFieldChange the Attributes tab is handed.
   stagingCallbackIdentities: new Set<unknown>(),
 }));
@@ -19,6 +21,18 @@ vi.mock('@thunderid/components', async (importOriginal) => {
   return {
     ...actual,
     CopyableId: vi.fn(() => null),
+    EnvironmentDeploymentNotice: () =>
+      environment.readOnly ? <div data-testid="environment-deployment-notice" /> : null,
+    useEnvironmentResource: (_type: string, _id: string, live: {data: unknown}) =>
+      environment.applied || environment.missing ? {...live, data: environment.applied} : live,
+  };
+});
+
+vi.mock('@thunderid/contexts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@thunderid/contexts')>();
+  return {
+    ...actual,
+    useEnvironment: () => ({...actual.useEnvironment(), readOnly: environment.readOnly}),
   };
 });
 
@@ -143,10 +157,16 @@ vi.mock('@/components/edit-user/AttributesSummarySection', () => ({
 }));
 
 vi.mock('@/components/edit-user/EditUserAttributes', () => ({
-  default: ({onFieldChange}: {onFieldChange: (field: string, value: unknown) => void}) => {
+  default: ({
+    onFieldChange,
+    readOnly = false,
+  }: {
+    onFieldChange: (field: string, value: unknown) => void;
+    readOnly?: boolean;
+  }) => {
     stagingCallbackIdentities.add(onFieldChange);
     return (
-      <div data-testid="edit-user-attributes">
+      <div data-testid="edit-user-attributes" data-read-only={String(readOnly)}>
         <button type="button" onClick={() => onFieldChange('attributes', {department: 'sales'})}>
           Edit an attribute
         </button>
@@ -229,6 +249,9 @@ describe('UserEditPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     stagingCallbackIdentities.clear();
+    environment.readOnly = false;
+    environment.applied = undefined;
+    environment.missing = false;
     mockNavigate.mockResolvedValue(undefined);
     mockUpdateMutateAsync.mockResolvedValue(mockUserData);
     mockRefetch.mockResolvedValue({});
@@ -1027,5 +1050,56 @@ describe('UserEditPage', () => {
         expect(within(dialog).getByText('Failed to delete user. Please try again.')).toBeInTheDocument();
       });
     });
+  });
+
+  it('shows the not found state with the deployment notice for a user the gateway does not run', () => {
+    environment.readOnly = true;
+    environment.missing = true;
+    render(<UserEditPage />);
+
+    expect(screen.getByText('User not found')).toBeInTheDocument();
+    expect(screen.getByTestId('environment-deployment-notice')).toBeInTheDocument();
+  });
+
+  describe('Gateway view', () => {
+    beforeEach(() => {
+      environment.readOnly = true;
+      environment.applied = {...mockUserData, attributes: {username: 'applied_john'}, display: 'Applied John'};
+    });
+
+    it('shows the user as the gateway applied it, with the deployment notice', () => {
+      render(<UserEditPage />);
+
+      expect(screen.getByTestId('environment-deployment-notice')).toBeInTheDocument();
+      expect(screen.getAllByRole('heading', {name: 'Applied John'}).length).toBeGreaterThanOrEqual(1);
+      expect(screen.queryByText('This resource is read-only and cannot be modified.')).not.toBeInTheDocument();
+    });
+
+    it('hides the Advanced tab and makes the attributes read-only', async () => {
+      const user = userEvent.setup();
+      render(<UserEditPage />);
+
+      expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['General', 'Attributes']);
+      await user.click(screen.getByRole('tab', {name: 'Attributes'}));
+      expect(screen.getByTestId('edit-user-attributes')).toHaveAttribute('data-read-only', 'true');
+    });
+
+    it('disables save', async () => {
+      const user = userEvent.setup();
+      render(<UserEditPage />);
+
+      await user.click(screen.getByRole('tab', {name: 'Attributes'}));
+      await user.click(screen.getByRole('button', {name: 'Edit an attribute'}));
+      expect(screen.getByRole('button', {name: /^save$/i})).toBeDisabled();
+    });
+  });
+
+  it('shows no deployment notice and keeps the attributes editable in the draft', async () => {
+    const user = userEvent.setup();
+    render(<UserEditPage />);
+
+    expect(screen.queryByTestId('environment-deployment-notice')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('tab', {name: 'Attributes'}));
+    expect(screen.getByTestId('edit-user-attributes')).toHaveAttribute('data-read-only', 'false');
   });
 });

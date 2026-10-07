@@ -29,6 +29,24 @@ const mockLayout = {
 };
 
 const mockUseGetLayout = vi.fn();
+const mockEnvironment = vi.hoisted(() => ({
+  readOnly: false,
+  applied: undefined as Record<string, unknown> | undefined,
+}));
+
+vi.mock('@thunderid/contexts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@thunderid/contexts')>()),
+  useEnvironment: () => ({readOnly: mockEnvironment.readOnly}),
+}));
+
+// In a gateway's view the layout it applied stands in for the live read; in the draft the live read is used.
+vi.mock('@thunderid/components', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@thunderid/components')>()),
+  useEnvironmentResource: (_type: string, _id: string | undefined, live: Record<string, unknown>) =>
+    mockEnvironment.applied
+      ? {...live, data: mockEnvironment.applied, presence: {gateway: {id: 'gw-1'}, source: 'applied'}}
+      : {...live, presence: {source: 'live'}},
+}));
 
 vi.mock('@thunderid/design', () => ({
   useGetLayout: (...args: unknown[]): unknown => mockUseGetLayout(...args),
@@ -72,6 +90,35 @@ function TestConsumer() {
 describe('LayoutBuilderProvider', () => {
   beforeEach(() => {
     mockUseGetLayout.mockReset();
+    mockEnvironment.readOnly = false;
+    mockEnvironment.applied = undefined;
+  });
+
+  describe('In a gateway view', () => {
+    it('drafts the layout the gateway applied and drops edits', async () => {
+      mockUseGetLayout.mockReturnValue({
+        data: {id: 'layout-123', displayName: 'Live', layout: mockLayout},
+        isLoading: false,
+      });
+      mockEnvironment.readOnly = true;
+      mockEnvironment.applied = {
+        id: 'layout-123',
+        displayName: 'Applied',
+        layout: {screens: {auth: {slots: {}}, signup: {extends: 'auth', slots: {}}}},
+      };
+      const user = userEvent.setup();
+      render(
+        <LayoutBuilderProvider>
+          <TestConsumer />
+        </LayoutBuilderProvider>,
+      );
+
+      expect(screen.getByTestId('allScreens')).toHaveTextContent('auth,signup');
+      await user.click(screen.getByText('AddScreen'));
+      await user.click(screen.getByText('UpdateBg'));
+      expect(screen.getByTestId('allScreens')).toHaveTextContent('auth,signup');
+      expect(screen.getByTestId('isDirty')).toHaveTextContent('false');
+    });
   });
 
   describe('Loading state', () => {

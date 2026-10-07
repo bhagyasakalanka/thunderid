@@ -1,7 +1,8 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {QueryErrorNotice} from '@thunderid/components';
+import {QueryErrorNotice, useEnvironmentList, useEnvironmentResource} from '@thunderid/components';
+import {useEnvironment} from '@thunderid/contexts';
 import {useDataGridLocaleText} from '@thunderid/hooks';
 import {useLogger} from '@thunderid/logger/react';
 import {Box, Chip, DataGrid, IconButton, ListingTable, Menu, MenuItem, Tooltip, Typography} from '@wso2/oxygen-ui';
@@ -14,8 +15,10 @@ import SetDefaultResourceServerDialog from './SetDefaultResourceServerDialog';
 import useGetDefaultResourceServer from '../api/useGetDefaultResourceServer';
 import useGetResourceServers from '../api/useGetResourceServers';
 import {getResourceServerTypeLabel} from '../config/resource-server-types';
+import ResourceServerQueryKeys from '../constants/resource-server-query-keys';
 import useResourceServerRoutes from '../hooks/useResourceServerRoutes';
 import {isDefaultEligibleType, type ResourceServer} from '../models/resource-server';
+import toResourceServersPage from '../utils/toResourceServersPage';
 
 export default function ResourceServersList(): JSX.Element {
   const navigate = useNavigate();
@@ -23,6 +26,7 @@ export default function ResourceServersList(): JSX.Element {
   const {t} = useTranslation();
   const logger = useLogger('ResourceServersList');
   const dataGridLocaleText = useDataGridLocaleText();
+  const {readOnly} = useEnvironment();
 
   // Resolves an error through the `resourceServers` catalog. `t` defaults to the `common`
   // namespace, so this forwards explicit `ns:` prefixes unchanged and prefixes bare keys with
@@ -39,11 +43,18 @@ export default function ResourceServersList(): JSX.Element {
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [menuTarget, setMenuTarget] = useState<ResourceServer | null>(null);
 
-  const {data, isLoading, error, refetch} = useGetResourceServers({
-    limit: paginationModel.pageSize,
-    offset: paginationModel.page * paginationModel.pageSize,
-  });
-  const {data: defaultConfig, isLoading: isDefaultLoading, error: defaultError} = useGetDefaultResourceServer();
+  const limit = paginationModel.pageSize;
+  const offset = paginationModel.page * paginationModel.pageSize;
+  const liveResourceServers = useGetResourceServers({limit, offset});
+  const {data, isLoading, error, refetch} = useEnvironmentList('resource_server', liveResourceServers, (resources) =>
+    toResourceServersPage(resources, limit, offset),
+  );
+  const liveDefault = useGetDefaultResourceServer();
+  const {
+    data: defaultConfig,
+    isLoading: isDefaultLoading,
+    error: defaultError,
+  } = useEnvironmentResource('server_config', ResourceServerQueryKeys.DEFAULT_RESOURCE_SERVER, liveDefault);
   const defaultId = defaultConfig?.merged?.resourceServerId;
   // A declarative (read-only) default is locked: the backend rejects any write to it.
   const isDefaultReady = !isDefaultLoading && !defaultError;
@@ -165,7 +176,7 @@ export default function ResourceServersList(): JSX.Element {
         hideable: false,
         renderCell: (params: DataGrid.GridRenderCellParams<ResourceServer>): JSX.Element => (
           <ListingTable.RowActions>
-            {params.row.isReadOnly ? (
+            {params.row.isReadOnly === true || readOnly ? (
               <Tooltip title={t('common:status.readOnly', 'Read Only')}>
                 <IconButton size="small" disableRipple sx={{cursor: 'default'}}>
                   <Eye size={16} />
@@ -215,7 +226,7 @@ export default function ResourceServersList(): JSX.Element {
         ),
       },
     ],
-    [t, navigate, routes, logger, defaultId, handleMenuOpen],
+    [t, navigate, routes, logger, defaultId, handleMenuOpen, readOnly],
   );
 
   if (error) {

@@ -1,7 +1,15 @@
 // Copyright 2025-2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {PageLoadingAnimation, QueryErrorNotice, ResourceAvatar, UnsavedChangesBar} from '@thunderid/components';
+import {
+  EnvironmentDeploymentNotice,
+  PageLoadingAnimation,
+  QueryErrorNotice,
+  ResourceAvatar,
+  UnsavedChangesBar,
+  useEnvironmentResource,
+} from '@thunderid/components';
+import {useEnvironment} from '@thunderid/contexts';
 import {useLogger} from '@thunderid/logger/react';
 import {isEqualIgnoringEmpty} from '@thunderid/utils';
 import {
@@ -95,7 +103,19 @@ export default function ApplicationEditPage() {
   const location = useLocation();
   const {applicationId} = useParams<{applicationId: string}>();
 
-  const {data: application, isLoading, error, refetch} = useGetApplication(applicationId ?? '');
+  const liveApplication = useGetApplication(applicationId ?? '');
+  const {
+    data: shownApplication,
+    isLoading,
+    error,
+    refetch,
+  } = useEnvironmentResource<Application>('application', applicationId, liveApplication);
+  const {readOnly} = useEnvironment();
+  // A gateway's view is read-only: every section already disables itself for a read-only application.
+  const application = useMemo(
+    () => (readOnly && shownApplication ? {...shownApplication, isReadOnly: true} : shownApplication),
+    [readOnly, shownApplication],
+  );
   const updateApplication = useUpdateApplication();
 
   // Resolves an error through the `applications` catalog. `t` defaults to the `common` namespace,
@@ -236,6 +256,7 @@ export default function ApplicationEditPage() {
   if (!application) {
     return (
       <PageContent>
+        <EnvironmentDeploymentNotice resourceType="application" resourceId={applicationId} />
         <Alert severity="warning" sx={{mb: 2}}>
           {t('applications:edit.page.notFound')}
         </Alert>
@@ -518,7 +539,7 @@ export default function ApplicationEditPage() {
 
   return (
     <PageContent>
-      {application.isReadOnly && (
+      {shownApplication?.isReadOnly && (
         <Alert severity="info" sx={{mb: 2}}>
           {t('common:messages.readOnlyResource', 'This resource is read-only and cannot be modified.')}
         </Alert>
@@ -674,6 +695,8 @@ export default function ApplicationEditPage() {
             })()}
         </PageTitle.SubHeader>
       </PageTitle>
+
+      <EnvironmentDeploymentNotice resourceType="application" resourceId={application.id} />
 
       {/* Tabs */}
       <Tabs value={activeTabIndex} onChange={createTabChangeHandler(activeTabs)} aria-label="application settings tabs">

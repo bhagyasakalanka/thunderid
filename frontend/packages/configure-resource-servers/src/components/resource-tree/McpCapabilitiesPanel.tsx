@@ -1,6 +1,8 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
+import {useEnvironmentResource} from '@thunderid/components';
+import {useEnvironment} from '@thunderid/contexts';
 import {
   Box,
   Button,
@@ -43,7 +45,14 @@ export default function McpCapabilitiesPanel({resourceServer, onRefresh}: McpCap
   const [addMenuAnchor, setAddMenuAnchor] = useState<HTMLElement | null>(null);
   const [kindFilter, setKindFilter] = useState<KindFilter>('all');
 
-  const {data: serverActionsData, isLoading: loadingActions} = useGetServerActions(resourceServer.id);
+  const {readOnly: environmentReadOnly} = useEnvironment();
+  const liveServerActions = useGetServerActions(resourceServer.id);
+  const {data: serverActionsData, isLoading: loadingActions} = useEnvironmentResource(
+    'resource_server',
+    resourceServer.id,
+    liveServerActions,
+    'actions',
+  );
 
   const serverActions = useMemo(() => serverActionsData?.actions ?? [], [serverActionsData]);
 
@@ -60,7 +69,7 @@ export default function McpCapabilitiesPanel({resourceServer, onRefresh}: McpCap
 
   const isLoading = loadingActions;
   const isEmpty = serverActions.length === 0;
-  const readOnly = Boolean(resourceServer.isReadOnly);
+  const readOnly = resourceServer.isReadOnly === true || environmentReadOnly;
 
   const effectiveSelectedNode = useMemo<SelectedNode | null>(() => {
     if (selectedNode) return selectedNode;

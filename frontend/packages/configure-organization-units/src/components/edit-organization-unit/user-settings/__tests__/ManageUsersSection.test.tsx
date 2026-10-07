@@ -10,6 +10,16 @@ import ManageUsersSection from '../ManageUsersSection';
 
 // Mock the useGetOrganizationUnitUsers hook
 const mockUseGetOrganizationUnitUsers = vi.fn();
+const {environment} = vi.hoisted(() => ({environment: {applied: undefined as unknown[] | undefined}}));
+vi.mock('@thunderid/components', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@thunderid/components')>();
+  return {
+    ...actual,
+    useEnvironmentList: (_type: string, live: {data: unknown}, toPage: (resources: unknown[]) => unknown) =>
+      environment.applied ? {...live, data: toPage(environment.applied)} : live,
+  };
+});
+
 vi.mock('@/api/useGetOrganizationUnitUsers', () => ({
   default: (id: string): unknown => mockUseGetOrganizationUnitUsers(id),
 }));
@@ -34,6 +44,7 @@ describe('ManageUsersSection', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    environment.applied = undefined;
   });
 
   it('should render the manage users section', () => {
@@ -195,5 +206,22 @@ describe('ManageUsersSection', () => {
 
     expect(screen.getByText('user-1')).toBeInTheDocument();
     expect(screen.getByText('user-2')).toBeInTheDocument();
+  });
+
+  it("should list only the gateway's users of this organization unit in read-only mode", () => {
+    mockUseGetOrganizationUnitUsers.mockReturnValue({
+      data: {users: mockUsers},
+      isLoading: false,
+    });
+    environment.applied = [
+      {id: 'user-9', type: 'internal', ouId: 'ou-123', display: 'Applied User'},
+      {id: 'user-8', type: 'internal', ouId: 'ou-other', display: 'Elsewhere'},
+    ];
+
+    renderWithProviders(<ManageUsersSection organizationUnitId="ou-123" />);
+
+    expect(screen.getByText('user-9')).toBeInTheDocument();
+    expect(screen.queryByText('user-1')).not.toBeInTheDocument();
+    expect(screen.queryByText('Elsewhere')).not.toBeInTheDocument();
   });
 });

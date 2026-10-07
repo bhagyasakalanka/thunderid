@@ -106,6 +106,7 @@ export default function EditAdvancedSettings({
         onFieldChange={onFieldChange}
       />
       <OperationModesSection
+        agentId={agent.id}
         oauth2Config={oauth2Config}
         onOAuth2ConfigChange={handleOAuth2ConfigChange}
         onBackchannelLogoutUriValidationChange={onBackchannelLogoutUriValidationChange}

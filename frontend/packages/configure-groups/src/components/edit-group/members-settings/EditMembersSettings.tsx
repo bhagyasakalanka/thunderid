@@ -14,13 +14,18 @@ import type {Group, Member} from '../../../models/group';
 
 interface EditMembersSettingsProps {
   group: Group;
+  /** Whether members cannot be changed: the group is read-only, or a gateway is shown. */
+  isReadOnly?: boolean;
 }
 
 /**
  * Members tab content for the Group edit page.
  * Provides member listing, add, and remove functionality.
  */
-export default function EditMembersSettings({group}: EditMembersSettingsProps): JSX.Element {
+export default function EditMembersSettings({
+  group,
+  isReadOnly = group.isReadOnly === true,
+}: EditMembersSettingsProps): JSX.Element {
   const {t} = useTranslation('groups');
   const addGroupMembers = useAddGroupMembers();
   const removeGroupMembers = useRemoveGroupMembers();
@@ -80,9 +85,9 @@ export default function EditMembersSettings({group}: EditMembersSettingsProps): 
       <ManageMembersSection
         groupId={group.id}
         onRemoveMember={handleRemoveMember}
-        isReadOnly={group.isReadOnly}
+        isReadOnly={isReadOnly}
         headerAction={
-          !group.isReadOnly ? (
+          !isReadOnly ? (
             <Button
               variant="contained"
               size="small"
@@ -98,7 +103,7 @@ export default function EditMembersSettings({group}: EditMembersSettingsProps): 
         }
       />
 
-      {addDialogOpen && !group.isReadOnly && (
+      {addDialogOpen && !isReadOnly && (
         <AddMemberDialog
           open={addDialogOpen}
           onClose={() => {

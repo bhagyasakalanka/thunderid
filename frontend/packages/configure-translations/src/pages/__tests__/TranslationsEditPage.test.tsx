@@ -49,6 +49,35 @@ vi.mock('@thunderid/i18n', async (importOriginal) => ({
   },
 }));
 
+const mockEnvironment = vi.hoisted(() => ({
+  readOnly: false,
+  applied: undefined as Record<string, unknown> | undefined,
+  missing: false,
+}));
+
+vi.mock('@thunderid/contexts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@thunderid/contexts')>()),
+  useEnvironment: () => ({readOnly: mockEnvironment.readOnly}),
+}));
+
+// In read-only mode the translations the gateway applied stand in for the live read; in write mode the live read is used.
+vi.mock('@thunderid/components', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@thunderid/components')>()),
+  useEnvironmentResource: (_type: string, _id: string | undefined, live: Record<string, unknown>) =>
+    mockEnvironment.missing
+      ? {...live, data: undefined, isLoading: false, presence: {source: 'missing'}}
+      : mockEnvironment.applied
+        ? {...live, data: mockEnvironment.applied, isLoading: false, presence: {source: 'applied'}}
+        : {...live, presence: {source: 'live'}},
+  EnvironmentDeploymentNotice: ({
+    resourceType,
+    resourceId = undefined,
+  }: {
+    resourceType: string;
+    resourceId?: string;
+  }) => <div data-testid="environment-notice">{`${resourceType}/${resourceId}`}</div>,
+}));
+
 vi.mock('@thunderid/logger/react', () => ({
   useLogger: () => ({error: vi.fn(), info: vi.fn(), warn: vi.fn(), debug: vi.fn()}),
 }));
@@ -108,6 +137,7 @@ vi.mock('@/components/edit-translation/TranslationEditorCard', () => ({
     onFieldChange: (key: string, value: string) => void;
     onResetField: (key: string) => void;
     onJsonChange: (changes: Record<string, string>) => void;
+    readOnly?: boolean;
   }) => {
     mockTranslationEditorCard(props);
     return (
@@ -141,6 +171,48 @@ describe('TranslationsEditPage', () => {
     });
     mockUseUpdateTranslation.mockReturnValue({
       mutateAsync: mockMutateAsync.mockResolvedValue(undefined),
+    });
+    mockEnvironment.readOnly = false;
+    mockEnvironment.applied = undefined;
+    mockEnvironment.missing = false;
+  });
+
+  describe('In read-only mode', () => {
+    beforeEach(() => {
+      mockEnvironment.readOnly = true;
+      mockEnvironment.applied = {language: 'fr-FR', translations: {common: {'actions.save': 'Enregistrer'}}};
+    });
+
+    it('shows each key as the version sets it, else as this deployment resolves it', () => {
+      render(<TranslationsEditPage />);
+
+      const props = mockTranslationEditorCard.mock.lastCall?.[0] as {
+        currentValues: Record<string, string>;
+        readOnly?: boolean;
+      };
+      expect(props.currentValues).toEqual({'actions.save': 'Enregistrer', 'actions.cancel': 'Cancel'});
+      expect(props.readOnly).toBe(true);
+      expect(screen.getByTestId('environment-notice')).toHaveTextContent('translation/fr-FR');
+    });
+
+    it('makes the header read-only and never shows the save bar', async () => {
+      const user = userEvent.setup();
+      render(<TranslationsEditPage />);
+
+      expect(mockTranslationEditorHeader.mock.lastCall?.[0]).toMatchObject({readOnly: true});
+      await user.click(screen.getByText('change field'));
+      expect(screen.queryByText('Save Changes')).not.toBeInTheDocument();
+    });
+
+    it('shows an empty editor, with the deployment notice, for a language the gateway does not run', () => {
+      mockEnvironment.applied = undefined;
+      mockEnvironment.missing = true;
+      render(<TranslationsEditPage />);
+
+      const props = mockTranslationEditorCard.mock.lastCall?.[0] as {currentValues: Record<string, string>};
+      expect(props.currentValues).toEqual({});
+      expect(screen.getByTestId('ns-value')).toHaveTextContent('');
+      expect(screen.getByTestId('environment-notice')).toHaveTextContent('translation/fr-FR');
     });
   });
 

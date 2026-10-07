@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {ExternalLink} from '@thunderid/components';
+import {useEnvironment} from '@thunderid/contexts';
 import {useLogger} from '@thunderid/logger/react';
 import {AppBreadcrumbs, Box, Card, CardContent, IconButton, LinearProgress, Stack, Typography} from '@wso2/oxygen-ui';
 import {FileOutput, FileInput, X} from '@wso2/oxygen-ui-icons-react';
@@ -24,6 +25,7 @@ export default function ImportExportPage(): JSX.Element {
   const navigate = useNavigate();
   const logger = useLogger('ImportExportPage');
   const routes = useImportExportRoutes();
+  const {readOnly} = useEnvironment();
 
   const handleClose = (): void => {
     (async () => {
@@ -41,15 +43,22 @@ export default function ImportExportPage(): JSX.Element {
     });
   };
 
+  // An import writes this deployment's configuration, so it is not offered while a gateway is shown.
+  const importOption: ImportExportOption[] = readOnly
+    ? []
+    : [
+        {
+          route: routes.importConfiguration.upload(),
+          labelKey: 'landing.type.import.label',
+          labelDefault: 'Import',
+          descriptionKey: 'landing.type.import.description',
+          descriptionDefault: 'Bring in an existing ThunderID configuration file.',
+          icon: <FileInput size={28} />,
+        },
+      ];
+
   const options: ImportExportOption[] = [
-    {
-      route: routes.importConfiguration.upload(),
-      labelKey: 'landing.type.import.label',
-      labelDefault: 'Import',
-      descriptionKey: 'landing.type.import.description',
-      descriptionDefault: 'Bring in an existing ThunderID configuration file.',
-      icon: <FileInput size={28} />,
-    },
+    ...importOption,
     {
       route: routes.export.page(),
       labelKey: 'landing.type.export.label',

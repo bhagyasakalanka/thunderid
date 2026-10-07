@@ -1,7 +1,14 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {PageLoadingAnimation, QueryErrorNotice, UnsavedChangesBar} from '@thunderid/components';
+import {
+  EnvironmentDeploymentNotice,
+  PageLoadingAnimation,
+  QueryErrorNotice,
+  UnsavedChangesBar,
+  useEnvironmentResource,
+} from '@thunderid/components';
+import {useEnvironment} from '@thunderid/contexts';
 import {useLogger} from '@thunderid/logger/react';
 import {getErrorMessage, isEqualIgnoringEmpty} from '@thunderid/utils';
 import {
@@ -57,7 +64,15 @@ export default function GroupEditPage(): JSX.Element {
   const {t} = useTranslation('groups');
   const logger = useLogger('GroupEditPage');
 
-  const {data: group, isLoading, error: fetchError, refetch} = useGetGroup(groupId ?? '');
+  const liveGroup = useGetGroup(groupId ?? '');
+  const {
+    data: group,
+    isLoading,
+    error: fetchError,
+    refetch,
+  } = useEnvironmentResource<Group>('group', groupId, liveGroup);
+  const {readOnly} = useEnvironment();
+  const isReadOnly = group?.isReadOnly === true || readOnly;
   const updateGroup = useUpdateGroup();
 
   const [activeTab, setActiveTab] = useState(0);
@@ -173,6 +188,7 @@ export default function GroupEditPage(): JSX.Element {
   if (!group) {
     return (
       <PageContent>
+        <EnvironmentDeploymentNotice resourceType="group" resourceId={groupId} />
         <Alert severity="warning" sx={{mb: 2}}>
           {t('edit.page.notFound', 'Group not found')}
         </Alert>
@@ -192,6 +208,7 @@ export default function GroupEditPage(): JSX.Element {
 
   return (
     <PageContent>
+      <EnvironmentDeploymentNotice resourceType="group" resourceId={groupId} />
       {group.isReadOnly && (
         <Alert severity="info" sx={{mb: 2}}>
           {t('common:messages.readOnlyResource', 'This resource is read-only and cannot be modified.')}
@@ -226,7 +243,7 @@ export default function GroupEditPage(): JSX.Element {
             ) : (
               <>
                 <Typography variant="h3">{editedGroup.name ?? group.name}</Typography>
-                {!group.isReadOnly && (
+                {!isReadOnly && (
                   <IconButton
                     size="small"
                     aria-label="Edit group name"
@@ -288,7 +305,7 @@ export default function GroupEditPage(): JSX.Element {
                 <Typography variant="body2" color="text.secondary">
                   {effectiveDescription || t('edit.page.description.empty', 'No description')}
                 </Typography>
-                {!group.isReadOnly && (
+                {!isReadOnly && (
                   <IconButton
                     size="small"
                     aria-label="Edit group description"
@@ -340,11 +357,11 @@ export default function GroupEditPage(): JSX.Element {
         </TabPanel>
 
         <TabPanel value={activeTab} index={1}>
-          <EditMembersSettings group={group} />
+          <EditMembersSettings group={group} isReadOnly={isReadOnly} />
         </TabPanel>
 
         <TabPanel value={activeTab} index={2}>
-          <EditAdvancedSettings onDeleteClick={group.isReadOnly ? undefined : () => setDeleteDialogOpen(true)} />
+          <EditAdvancedSettings onDeleteClick={isReadOnly ? undefined : () => setDeleteDialogOpen(true)} />
         </TabPanel>
       </>
 
@@ -364,7 +381,7 @@ export default function GroupEditPage(): JSX.Element {
           saveLabel={t('edit.page.save', 'Save Changes')}
           savingLabel={t('edit.page.saving', 'Saving...')}
           isSaving={updateGroup.isPending}
-          saveDisabled={group.isReadOnly === true}
+          saveDisabled={isReadOnly}
           error={
             updateGroup.error
               ? getErrorMessage(updateGroup.error, t, 'update.error', 'Failed to update group. Please try again.')

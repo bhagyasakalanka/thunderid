@@ -1,10 +1,11 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {QueryErrorNotice} from '@thunderid/components';
+import {QueryErrorNotice, useEnvironmentList} from '@thunderid/components';
+import {useEnvironment} from '@thunderid/contexts';
 import {useDataGridLocaleText} from '@thunderid/hooks';
 import {useLogger} from '@thunderid/logger/react';
-import {IconButton, Typography, Tooltip, DataGrid, ListingTable} from '@wso2/oxygen-ui';
+import {IconButton, Stack, Typography, Tooltip, DataGrid, ListingTable} from '@wso2/oxygen-ui';
 import {Eye, Pencil, Trash2} from '@wso2/oxygen-ui-icons-react';
 import {useMemo, useCallback, useState, type JSX} from 'react';
 import {useTranslation} from 'react-i18next';
@@ -12,7 +13,8 @@ import {useNavigate} from 'react-router';
 import GroupDeleteDialog from './GroupDeleteDialog';
 import useGetGroups from '../api/useGetGroups';
 import useGroupRoutes from '../hooks/useGroupRoutes';
-import type {GroupBasic} from '../models/group';
+import type {GroupBasic, GroupListResponse} from '../models/group';
+import toGroupListPage from '../utils/toGroupListPage';
 
 /**
  * DataGrid component for displaying the list of groups.
@@ -23,6 +25,7 @@ export default function GroupsList(): JSX.Element {
   const logger = useLogger('GroupsList');
   const dataGridLocaleText = useDataGridLocaleText();
   const routes = useGroupRoutes();
+  const {readOnly} = useEnvironment();
   const [paginationModel, setPaginationModel] = useState<DataGrid.GridPaginationModel>({pageSize: 10, page: 0});
 
   const groupsParams = useMemo(
@@ -32,7 +35,11 @@ export default function GroupsList(): JSX.Element {
     }),
     [paginationModel],
   );
-  const {data, isLoading, error, refetch} = useGetGroups(groupsParams);
+  const {data, isLoading, error, refetch} = useEnvironmentList(
+    'group',
+    useGetGroups(groupsParams),
+    (resources: unknown[]): GroupListResponse => toGroupListPage(resources, groupsParams),
+  );
 
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState<boolean>(false);
@@ -66,7 +73,9 @@ export default function GroupsList(): JSX.Element {
         flex: 1,
         minWidth: 200,
         renderCell: (params: DataGrid.GridRenderCellParams<GroupBasic>): JSX.Element => (
-          <Typography variant="body2">{params.row.name}</Typography>
+          <Stack direction="row" alignItems="center" spacing={1} sx={{height: '100%'}}>
+            <Typography variant="body2">{params.row.name}</Typography>
+          </Stack>
         ),
       },
       {
@@ -98,7 +107,7 @@ export default function GroupsList(): JSX.Element {
         hideable: false,
         renderCell: (params: DataGrid.GridRenderCellParams<GroupBasic>): JSX.Element => (
           <ListingTable.RowActions>
-            {params.row.isReadOnly ? (
+            {params.row.isReadOnly === true || readOnly ? (
               <Tooltip title={t('common:status.readOnly', 'Read Only')}>
                 <IconButton size="small" disableRipple sx={{cursor: 'default'}}>
                   <Eye size={16} />
@@ -135,7 +144,7 @@ export default function GroupsList(): JSX.Element {
         ),
       },
     ],
-    [handleDeleteClick, handleViewClick, t],
+    [handleDeleteClick, handleViewClick, readOnly, t],
   );
 
   if (error) {

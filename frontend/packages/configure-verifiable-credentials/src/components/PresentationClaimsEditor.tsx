@@ -27,6 +27,8 @@ export interface ClaimsEditorProps {
   onChange: (claims: ClaimRow[]) => void;
   /** Rows whose claim name repeats an earlier row, keyed by row id. */
   duplicateNames?: Record<string, true>;
+  /** Shows the claims without a way to change them. */
+  readOnly?: boolean;
 }
 
 /**
@@ -34,7 +36,12 @@ export interface ClaimsEditorProps {
  * (mandatory/optional), an optional value constraint, and a subject-derivation
  * toggle — instead of separate comma lists for each.
  */
-export default function ClaimsEditor({claims, onChange, duplicateNames = {}}: ClaimsEditorProps): JSX.Element {
+export default function ClaimsEditor({
+  claims,
+  onChange,
+  duplicateNames = {},
+  readOnly = false,
+}: ClaimsEditorProps): JSX.Element {
   const {t} = useTranslation('verifiable-presentations');
   const [valueInput, setValueInput] = useState<Record<string, string>>({});
 
@@ -76,23 +83,26 @@ export default function ClaimsEditor({claims, onChange, duplicateNames = {}}: Cl
             '&:hover .claim-delete-btn': {opacity: 1},
           }}
         >
-          <Tooltip title={t('claims.remove')}>
-            <IconButton
-              className="claim-delete-btn"
-              size="small"
-              color="error"
-              onClick={(): void => remove(claim.id)}
-              sx={{position: 'absolute', top: 8, right: 8, opacity: 0, transition: 'opacity 0.2s'}}
-            >
-              <Trash2 size={16} />
-            </IconButton>
-          </Tooltip>
+          {!readOnly && (
+            <Tooltip title={t('claims.remove')}>
+              <IconButton
+                className="claim-delete-btn"
+                size="small"
+                color="error"
+                onClick={(): void => remove(claim.id)}
+                sx={{position: 'absolute', top: 8, right: 8, opacity: 0, transition: 'opacity 0.2s'}}
+              >
+                <Trash2 size={16} />
+              </IconButton>
+            </Tooltip>
+          )}
 
           <Box sx={{display: 'grid', gridTemplateColumns: {xs: '1fr', sm: '1fr 220px'}, gap: 2}}>
             <FormControl>
               <FormLabel>{t('claims.name')}</FormLabel>
               <TextField
                 size="small"
+                disabled={readOnly}
                 value={claim.name}
                 placeholder="given_name"
                 error={duplicateNames[claim.id] === true}
@@ -104,6 +114,7 @@ export default function ClaimsEditor({claims, onChange, duplicateNames = {}}: Cl
               <FormLabel>{t('claims.requirement')}</FormLabel>
               <Select
                 size="small"
+                disabled={readOnly}
                 value={claim.requirement}
                 onChange={(e): void => update(claim.id, {requirement: e.target.value as ClaimRequirement})}
               >
@@ -116,28 +127,35 @@ export default function ClaimsEditor({claims, onChange, duplicateNames = {}}: Cl
 
           <FormControl fullWidth sx={{mt: 2}}>
             <FormLabel>{t('claims.values')}</FormLabel>
-            <Box sx={{display: 'flex', gap: 1}}>
-              <TextField
-                size="small"
-                fullWidth
-                value={valueInput[claim.id] ?? ''}
-                placeholder={t('claims.valuesPlaceholder')}
-                onChange={(e): void => setValueInput((prev) => ({...prev, [claim.id]: e.target.value}))}
-                onKeyDown={(e: KeyboardEvent): void => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    addValue(claim);
-                  }
-                }}
-              />
-              <Button variant="outlined" onClick={(): void => addValue(claim)}>
-                {t('common:actions.add')}
-              </Button>
-            </Box>
+            {!readOnly && (
+              <Box sx={{display: 'flex', gap: 1}}>
+                <TextField
+                  size="small"
+                  fullWidth
+                  value={valueInput[claim.id] ?? ''}
+                  placeholder={t('claims.valuesPlaceholder')}
+                  onChange={(e): void => setValueInput((prev) => ({...prev, [claim.id]: e.target.value}))}
+                  onKeyDown={(e: KeyboardEvent): void => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      addValue(claim);
+                    }
+                  }}
+                />
+                <Button variant="outlined" onClick={(): void => addValue(claim)}>
+                  {t('common:actions.add')}
+                </Button>
+              </Box>
+            )}
             {claim.values.length > 0 && (
               <Box sx={{mt: 1.5, display: 'flex', flexWrap: 'wrap', gap: 1}}>
                 {claim.values.map((value) => (
-                  <Chip key={value} label={value} size="small" onDelete={(): void => removeValue(claim, value)} />
+                  <Chip
+                    key={value}
+                    label={value}
+                    size="small"
+                    onDelete={readOnly ? undefined : (): void => removeValue(claim, value)}
+                  />
                 ))}
               </Box>
             )}
@@ -146,21 +164,23 @@ export default function ClaimsEditor({claims, onChange, duplicateNames = {}}: Cl
         </Paper>
       ))}
 
-      <Button
-        variant="text"
-        color="primary"
-        startIcon={<Plus size={16} />}
-        onClick={add}
-        fullWidth
-        sx={{
-          py: 1.5,
-          border: '1px dashed',
-          borderColor: 'divider',
-          '&:hover': {border: '1px dashed', borderColor: 'primary.main'},
-        }}
-      >
-        {t('claims.add')}
-      </Button>
+      {!readOnly && (
+        <Button
+          variant="text"
+          color="primary"
+          startIcon={<Plus size={16} />}
+          onClick={add}
+          fullWidth
+          sx={{
+            py: 1.5,
+            border: '1px dashed',
+            borderColor: 'divider',
+            '&:hover': {border: '1px dashed', borderColor: 'primary.main'},
+          }}
+        >
+          {t('claims.add')}
+        </Button>
+      )}
     </Stack>
   );
 }

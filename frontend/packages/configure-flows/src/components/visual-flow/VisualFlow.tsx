@@ -18,6 +18,10 @@ export interface VisualFlowPropsInterface extends ReactFlowProps {
    * Node types to be rendered.
    */
   nodeTypes?: NodeTypes;
+  /**
+   * Shows the flow without letting it be changed: nodes cannot be moved, connected or deleted.
+   */
+  readOnly?: boolean;
 }
 
 /**
@@ -41,6 +45,7 @@ function VisualFlow({
   onEdgeClick,
   onEdgeMouseEnter,
   onEdgeMouseLeave,
+  readOnly = false,
 }: VisualFlowPropsInterface): ReactElement {
   const {mode, systemMode} = useColorScheme();
 
@@ -64,6 +69,10 @@ function VisualFlow({
       onEdgeClick={onEdgeClick}
       onEdgeMouseEnter={onEdgeMouseEnter}
       onEdgeMouseLeave={onEdgeMouseLeave}
+      nodesDraggable={!readOnly}
+      nodesConnectable={!readOnly}
+      edgesReconnectable={!readOnly}
+      deleteKeyCode={readOnly ? null : undefined}
       proOptions={{hideAttribution: true}}
       colorMode={colorMode}
       minZoom={0.2}

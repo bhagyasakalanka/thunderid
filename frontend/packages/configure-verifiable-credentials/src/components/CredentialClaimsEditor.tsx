@@ -24,13 +24,20 @@ export interface ClaimsEditorProps {
   onChange: (claims: ClaimRow[]) => void;
   /** Invalid claim names keyed by row id, as returned by findClaimNameErrors. */
   nameErrors?: Record<string, ClaimNameError>;
+  /** Shows the claims without a way to change them. */
+  readOnly?: boolean;
 }
 
 /**
  * Per-claim editor for a credential configuration: one row per disclosed claim,
  * with the attribute name (the user-profile lookup key) and a wallet display name.
  */
-export default function ClaimsEditor({claims, onChange, nameErrors = {}}: ClaimsEditorProps): JSX.Element {
+export default function ClaimsEditor({
+  claims,
+  onChange,
+  nameErrors = {},
+  readOnly = false,
+}: ClaimsEditorProps): JSX.Element {
   const {t} = useTranslation('verifiable-credentials');
 
   const update = (id: string, patch: Partial<ClaimRow>): void =>
@@ -60,23 +67,26 @@ export default function ClaimsEditor({claims, onChange, nameErrors = {}}: Claims
             '&:hover .claim-delete-btn': {opacity: 1},
           }}
         >
-          <Tooltip title={t('claims.remove')}>
-            <IconButton
-              className="claim-delete-btn"
-              size="small"
-              color="error"
-              onClick={(): void => remove(claim.id)}
-              sx={{position: 'absolute', top: 8, right: 8, opacity: 0, transition: 'opacity 0.2s'}}
-            >
-              <Trash2 size={16} />
-            </IconButton>
-          </Tooltip>
+          {!readOnly && (
+            <Tooltip title={t('claims.remove')}>
+              <IconButton
+                className="claim-delete-btn"
+                size="small"
+                color="error"
+                onClick={(): void => remove(claim.id)}
+                sx={{position: 'absolute', top: 8, right: 8, opacity: 0, transition: 'opacity 0.2s'}}
+              >
+                <Trash2 size={16} />
+              </IconButton>
+            </Tooltip>
+          )}
 
           <Box sx={{display: 'grid', gridTemplateColumns: {xs: '1fr', sm: '1fr 1fr'}, gap: 2}}>
             <FormControl>
               <FormLabel>{t('claims.name')}</FormLabel>
               <TextField
                 size="small"
+                disabled={readOnly}
                 value={claim.name}
                 placeholder="given_name"
                 error={nameErrors[claim.id] !== undefined}
@@ -88,6 +98,7 @@ export default function ClaimsEditor({claims, onChange, nameErrors = {}}: Claims
               <FormLabel>{t('claims.displayName')}</FormLabel>
               <TextField
                 size="small"
+                disabled={readOnly}
                 value={claim.displayName}
                 placeholder="Given Name"
                 onChange={(e): void => update(claim.id, {displayName: e.target.value})}
@@ -98,21 +109,23 @@ export default function ClaimsEditor({claims, onChange, nameErrors = {}}: Claims
         </Paper>
       ))}
 
-      <Button
-        variant="text"
-        color="primary"
-        startIcon={<Plus size={16} />}
-        onClick={add}
-        fullWidth
-        sx={{
-          py: 1.5,
-          border: '1px dashed',
-          borderColor: 'divider',
-          '&:hover': {border: '1px dashed', borderColor: 'primary.main'},
-        }}
-      >
-        {t('claims.add')}
-      </Button>
+      {!readOnly && (
+        <Button
+          variant="text"
+          color="primary"
+          startIcon={<Plus size={16} />}
+          onClick={add}
+          fullWidth
+          sx={{
+            py: 1.5,
+            border: '1px dashed',
+            borderColor: 'divider',
+            '&:hover': {border: '1px dashed', borderColor: 'primary.main'},
+          }}
+        >
+          {t('claims.add')}
+        </Button>
+      )}
     </Stack>
   );
 }

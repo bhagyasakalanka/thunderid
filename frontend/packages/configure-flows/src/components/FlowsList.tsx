@@ -1,10 +1,11 @@
 // Copyright 2025 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {QueryErrorNotice} from '@thunderid/components';
+import {QueryErrorNotice, useEnvironmentList} from '@thunderid/components';
+import {useEnvironment} from '@thunderid/contexts';
 import {useDataGridLocaleText} from '@thunderid/hooks';
 import {useLogger} from '@thunderid/logger/react';
-import {Chip, IconButton, Tooltip, ListingTable, DataGrid} from '@wso2/oxygen-ui';
+import {Chip, IconButton, Stack, Tooltip, ListingTable, DataGrid, Typography} from '@wso2/oxygen-ui';
 import {Eye, Pencil, Trash2} from '@wso2/oxygen-ui-icons-react';
 import {useMemo, useCallback, useState, type JSX} from 'react';
 import {useTranslation} from 'react-i18next';
@@ -13,6 +14,7 @@ import FlowDeleteDialog from './FlowDeleteDialog';
 import useGetFlows from '../api/useGetFlows';
 import useFlowRoutes from '../hooks/useFlowRoutes';
 import type {BasicFlowDefinition} from '../models/responses';
+import toFlowsPage from '../utils/toFlowsPage';
 
 export default function FlowsList(): JSX.Element {
   const navigate = useNavigate();
@@ -20,7 +22,8 @@ export default function FlowsList(): JSX.Element {
   const {t} = useTranslation();
   const logger = useLogger('FlowsList');
   const dataGridLocaleText = useDataGridLocaleText();
-  const {data, isLoading, error, refetch} = useGetFlows();
+  const {readOnly} = useEnvironment();
+  const {data, isLoading, error, refetch} = useEnvironmentList('flow', useGetFlows(), toFlowsPage);
 
   // Resolves an error through the `flows` catalog. `t` defaults to the `common` namespace, so
   // this forwards explicit `ns:` prefixes unchanged and prefixes bare keys with `flows:`, per
@@ -61,6 +64,13 @@ export default function FlowsList(): JSX.Element {
         headerName: t('flows:listing.columns.name'),
         flex: 1,
         minWidth: 220,
+        renderCell: (params: DataGrid.GridRenderCellParams<BasicFlowDefinition>): JSX.Element => (
+          <Stack direction="row" alignItems="center" spacing={1} sx={{height: '100%', minWidth: 0}}>
+            <Typography variant="body2" noWrap>
+              {params.row.name}
+            </Typography>
+          </Stack>
+        ),
       },
       {
         field: 'flowType',
@@ -105,7 +115,7 @@ export default function FlowsList(): JSX.Element {
         renderCell: (params: DataGrid.GridRenderCellParams<BasicFlowDefinition>): JSX.Element | null => {
           return (
             <ListingTable.RowActions>
-              {params.row.isReadOnly ? (
+              {params.row.isReadOnly || readOnly ? (
                 <Tooltip title={t('common:actions.view', 'View')}>
                   <IconButton
                     size="small"
@@ -149,7 +159,7 @@ export default function FlowsList(): JSX.Element {
         },
       },
     ],
-    [handleDeleteClick, handleOpenClick, t],
+    [handleDeleteClick, handleOpenClick, readOnly, t],
   );
 
   if (error) {

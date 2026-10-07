@@ -5,6 +5,16 @@ import {render, screen, waitFor, userEvent} from '@thunderid/test-utils';
 import {describe, it, expect, vi, beforeEach} from 'vitest';
 import UserTypesListPage from '../UserTypesListPage';
 
+const {environment} = vi.hoisted(() => ({environment: {readOnly: false}}));
+
+vi.mock('@thunderid/contexts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@thunderid/contexts')>();
+  return {
+    ...actual,
+    useEnvironment: () => ({...actual.useEnvironment(), readOnly: environment.readOnly}),
+  };
+});
+
 const mockNavigate = vi.fn();
 const mockLoggerError = vi.fn();
 
@@ -40,6 +50,7 @@ describe('UserTypesListPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockLoggerError.mockReset();
+    environment.readOnly = false;
   });
 
   it('renders page title', () => {
@@ -102,5 +113,12 @@ describe('UserTypesListPage', () => {
         expect.objectContaining({error: testError}),
       );
     });
+  });
+
+  it('hides the create user type button in a gateway view', () => {
+    environment.readOnly = true;
+    render(<UserTypesListPage />);
+
+    expect(screen.queryByRole('button', {name: /create user type/i})).not.toBeInTheDocument();
   });
 });

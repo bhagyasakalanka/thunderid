@@ -24,6 +24,8 @@ export interface TranslationEditorHeaderProps {
   onBack: () => void;
   /** Called when the user clicks Reset to Default. */
   onResetToDefault: () => void;
+  /** Hides the actions that change the translations. */
+  readOnly?: boolean;
 }
 
 /**
@@ -45,6 +47,7 @@ export default function TranslationEditorHeader({
   hasNamespace,
   onBack,
   onResetToDefault,
+  readOnly = false,
 }: TranslationEditorHeaderProps): JSX.Element {
   const {t} = useTranslation('translations');
 
@@ -63,7 +66,7 @@ export default function TranslationEditorHeader({
           t('page.title', 'Translations')
         )}
       </PageTitle.Header>
-      {!isFallbackLanguage && (
+      {!isFallbackLanguage && !readOnly && (
         <PageTitle.Actions>
           <Button size="small" onClick={onResetToDefault} disabled={!hasNamespace || isSaving}>
             {t('actions.resetToDefault', 'Reset to Default')}

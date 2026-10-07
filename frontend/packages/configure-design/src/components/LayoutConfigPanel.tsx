@@ -1,6 +1,7 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
+import {useEnvironmentResource} from '@thunderid/components';
 import {useGetLayout, useUpdateLayout, type Stylesheet} from '@thunderid/design';
 import {getErrorMessage} from '@thunderid/utils';
 import {Alert, Box, CircularProgress, Typography} from '@wso2/oxygen-ui';
@@ -21,6 +22,8 @@ interface LayoutConfigPanelProps {
   stylesheets?: Stylesheet[];
   onStylesheetsChange?: (stylesheets: Stylesheet[]) => void;
   cssEditorRef?: RefObject<CustomCSSEditorHandle | null>;
+  /** Shows the layout without letting it be edited. */
+  readOnly?: boolean;
 }
 
 function setIn(obj: Record<string, unknown>, path: string[], value: unknown): Record<string, unknown> {
@@ -43,9 +46,11 @@ export default function LayoutConfigPanel({
   stylesheets = [],
   onStylesheetsChange = undefined,
   cssEditorRef = undefined,
+  readOnly = false,
 }: LayoutConfigPanelProps): JSX.Element {
   const {t} = useTranslation('design');
-  const {data: layout, isLoading} = useGetLayout(layoutId ?? '');
+  const liveLayout = useGetLayout(layoutId ?? '');
+  const {data: layout, isLoading} = useEnvironmentResource('layout', layoutId ?? undefined, liveLayout);
   const {mutateAsync} = useUpdateLayout();
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -73,13 +78,14 @@ export default function LayoutConfigPanel({
   }, [selectedScreen, layout]);
 
   const updateField = (path: string[], value: unknown): void => {
-    if (!screenDraft) return;
+    if (!screenDraft || readOnly) return;
     setSaveError(null);
     onScreenDraftChange(setIn(screenDraft, path, value));
     onDirtyChange?.(true);
   };
 
   const handleStylesheetsChange = (next: Stylesheet[]): void => {
+    if (readOnly) return;
     setSaveError(null);
     onStylesheetsChange?.(next);
   };
@@ -164,13 +170,15 @@ export default function LayoutConfigPanel({
         </Alert>
       )}
 
-      {/* Screen config editor */}
-      {screenDraft && selectedScreen && <ScreenEditor screenDraft={screenDraft} onUpdate={updateField} />}
+      <fieldset disabled={readOnly} style={{display: 'contents'}}>
+        {/* Screen config editor */}
+        {screenDraft && selectedScreen && <ScreenEditor screenDraft={screenDraft} onUpdate={updateField} />}
 
-      {/* Custom CSS — layout-level, not per-screen */}
-      {onStylesheetsChange && (
-        <CustomCSSEditor ref={cssEditorRef} stylesheets={stylesheets} onChange={handleStylesheetsChange} />
-      )}
+        {/* Custom CSS: layout-level, not per-screen */}
+        {onStylesheetsChange && (
+          <CustomCSSEditor ref={cssEditorRef} stylesheets={stylesheets} onChange={handleStylesheetsChange} />
+        )}
+      </fieldset>
     </>
   );
 }

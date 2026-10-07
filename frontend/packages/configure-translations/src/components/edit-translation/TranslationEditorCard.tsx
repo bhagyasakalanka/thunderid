@@ -41,6 +41,8 @@ export interface TranslationEditorCardProps {
   onResetField: (key: string) => void;
   /** Called when the JSON editor emits a full set of changes. */
   onJsonChange: (changes: Record<string, string>) => void;
+  /** Shows the translations without letting them be edited. */
+  readOnly?: boolean;
 }
 
 /**
@@ -68,6 +70,7 @@ export default function TranslationEditorCard({
   onFieldChange,
   onResetField,
   onJsonChange,
+  readOnly = false,
 }: TranslationEditorCardProps): JSX.Element {
   const {t} = useTranslation('translations');
 
@@ -126,6 +129,7 @@ export default function TranslationEditorCard({
                 isCustomNamespace={isCustomNamespace}
                 onChange={onFieldChange}
                 onResetField={onResetField}
+                readOnly={readOnly}
               />
             </Box>
           </>
@@ -139,6 +143,7 @@ export default function TranslationEditorCard({
               isCustomNamespace={isCustomNamespace}
               colorMode={colorMode}
               onChange={onJsonChange}
+              readOnly={readOnly}
             />
           </Box>
         )}

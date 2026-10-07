@@ -9,15 +9,17 @@ vi.mock('@/components/OrganizationUnitTreePicker', () => ({
   default: ({
     rootOuId,
     hideRoot,
+    showApplied,
     onChange,
     onItemActivate,
   }: {
     rootOuId?: string;
     hideRoot?: boolean;
+    showApplied?: boolean;
     onChange?: (organizationUnitId: string) => void;
     onItemActivate?: (organizationUnitId: string) => void;
   }) => (
-    <div data-root-ou-id={rootOuId} data-hide-root={String(hideRoot)}>
+    <div data-root-ou-id={rootOuId} data-hide-root={String(hideRoot)} data-show-applied={String(showApplied)}>
       <button type="button" data-testid="organization-unit-subtree" onClick={() => onItemActivate?.('nested-ou')}>
         Organization unit subtree
       </button>
@@ -59,6 +61,7 @@ describe('ManageChildOrganizationUnitSection', () => {
       'parent-ou',
     );
     expect(screen.getByTestId('organization-unit-subtree').parentElement).toHaveAttribute('data-hide-root', 'true');
+    expect(screen.getByTestId('organization-unit-subtree').parentElement).toHaveAttribute('data-show-applied', 'true');
   });
 
   it('should ignore tree selection events', () => {

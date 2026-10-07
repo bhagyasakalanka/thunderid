@@ -1,8 +1,15 @@
 // Copyright 2025-2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {PageLoadingAnimation, QueryErrorNotice, UnsavedChangesBar} from '@thunderid/components';
+import {
+  EnvironmentDeploymentNotice,
+  PageLoadingAnimation,
+  QueryErrorNotice,
+  UnsavedChangesBar,
+  useEnvironmentResource,
+} from '@thunderid/components';
 import {getBreakingSchemaChanges} from '@thunderid/configure-user-types';
+import {useEnvironment} from '@thunderid/contexts';
 import {useLogger} from '@thunderid/logger/react';
 import {getErrorMessage, isEqualIgnoringEmpty} from '@thunderid/utils';
 import {
@@ -26,6 +33,7 @@ import useGetAgentType from '../api/useGetAgentType';
 import useUpdateAgentType from '../api/useUpdateAgentType';
 import EditSchemaSettings from '../components/edit-agent-type/schema-settings/EditSchemaSettings';
 import useAgentTypeRoutes from '../hooks/useAgentTypeRoutes';
+import type {ApiAgentType} from '../models/agent-type';
 import type {
   AgentTypeDefinition,
   PropertyDefinition,
@@ -111,7 +119,14 @@ export default function ViewAgentTypePage(): JSX.Element {
   // page anymore, so the back button returns to the agent listing.
   const listUrl = routes.agents.list();
 
-  const {data: agentType, isLoading, error: fetchError, refetch} = useGetAgentType(id);
+  const liveAgentType = useGetAgentType(id);
+  const {
+    data: agentType,
+    isLoading,
+    error: fetchError,
+    refetch,
+  } = useEnvironmentResource<ApiAgentType>('agent_type', id, liveAgentType);
+  const {readOnly} = useEnvironment();
   const updateAgentTypeMutation = useUpdateAgentType();
 
   // Resolves an error through the `agentTypes` catalog. `t` defaults to the `common` namespace, so
@@ -275,6 +290,7 @@ export default function ViewAgentTypePage(): JSX.Element {
   if (!agentType) {
     return (
       <PageContent>
+        <EnvironmentDeploymentNotice resourceType="agent_type" resourceId={id} />
         <Alert severity="warning" sx={{mb: 2}}>
           {t('agentTypes:edit.notFound', 'Agent type not found')}
         </Alert>
@@ -304,11 +320,14 @@ export default function ViewAgentTypePage(): JSX.Element {
         </PageTitle.Header>
       </PageTitle>
 
+      <EnvironmentDeploymentNotice resourceType="agent_type" resourceId={agentType.id} />
+
       <Stack spacing={3} mt={3}>
         <EditSchemaSettings
           properties={effectiveProperties}
           onPropertiesChange={handlePropertiesChange}
           agentTypeHandle={agentTypeHandle}
+          disabled={readOnly}
         />
       </Stack>
 
@@ -352,6 +371,7 @@ export default function ViewAgentTypePage(): JSX.Element {
           saveLabel={t('common:actions.save', 'Save')}
           savingLabel={t('common:status.saving', 'Saving...')}
           isSaving={updateAgentTypeMutation.isPending}
+          saveDisabled={readOnly}
           error={
             validationError ??
             (updateAgentTypeMutation.error

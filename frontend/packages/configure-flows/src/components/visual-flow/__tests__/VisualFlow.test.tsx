@@ -9,12 +9,15 @@ import VisualFlow from '../VisualFlow';
 
 // Mock @xyflow/react
 vi.mock('@xyflow/react', () => ({
-  ReactFlow: ({children, nodes, edges, colorMode}: any) => (
+  ReactFlow: ({children, nodes, edges, colorMode, nodesDraggable, nodesConnectable, deleteKeyCode}: any) => (
     <div
       data-testid="react-flow"
       data-nodes={JSON.stringify(nodes)}
       data-edges={JSON.stringify(edges)}
       data-color-mode={colorMode}
+      data-nodes-draggable={String(nodesDraggable)}
+      data-nodes-connectable={String(nodesConnectable)}
+      data-delete-key={String(deleteKeyCode)}
     >
       {children}
     </div>
@@ -57,6 +60,25 @@ describe('VisualFlow', () => {
     vi.clearAllMocks();
     mockColorSchemeMode = 'light';
     mockColorSchemeSystemMode = 'light';
+  });
+
+  describe('Read-only', () => {
+    it('locks dragging, connecting and deleting', () => {
+      render(<VisualFlow {...defaultProps} readOnly />);
+
+      const flow = screen.getByTestId('react-flow');
+      expect(flow).toHaveAttribute('data-nodes-draggable', 'false');
+      expect(flow).toHaveAttribute('data-nodes-connectable', 'false');
+      expect(flow).toHaveAttribute('data-delete-key', 'null');
+    });
+
+    it('leaves the canvas editable by default', () => {
+      render(<VisualFlow {...defaultProps} />);
+
+      const flow = screen.getByTestId('react-flow');
+      expect(flow).toHaveAttribute('data-nodes-draggable', 'true');
+      expect(flow).toHaveAttribute('data-delete-key', 'undefined');
+    });
   });
 
   describe('Rendering', () => {

@@ -1,6 +1,8 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
+import {useEnvironmentResource} from '@thunderid/components';
+import {useEnvironment} from '@thunderid/contexts';
 import {
   Box,
   CircularProgress,
@@ -50,8 +52,21 @@ function GenericResourceTree({resourceServer, onRefresh}: ResourceTreeProps): JS
   } | null>(null);
   const [addMenuAnchor, setAddMenuAnchor] = useState<HTMLElement | null>(null);
 
-  const {data: topLevelResources, isLoading: loadingResources} = useGetResources(resourceServer.id);
-  const {data: serverActionsData, isLoading: loadingActions} = useGetServerActions(resourceServer.id);
+  const {readOnly: environmentReadOnly} = useEnvironment();
+  const liveResources = useGetResources(resourceServer.id);
+  const liveServerActions = useGetServerActions(resourceServer.id);
+  const {data: topLevelResources, isLoading: loadingResources} = useEnvironmentResource(
+    'resource_server',
+    resourceServer.id,
+    liveResources,
+    'resources',
+  );
+  const {data: serverActionsData, isLoading: loadingActions} = useEnvironmentResource(
+    'resource_server',
+    resourceServer.id,
+    liveServerActions,
+    'actions',
+  );
 
   const resources = useMemo(() => topLevelResources?.resources ?? [], [topLevelResources]);
   const serverActions = useMemo(() => serverActionsData?.actions ?? [], [serverActionsData]);
@@ -66,7 +81,7 @@ function GenericResourceTree({resourceServer, onRefresh}: ResourceTreeProps): JS
 
   const isLoading = loadingResources || loadingActions;
   const isEmpty = resources.length === 0 && serverActions.length === 0;
-  const readOnly = Boolean(resourceServer.isReadOnly);
+  const readOnly = resourceServer.isReadOnly === true || environmentReadOnly;
 
   const effectiveSelectedNode = useMemo<SelectedNode | null>(() => {
     if (selectedNode) return selectedNode;

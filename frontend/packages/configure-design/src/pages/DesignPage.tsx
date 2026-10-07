@@ -1,7 +1,8 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {ExternalLink, QueryErrorNotice} from '@thunderid/components';
+import {ExternalLink, QueryErrorNotice, useEnvironmentList} from '@thunderid/components';
+import {useEnvironment} from '@thunderid/contexts';
 import {useGetThemes, useGetLayouts} from '@thunderid/design';
 import {Box, Button, Grid, PageContent, PageTitle, Skeleton, Typography} from '@wso2/oxygen-ui';
 import {ArrowUpRight, LayoutTemplate, Palette, Plus} from '@wso2/oxygen-ui-icons-react';
@@ -16,6 +17,8 @@ import ThemeDeleteDialog from '../components/themes/ThemeDeleteDialog';
 import ThemeThumbnail from '../components/themes/ThemeThumbnail';
 import DesignUIConstants from '../constants/design-ui-constants';
 import useDesignRoutes from '../hooks/useDesignRoutes';
+import toLayoutsPage from '../utils/toLayoutsPage';
+import toThemesPage from '../utils/toThemesPage';
 
 const LAYOUT_PRESET_VARIANTS: readonly LayoutPresetVariant[] = ['centered', 'split', 'fullscreen', 'popup'];
 
@@ -27,8 +30,18 @@ export default function DesignPage(): JSX.Element {
   const {t} = useTranslation('design');
   const navigate = useNavigate();
   const routes = useDesignRoutes();
-  const {data: themesData, isLoading: themesLoading, error: themesError, refetch: refetchThemes} = useGetThemes();
-  const {data: layoutsData, error: layoutsError, refetch: refetchLayouts} = useGetLayouts();
+  const {readOnly} = useEnvironment();
+  const {
+    data: themesData,
+    isLoading: themesLoading,
+    error: themesError,
+    refetch: refetchThemes,
+  } = useEnvironmentList('theme', useGetThemes(), toThemesPage);
+  const {
+    data: layoutsData,
+    error: layoutsError,
+    refetch: refetchLayouts,
+  } = useEnvironmentList('layout', useGetLayouts(), toLayoutsPage);
 
   const [showAllThemes, setShowAllThemes] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{id: string; name: string} | null>(null);
@@ -57,20 +70,22 @@ export default function DesignPage(): JSX.Element {
           count={allThemes.length}
           icon={<Palette size={18} />}
           action={
-            <Button
-              variant="contained"
-              size="small"
-              startIcon={<Plus size={16} />}
-              onClick={() => {
-                (async () => {
-                  await navigate(routes.design.themesCreate());
-                })().catch(() => {
-                  // Ignore navigation errors
-                });
-              }}
-            >
-              {t('themes.actions.add.label', 'Add Theme')}
-            </Button>
+            readOnly ? undefined : (
+              <Button
+                variant="contained"
+                size="small"
+                startIcon={<Plus size={16} />}
+                onClick={() => {
+                  (async () => {
+                    await navigate(routes.design.themesCreate());
+                  })().catch(() => {
+                    // Ignore navigation errors
+                  });
+                }}
+              >
+                {t('themes.actions.add.label', 'Add Theme')}
+              </Button>
+            )
           }
         />
 
@@ -100,7 +115,7 @@ export default function DesignPage(): JSX.Element {
                             });
                           }}
                           onDelete={
-                            theme.isReadOnly
+                            theme.isReadOnly || readOnly
                               ? undefined
                               : () => setDeleteTarget({id: theme.id, name: theme.displayName})
                           }

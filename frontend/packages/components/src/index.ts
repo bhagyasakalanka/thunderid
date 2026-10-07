@@ -8,6 +8,23 @@ export {default as CspOriginHint} from './CspOriginHint/CspOriginHint';
 export type {CspOriginHintProps} from './CspOriginHint/CspOriginHint';
 export {resolveCspHint} from './CspOriginHint/resolveCspHint';
 export type {CspResourceType, CspHint} from './CspOriginHint/resolveCspHint';
+export {default as EnvironmentDeploymentNotice} from './EnvironmentValue/EnvironmentDeploymentNotice';
+export type {EnvironmentDeploymentNoticeProps} from './EnvironmentValue/EnvironmentDeploymentNotice';
+export {default as EnvironmentModeBanner} from './EnvironmentValue/EnvironmentModeBanner';
+export {
+  useEnvironmentList,
+  useEnvironmentPresence,
+  useEnvironmentResource,
+} from './EnvironmentValue/useEnvironmentResource';
+export {useAppliedConfiguration} from './EnvironmentValue/useEnvironmentValues';
+export type {AppliedConfiguration, AppliedResource} from './EnvironmentValue/models';
+export type {
+  EnvironmentPresence,
+  EnvironmentResourceResult,
+  EnvironmentResourceSource,
+} from './EnvironmentValue/useEnvironmentResource';
+export {default as EnvironmentValue} from './EnvironmentValue/EnvironmentValue';
+export type {EnvironmentValueProps} from './EnvironmentValue/EnvironmentValue';
 export {default as ExternalLinkConfirmDialog} from './ExternalLinkConfirm/ExternalLinkConfirmDialog';
 export type {ExternalLinkConfirmDialogProps} from './ExternalLinkConfirm/ExternalLinkConfirmDialog';
 export {default as useExternalLinkConfirmation} from './ExternalLinkConfirm/useExternalLinkConfirmation';

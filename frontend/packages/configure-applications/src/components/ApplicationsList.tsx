@@ -1,11 +1,11 @@
 // Copyright 2025-2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {QueryErrorNotice, ResourceAvatar} from '@thunderid/components';
-import {useConfig} from '@thunderid/contexts';
+import {QueryErrorNotice, ResourceAvatar, useEnvironmentList} from '@thunderid/components';
+import {useConfig, useEnvironment} from '@thunderid/contexts';
 import {useDataGridLocaleText} from '@thunderid/hooks';
 import {useLogger} from '@thunderid/logger/react';
-import {Box, Chip, IconButton, Tooltip, Typography, ListingTable, DataGrid} from '@wso2/oxygen-ui';
+import {Box, Chip, IconButton, Stack, Tooltip, Typography, ListingTable, DataGrid} from '@wso2/oxygen-ui';
 import {Eye, Pencil, Trash2} from '@wso2/oxygen-ui-icons-react';
 import {useCallback, useMemo, useState, type JSX} from 'react';
 import {useTranslation} from 'react-i18next';
@@ -17,15 +17,17 @@ import useApplicationRoutes from '../hooks/useApplicationRoutes';
 import type {BasicApplication} from '../models/application';
 import getApplicationErrorMessage from '../utils/getApplicationErrorMessage';
 import getTemplateMetadata from '../utils/getTemplateMetadata';
+import toApplicationsPage from '../utils/toApplicationsPage';
 
 export default function ApplicationsList(): JSX.Element {
   const routes = useApplicationRoutes();
   const navigate = useNavigate();
   const {config} = useConfig();
+  const {readOnly} = useEnvironment();
   const {t} = useTranslation();
   const logger = useLogger('ApplicationsList');
   const dataGridLocaleText = useDataGridLocaleText();
-  const {data, isLoading, error, refetch} = useGetApplications();
+  const {data, isLoading, error, refetch} = useEnvironmentList('application', useGetApplications(), toApplicationsPage);
   const systemConsoleClientId = (config?.client?.client_id ?? 'CONSOLE').toUpperCase();
 
   // Resolves an error through the `applications` catalog. `t` defaults to the `common` namespace,
@@ -69,19 +71,21 @@ export default function ApplicationsList(): JSX.Element {
         flex: 2,
         minWidth: 260,
         renderCell: (params: DataGrid.GridRenderCellParams<BasicApplication>): JSX.Element => (
-          <ListingTable.CellIcon
-            sx={{width: '100%'}}
-            icon={
-              <ResourceAvatar
-                variant="rounded"
-                value={params.row.logoUrl}
-                size={30}
-                fallback={ApplicationConstants.DEFAULT_AVATAR}
-              />
-            }
-            primary={params.row.name}
-            secondary={params.row.description}
-          />
+          <Stack direction="row" alignItems="center" spacing={1} sx={{width: '100%', minWidth: 0}}>
+            <ListingTable.CellIcon
+              sx={{minWidth: 0}}
+              icon={
+                <ResourceAvatar
+                  variant="rounded"
+                  value={params.row.logoUrl}
+                  size={30}
+                  fallback={ApplicationConstants.DEFAULT_AVATAR}
+                />
+              }
+              primary={params.row.name}
+              secondary={params.row.description}
+            />
+          </Stack>
         ),
       },
       {
@@ -129,7 +133,7 @@ export default function ApplicationsList(): JSX.Element {
         hideable: false,
         renderCell: (params: DataGrid.GridRenderCellParams<BasicApplication>): JSX.Element => (
           <ListingTable.RowActions>
-            {params.row.isReadOnly ? (
+            {params.row.isReadOnly === true || readOnly ? (
               <Tooltip title={t('common:status.readOnly', 'Read Only')}>
                 <IconButton size="small" disableRipple sx={{cursor: 'default'}}>
                   <Eye size={16} />
@@ -168,7 +172,7 @@ export default function ApplicationsList(): JSX.Element {
         ),
       },
     ],
-    [handleDeleteClick, handleEditClick, systemConsoleClientId, t],
+    [handleDeleteClick, handleEditClick, readOnly, systemConsoleClientId, t],
   );
 
   if (error) {

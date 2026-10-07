@@ -94,6 +94,27 @@ vi.mock('@wso2/oxygen-ui', async () => {
   };
 });
 
+const {environment} = vi.hoisted(() => ({
+  environment: {readOnly: false, applied: undefined as unknown[] | undefined},
+}));
+
+vi.mock('@thunderid/contexts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@thunderid/contexts')>();
+  return {
+    ...actual,
+    useEnvironment: () => ({...actual.useEnvironment(), readOnly: environment.readOnly}),
+  };
+});
+
+vi.mock('@thunderid/components', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@thunderid/components')>();
+  return {
+    ...actual,
+    useEnvironmentList: (_type: string, live: {data: unknown}, toPage: (resources: unknown[]) => unknown) =>
+      environment.applied ? {...live, data: toPage(environment.applied)} : live,
+  };
+});
+
 const mockNavigate = vi.fn();
 vi.mock('react-router', async () => {
   const actual = await vi.importActual<typeof import('react-router')>('react-router');
@@ -136,6 +157,8 @@ describe('GroupsList', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    environment.readOnly = false;
+    environment.applied = undefined;
     mockUseGetGroups.mockReturnValue({
       data: mockGroupsData,
       isLoading: false,
@@ -287,5 +310,21 @@ describe('GroupsList', () => {
     await waitFor(() => {
       expect(screen.queryByText('Delete Group')).not.toBeInTheDocument();
     });
+  });
+
+  it('should list only the groups the gateway runs, read-only, in read-only mode', async () => {
+    environment.readOnly = true;
+    environment.applied = [{id: 'g2', name: 'Group Two as applied', ouId: 'ou2', members: []}];
+    const user = userEvent.setup();
+    mockNavigate.mockResolvedValue(undefined);
+    renderWithProviders(<GroupsList />);
+
+    expect(screen.getByTestId('row-g2')).toHaveTextContent('Group Two as applied');
+    expect(screen.queryByTestId('row-g1')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', {name: /Edit/i})).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', {name: /Delete/i})).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId('row-g2'));
+    expect(mockNavigate).toHaveBeenCalledWith('/groups/g2');
   });
 });

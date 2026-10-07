@@ -39,6 +39,21 @@ vi.mock('@thunderid/logger/react', () => ({
   useLogger: () => ({error: vi.fn(), info: vi.fn(), warn: vi.fn(), debug: vi.fn()}),
 }));
 
+const mockEnvironment = vi.hoisted(() => ({readOnly: false}));
+
+vi.mock('@thunderid/contexts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@thunderid/contexts')>()),
+  useEnvironment: () => ({readOnly: mockEnvironment.readOnly}),
+}));
+
+vi.mock('@thunderid/components', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@thunderid/components')>()),
+  useEnvironmentList: (_type: string, live: object, toPage: (resources: unknown[]) => unknown) =>
+    mockEnvironment.readOnly
+      ? {data: toPage([{language: 'es-ES', translations: {}}]), isLoading: false, error: null, refetch: vi.fn()}
+      : live,
+}));
+
 // Provide lightweight MUI mocks for DataGrid + ListingTable
 vi.mock('@wso2/oxygen-ui', async () => {
   const actual = await vi.importActual<typeof import('@wso2/oxygen-ui')>('@wso2/oxygen-ui');
@@ -115,6 +130,20 @@ describe('TranslationsList', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockEnvironment.readOnly = false;
+  });
+
+  it('in read-only mode, lists only the languages the gateway applied and offers only viewing', async () => {
+    mockEnvironment.readOnly = true;
+    const user = userEvent.setup();
+    render(<TranslationsList />);
+
+    expect(screen.getByTestId('row-es-ES')).toBeInTheDocument();
+    expect(screen.queryByTestId('row-fr-FR')).not.toBeInTheDocument();
+    expect(screen.queryAllByRole('button', {name: t('common:actions.edit')})).toHaveLength(0);
+    expect(screen.queryAllByRole('button', {name: t('common:actions.delete')})).toHaveLength(0);
+    await user.click(screen.getAllByRole('button', {name: 'View'})[0]);
+    expect(mockNavigate).toHaveBeenCalledWith('/translations/es-ES');
   });
 
   it('renders rows for each language', () => {

@@ -1,8 +1,14 @@
 // Copyright 2025 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {GradientBorderButton, QueryErrorNotice} from '@thunderid/components';
+import {
+  EnvironmentDeploymentNotice,
+  GradientBorderButton,
+  QueryErrorNotice,
+  useEnvironmentResource,
+} from '@thunderid/components';
 import {useIdentityProviders, useSMSProviders} from '@thunderid/configure-connections';
+import {useEnvironment} from '@thunderid/contexts';
 import {Alert, Box, Snackbar, Stack} from '@wso2/oxygen-ui';
 import type {Edge, Node, NodeChange} from '@xyflow/react';
 import {useEdgesState, useNodesState, useUpdateNodeInternals} from '@xyflow/react';
@@ -63,13 +69,18 @@ function FlowBuilder() {
   // clean baseline onto whatever the relayout settles into.
   const [isBaselineRebasePending, setIsBaselineRebasePending] = useState<boolean>(false);
 
-  // Fetch the existing flow if flowId is provided (editing an existing flow)
+  // Fetch the existing flow if flowId is provided (editing an existing flow), as the selected
+  // environment has it
+  const liveFlow = useGetFlowById(flowId);
   const {
     data: existingFlowData,
     isLoading: isLoadingExistingFlow,
     error: flowLoadError,
     refetch: refetchFlow,
-  } = useGetFlowById(flowId);
+  } = useEnvironmentResource('flow', flowId, liveFlow);
+  const {readOnly} = useEnvironment();
+  // A system flow, or any flow in a gateway's view, is shown without letting it be changed.
+  const isReadOnlyFlow = Boolean(existingFlowData?.isReadOnly) || readOnly;
 
   // Determine if we're editing an existing flow
   const isEditingExistingFlow = Boolean(flowId && existingFlowData);
@@ -203,10 +214,13 @@ function FlowBuilder() {
   }, [identityProviders, smsProviders, nodes.length, setNodes]);
 
   // Element addition hook
-  const {handleAddElementToView, handleAddElementToForm} = useElementAddition({
+  const elementAddition = useElementAddition({
     setNodes,
     updateNodeInternals,
   });
+  const ignoreElementAddition = useCallback((): void => undefined, []);
+  const handleAddElementToView = isReadOnlyFlow ? ignoreElementAddition : elementAddition.handleAddElementToView;
+  const handleAddElementToForm = isReadOnlyFlow ? ignoreElementAddition : elementAddition.handleAddElementToForm;
 
   // Node types hook
   const {nodeTypes, edgeTypes} = useNodeTypes({
@@ -606,8 +620,6 @@ function FlowBuilder() {
     }));
   }, [baseDisplayEdges, sso.placement]);
 
-  const isReadOnlyFlow = Boolean(existingFlowData?.isReadOnly);
-
   // Memoized so the resource panel (which renders this as its footer and is
   // itself memoized) is not re-rendered on unrelated graph changes like drags.
   const ssoToggleFooter = useMemo(
@@ -666,6 +678,7 @@ function FlowBuilder() {
         },
       })}
     >
+      <EnvironmentDeploymentNotice resourceType="flow" resourceId={flowId} />
       {existingFlowData?.isReadOnly && (
         <Alert severity="info" sx={{mb: 2}}>
           {t('common:messages.readOnlyResource', 'This resource is read-only and cannot be modified.')}
@@ -681,7 +694,7 @@ function FlowBuilder() {
           onWidgetLoad={handleWidgetLoad}
           onStepLoad={handleStepLoad}
           onResourceAdd={handleResourceAdd}
-          onSave={existingFlowData?.isReadOnly ? undefined : handleSave}
+          onSave={isReadOnlyFlow ? undefined : handleSave}
           nodes={displayNodes}
           sourceNodes={nodes}
           sourceEdges={edges}
@@ -701,6 +714,7 @@ function FlowBuilder() {
           canUndo={canUndo}
           canRedo={canRedo}
           isDirty={isDirty}
+          readOnly={isReadOnlyFlow}
         />
       </CompactStacksContext.Provider>
       <SsoDisableConfirmDialog

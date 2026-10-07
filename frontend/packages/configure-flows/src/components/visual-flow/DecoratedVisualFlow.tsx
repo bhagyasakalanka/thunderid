@@ -185,6 +185,7 @@ function DecoratedVisualFlow({
   canUndo = false,
   canRedo = false,
   isDirty = false,
+  readOnly = false,
   ...rest
 }: DecoratedVisualFlowPropsInterface): ReactElement {
   useDeleteExecutionResource();
@@ -612,7 +613,7 @@ function DecoratedVisualFlow({
     (event): void => {
       const {source, target} = event.operation;
 
-      if (!source) {
+      if (!source || readOnly) {
         return;
       }
 
@@ -779,6 +780,7 @@ function DecoratedVisualFlow({
       addToFormAtIndex,
       getNodes,
       notifyElementAdded,
+      readOnly,
     ],
   );
 
@@ -786,7 +788,7 @@ function DecoratedVisualFlow({
     (event) => {
       const {source, target} = event.operation;
 
-      if (!source || !target) {
+      if (!source || !target || readOnly) {
         return;
       }
 
@@ -825,7 +827,21 @@ function DecoratedVisualFlow({
         updateNodeInternals(stepId);
       });
     },
-    [updateNodeData, updateNodeInternals],
+    [readOnly, updateNodeData, updateNodeInternals],
+  );
+
+  // A read-only flow keeps only the changes that do not alter it: selecting an element and React
+  // Flow measuring it. Moves, removals and data updates are dropped.
+  const handleNodesChange: OnNodesChange<Node> = useCallback(
+    (changes) =>
+      onNodesChange(
+        readOnly ? changes.filter((change) => change.type === 'select' || change.type === 'dimensions') : changes,
+      ),
+    [onNodesChange, readOnly],
+  );
+  const handleEdgesChange: OnEdgesChange<Edge> = useCallback(
+    (changes) => onEdgesChange(readOnly ? changes.filter((change) => change.type === 'select') : changes),
+    [onEdgesChange, readOnly],
   );
 
   const [isDiscardDialogOpen, setIsDiscardDialogOpen] = useState<boolean>(false);
@@ -856,14 +872,16 @@ function DecoratedVisualFlow({
   const editPanels = useMemo(
     () => (
       <>
-        <ResourcePropertyPanel
-          open={isResourcePropertiesPanelOpen && !openValidationPanel}
-          onComponentDelete={deleteComponent}
-        />
+        <fieldset disabled={readOnly} style={{display: 'contents'}}>
+          <ResourcePropertyPanel
+            open={isResourcePropertiesPanelOpen && !openValidationPanel}
+            onComponentDelete={deleteComponent}
+          />
+        </fieldset>
         <ValidationPanel open={openValidationPanel ?? false} />
       </>
     ),
-    [isResourcePropertiesPanelOpen, openValidationPanel, deleteComponent],
+    [isResourcePropertiesPanelOpen, openValidationPanel, deleteComponent, readOnly],
   );
 
   // Memoized so the element reference stays stable across node drag ticks. The
@@ -1064,10 +1082,10 @@ function DecoratedVisualFlow({
               resources={resources}
               open={isResourcePanelOpen}
               onAdd={handleOnAdd}
-              disabled={isFlowMetadataLoading}
+              disabled={Boolean(isFlowMetadataLoading) || readOnly}
               flowTitle={flowTitle}
               flowHandle={flowHandle}
-              onFlowTitleChange={onFlowTitleChange}
+              onFlowTitleChange={readOnly ? undefined : onFlowTitleChange}
               rightPanel={rightPanel}
               footer={resourcePanelFooter}
             >
@@ -1081,14 +1099,15 @@ function DecoratedVisualFlow({
                 <EdgePathsProvider>
                   <VisualFlow
                     nodes={displayNodes}
-                    onNodesChange={onNodesChange}
+                    onNodesChange={handleNodesChange}
                     edges={displayEdges}
                     edgeTypes={edgeTypes}
-                    onEdgesChange={onEdgesChange}
-                    onConnect={handleConnect}
-                    onNodesDelete={handleNodesDelete}
-                    onEdgesDelete={handleEdgesDelete}
-                    onNodeDragStop={handleNodeDragStop}
+                    onEdgesChange={handleEdgesChange}
+                    onConnect={readOnly ? undefined : handleConnect}
+                    onNodesDelete={readOnly ? undefined : handleNodesDelete}
+                    onEdgesDelete={readOnly ? undefined : handleEdgesDelete}
+                    onNodeDragStop={readOnly ? undefined : handleNodeDragStop}
+                    readOnly={readOnly}
                     onNodeClick={handleNodeClick}
                     onEdgeMouseEnter={handleEdgeMouseEnter}
                     onEdgeMouseLeave={handleEdgeMouseLeave}

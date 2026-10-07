@@ -11,11 +11,29 @@ import CustomCSSEditor from '../CustomCSSEditor';
 import type {CustomCSSEditorHandle} from '../CustomCSSEditor';
 
 // Mock Monaco Editor as a plain textarea
+const mockEnvironment = vi.hoisted(() => ({readOnly: false}));
+
+vi.mock('@thunderid/contexts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@thunderid/contexts')>()),
+  useEnvironment: () => ({readOnly: mockEnvironment.readOnly}),
+}));
+
 vi.mock('@monaco-editor/react', () => ({
-  default: ({value, onChange, height}: {value: string; onChange?: (v: string | undefined) => void; height: string}) => (
+  default: ({
+    value,
+    onChange,
+    height,
+    options,
+  }: {
+    value: string;
+    onChange?: (v: string | undefined) => void;
+    height: string;
+    options?: {readOnly?: boolean};
+  }) => (
     <textarea
       data-testid="monaco-editor"
       data-height={height}
+      data-readonly={String(Boolean(options?.readOnly))}
       value={value}
       onChange={(e) => onChange?.(e.target.value)}
     />
@@ -54,6 +72,18 @@ afterEach(() => {
 });
 
 describe('CustomCSSEditor', () => {
+  it('makes the inline editor read-only in a gateway view', async () => {
+    mockEnvironment.readOnly = true;
+    renderWithTheme(<CustomCSSEditor stylesheets={[inlineSheet]} onChange={vi.fn()} />);
+
+    await act(async () => {
+      await userEvent.click(screen.getByText('custom-1'));
+    });
+
+    expect(screen.getByTestId('monaco-editor')).toHaveAttribute('data-readonly', 'true');
+    mockEnvironment.readOnly = false;
+  });
+
   describe('rendering', () => {
     it('renders add buttons for inline and external URL', () => {
       renderWithTheme(<CustomCSSEditor stylesheets={[]} onChange={vi.fn()} />);

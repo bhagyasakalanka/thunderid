@@ -56,6 +56,7 @@ export default function ManageChildOrganizationUnitSection({
         <OrganizationUnitTreePicker
           rootOuId={organizationUnitId}
           hideRoot
+          showApplied
           value=""
           onChange={() => undefined}
           maxHeight={400}

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {ExternalLink} from '@thunderid/components';
+import {useEnvironment} from '@thunderid/contexts';
 import {useLogger} from '@thunderid/logger/react';
 import {Button, PageContent, PageTitle} from '@wso2/oxygen-ui';
 import {Plus} from '@wso2/oxygen-ui-icons-react';
@@ -15,6 +16,7 @@ export default function UserTypesListPage() {
   const {t} = useTranslation();
   const logger = useLogger('UserTypesListPage');
   const routes = useUserTypeRoutes();
+  const {readOnly} = useEnvironment();
 
   return (
     <PageContent>
@@ -24,23 +26,25 @@ export default function UserTypesListPage() {
         <PageTitle.SubHeader>
           {t('userTypes:subtitle')} <ExternalLink docKey="userTypes" />
         </PageTitle.SubHeader>
-        <PageTitle.Actions>
-          <Button
-            variant="contained"
-            startIcon={<Plus size={18} />}
-            onClick={() => {
-              const handler = async () => {
-                await navigate(routes.create());
-              };
+        {!readOnly && (
+          <PageTitle.Actions>
+            <Button
+              variant="contained"
+              startIcon={<Plus size={18} />}
+              onClick={() => {
+                const handler = async () => {
+                  await navigate(routes.create());
+                };
 
-              handler().catch((error: unknown) => {
-                logger.error('Failed to navigate to create user type page', {error});
-              });
-            }}
-          >
-            {t('userTypes:createUserType')}
-          </Button>
-        </PageTitle.Actions>
+                handler().catch((error: unknown) => {
+                  logger.error('Failed to navigate to create user type page', {error});
+                });
+              }}
+            >
+              {t('userTypes:createUserType')}
+            </Button>
+          </PageTitle.Actions>
+        )}
       </PageTitle>
 
       <UserTypesList />

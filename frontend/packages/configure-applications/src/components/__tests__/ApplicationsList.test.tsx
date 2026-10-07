@@ -8,9 +8,27 @@ import {describe, it, expect, beforeEach, vi} from 'vitest';
 import type {ApplicationListResponse} from '../../models/responses';
 import ApplicationsList from '../ApplicationsList';
 
-const {mockLoggerError} = vi.hoisted(() => ({
+const {mockLoggerError, environment} = vi.hoisted(() => ({
   mockLoggerError: vi.fn(),
+  environment: {readOnly: false, applied: [] as unknown[]},
 }));
+
+vi.mock('@thunderid/contexts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@thunderid/contexts')>();
+  return {
+    ...actual,
+    useEnvironment: () => ({...actual.useEnvironment(), readOnly: environment.readOnly}),
+  };
+});
+
+vi.mock('@thunderid/components', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@thunderid/components')>();
+  return {
+    ...actual,
+    useEnvironmentList: (_type: string, live: Record<string, unknown>, toPage: (resources: unknown[]) => unknown) =>
+      environment.readOnly ? {...live, data: toPage(environment.applied)} : live,
+  };
+});
 
 // Mock the dependencies
 vi.mock('../../api/useGetApplications', () => ({
@@ -162,6 +180,8 @@ describe('ApplicationsList', () => {
   };
 
   beforeEach(() => {
+    environment.readOnly = false;
+    environment.applied = [];
     mockNavigate = vi.fn();
     mockLoggerError.mockReset();
     vi.mocked(useNavigate).mockReturnValue(mockNavigate as unknown as NavigateFunction);
@@ -570,6 +590,43 @@ describe('ApplicationsList', () => {
           applicationId: 'app-1',
         }),
       );
+    });
+  });
+
+  describe('in a gateway view', () => {
+    beforeEach(() => {
+      vi.mocked(useGetApplications).mockReturnValue({
+        data: mockApplicationsData,
+        isLoading: false,
+        error: null,
+      } as ReturnType<typeof useGetApplications>);
+    });
+
+    it('lists only the applications the gateway runs, with no edit or delete actions', () => {
+      environment.readOnly = true;
+      environment.applied = [
+        {
+          id: 'app-2',
+          name: 'Test App 2',
+          description: 'Second test application',
+          inboundAuthConfig: [{type: 'oauth2', config: {clientId: 'client_id_2'}}],
+        },
+      ];
+
+      renderComponent();
+
+      expect(screen.queryByText('Test App 1')).not.toBeInTheDocument();
+      expect(screen.getByText('Test App 2')).toBeInTheDocument();
+      expect(screen.getByText('client_id_2')).toBeInTheDocument();
+      expect(screen.queryByRole('button', {name: /^edit$/i})).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', {name: /^delete$/i})).not.toBeInTheDocument();
+    });
+
+    it('keeps the live list and the row actions in write mode', () => {
+      renderComponent();
+
+      expect(screen.getByText('Test App 1')).toBeInTheDocument();
+      expect(screen.getAllByRole('button', {name: /^edit$/i})).toHaveLength(2);
     });
   });
 });

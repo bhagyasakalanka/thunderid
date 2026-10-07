@@ -156,6 +156,7 @@ export default function EditAdvancedSettings({
       <Stack spacing={3}>
         <OAuth2ConfigSection
           key={sectionResetKey}
+          applicationId={application.id}
           oauth2Config={oauth2Config}
           oauth2Constraints={oauth2Constraints}
           onOAuth2ConfigChange={handleOAuth2ConfigChange}

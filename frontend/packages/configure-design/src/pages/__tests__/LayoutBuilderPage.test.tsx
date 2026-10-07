@@ -29,6 +29,25 @@ const {mockNavigate, mockUseLayoutBuilder, mockUseGetThemes, mockUseGetTheme, mo
     mockSetSelectedScreen: vi.fn(),
   }));
 
+const mockEnvironment = vi.hoisted(() => ({readOnly: false}));
+
+vi.mock('@thunderid/contexts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@thunderid/contexts')>()),
+  useEnvironment: () => ({readOnly: mockEnvironment.readOnly}),
+}));
+
+vi.mock('@thunderid/components', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@thunderid/components')>()),
+  useEnvironmentResource: (_type: string, _id: string | undefined, live: unknown) => live,
+  EnvironmentDeploymentNotice: ({
+    resourceType,
+    resourceId = undefined,
+  }: {
+    resourceType: string;
+    resourceId?: string;
+  }) => <div data-testid="environment-notice">{`${resourceType}/${resourceId}`}</div>,
+}));
+
 vi.mock('react-router', async () => {
   const actual = await vi.importActual('react-router');
   return {
@@ -51,7 +70,9 @@ vi.mock('../../contexts/LayoutBuilder/useLayoutBuilder', () => ({
 }));
 
 vi.mock('../../components/LayoutConfigPanel', () => ({
-  default: () => <div data-testid="layout-config-panel" />,
+  default: ({readOnly}: {readOnly?: boolean}) => (
+    <div data-testid="layout-config-panel" data-readonly={String(Boolean(readOnly))} />
+  ),
 }));
 
 vi.mock('../../components/LayoutPreviewPanel', () => ({
@@ -112,6 +133,27 @@ describe('LayoutBuilderPage', () => {
     mockUseLayoutBuilder.mockReturnValue(makeBuilderState());
     mockUseGetThemes.mockReturnValue({data: {themes: []}});
     mockUseGetTheme.mockReturnValue({data: undefined});
+    mockEnvironment.readOnly = false;
+  });
+
+  it('in a gateway view, hides save and adding screens, makes the config read-only and shows the notice', () => {
+    mockEnvironment.readOnly = true;
+    mockUseLayoutBuilder.mockReturnValue(makeBuilderState({isDirty: true}));
+    render(<LayoutBuilderPage />);
+
+    expect(screen.queryByRole('button', {name: 'Save'})).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', {name: 'Add screen'})).not.toBeInTheDocument();
+    expect(screen.getByTestId('layout-config-panel')).toHaveAttribute('data-readonly', 'true');
+    expect(screen.getByTestId('environment-notice')).toHaveTextContent('layout/layout-1');
+    expect(screen.getByText('register')).toBeInTheDocument();
+  });
+
+  it('in the draft, keeps save and adding screens', () => {
+    render(<LayoutBuilderPage />);
+
+    expect(screen.getByRole('button', {name: 'Save'})).toBeInTheDocument();
+    expect(screen.getByRole('button', {name: 'Add screen'})).toBeInTheDocument();
+    expect(screen.getByTestId('layout-config-panel')).toHaveAttribute('data-readonly', 'false');
   });
 
   it('navigates back to the design list when "Back to Design" is clicked', async () => {

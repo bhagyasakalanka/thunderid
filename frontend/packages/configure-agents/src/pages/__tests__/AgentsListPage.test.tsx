@@ -7,6 +7,16 @@ import {render, screen} from '@thunderid/test-utils';
 import {describe, it, expect, vi, beforeEach} from 'vitest';
 import AgentsListPage from '../AgentsListPage';
 
+const {environment} = vi.hoisted(() => ({environment: {readOnly: false}}));
+
+vi.mock('@thunderid/contexts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@thunderid/contexts')>();
+  return {
+    ...actual,
+    useEnvironment: () => ({...actual.useEnvironment(), readOnly: environment.readOnly}),
+  };
+});
+
 // Mock the AgentsList component so we can focus on the page wiring.
 vi.mock('../../components/AgentsList', () => ({
   default: () => <div data-testid="agents-list">Agents List</div>,
@@ -57,6 +67,17 @@ describe('AgentsListPage', () => {
       data: {types: [{id: 'schema-1', handle: 'default', displayName: 'Default', ouId: 'ou-1'}]},
       isLoading: false,
     });
+    environment.readOnly = false;
+  });
+
+  it('hides Add Agent but keeps Schema in a gateway view', () => {
+    environment.readOnly = true;
+
+    render(<AgentsListPage />);
+
+    expect(screen.queryByRole('button', {name: 'Add Agent'})).not.toBeInTheDocument();
+    expect(screen.getByRole('button', {name: 'Schema'})).toBeInTheDocument();
+    expect(screen.getByTestId('agents-list')).toBeInTheDocument();
   });
 
   it('renders the page title and subtitle', () => {

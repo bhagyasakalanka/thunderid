@@ -10,6 +10,19 @@ import {describe, it, expect, vi, beforeEach} from 'vitest';
 import type {BasicFlowDefinition} from '../../models/responses';
 import FlowsList from '../FlowsList';
 
+const mockEnvironment = vi.hoisted(() => ({readOnly: false, applied: [] as unknown[]}));
+
+vi.mock('@thunderid/contexts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@thunderid/contexts')>()),
+  useEnvironment: () => ({readOnly: mockEnvironment.readOnly}),
+}));
+
+vi.mock('@thunderid/components', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@thunderid/components')>()),
+  useEnvironmentList: (_type: string, live: Record<string, unknown>, toPage: (resources: unknown[]) => unknown) =>
+    mockEnvironment.readOnly ? {...live, data: toPage(mockEnvironment.applied)} : live,
+}));
+
 // Mock logger with accessible mock functions
 const mockLoggerError = vi.fn();
 const mockRefetch = vi.fn();
@@ -641,7 +654,7 @@ describe('FlowsList', () => {
   });
 
   describe('Column RenderCell Execution', () => {
-    it('should have name column without renderCell (plain text)', () => {
+    it('should render the name', () => {
       render(
         <MemoryRouter>
           <FlowsList />
@@ -649,8 +662,44 @@ describe('FlowsList', () => {
       );
 
       const nameColumn = capturedColumns.value.find((col) => col.field === 'name');
-      expect(nameColumn).toBeDefined();
-      expect(nameColumn?.renderCell).toBeUndefined();
+      expect(nameColumn?.renderCell).toBeDefined();
+
+      render(
+        nameColumn!.renderCell!({row: mockFlowsData.flows[0]} as DataGrid.GridRenderCellParams<BasicFlowDefinition>),
+      );
+      expect(screen.getAllByText('Login Flow').length).toBeGreaterThan(0);
+    });
+
+    it('should list only the flows the gateway runs in read-only mode', () => {
+      mockEnvironment.readOnly = true;
+      mockEnvironment.applied = [{...mockFlowsData.flows[1], nodes: []}];
+      render(
+        <MemoryRouter>
+          <FlowsList />
+        </MemoryRouter>,
+      );
+
+      expect(screen.queryByText('Login Flow')).not.toBeInTheDocument();
+      expect(screen.getByText('Registration Flow')).toBeInTheDocument();
+      mockEnvironment.readOnly = false;
+      mockEnvironment.applied = [];
+    });
+
+    it('should offer only a view action, no edit or delete, in a gateway view', () => {
+      mockEnvironment.readOnly = true;
+      render(
+        <MemoryRouter>
+          <FlowsList />
+        </MemoryRouter>,
+      );
+
+      const actionsColumn = capturedColumns.value.find((col) => col.field === 'actions');
+      const {container} = render(
+        actionsColumn!.renderCell!({row: mockFlowsData.flows[0]} as DataGrid.GridRenderCellParams<BasicFlowDefinition>),
+      );
+      expect(container.querySelectorAll('button')).toHaveLength(1);
+      expect(container.querySelector('button.MuiIconButton-colorError')).not.toBeInTheDocument();
+      mockEnvironment.readOnly = false;
     });
 
     it('should render actions cell with IconButton', () => {

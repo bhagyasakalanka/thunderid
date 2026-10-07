@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {renderWithProviders, screen, fireEvent} from '@thunderid/test-utils';
+import type {ReactNode} from 'react';
 import {describe, it, expect, vi, beforeEach} from 'vitest';
 import {AuthorizationEngines, type ResourceServer} from '../../../models/resource-server';
 import AdvancedTab from '../AdvancedTab';
@@ -12,6 +13,30 @@ let mockPDPConnections: {
   error: Error | null;
 } = {data: [{id: 'pdp-1', name: 'AuthZEN PDP'}], isLoading: false, error: null};
 vi.mock('../../../api/useAuthZENPDPConnections', () => ({default: () => mockPDPConnections}));
+
+// A gateway's value for the identifier is shown by EnvironmentValue, which renders the field itself
+// when no gateway is shown; recording what it was given is enough here.
+vi.mock('@thunderid/components', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@thunderid/components')>();
+  return {
+    ...actual,
+    EnvironmentValue: ({
+      resourceType,
+      resourceId,
+      field,
+      children,
+    }: {
+      resourceType: string;
+      resourceId: string;
+      field: string;
+      children: ReactNode;
+    }) => (
+      <div data-testid="environment-value" data-reference={`${resourceType}/${resourceId}/${field}`}>
+        {children}
+      </div>
+    ),
+  };
+});
 
 const engineProps = {
   authorizationEngine: AuthorizationEngines.RBAC,
@@ -46,6 +71,21 @@ describe('AdvancedTab', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockPDPConnections = {data: [{id: 'pdp-1', name: 'AuthZEN PDP'}], isLoading: false, error: null};
+  });
+
+  it('lets a gateway hold its own identifier', () => {
+    renderWithProviders(
+      <AdvancedTab
+        {...engineProps}
+        resourceServer={mockResourceServer}
+        identifier={mockResourceServer.identifier ?? ''}
+        onIdentifierChange={vi.fn()}
+      />,
+    );
+
+    const wrapper = screen.getByTestId('environment-value');
+    expect(wrapper).toHaveAttribute('data-reference', 'resource_server/rs-1/identifier');
+    expect(wrapper).toContainElement(screen.getByDisplayValue('https://api.example.com'));
   });
 
   it('renders the Configurations section with the current identifier value', () => {

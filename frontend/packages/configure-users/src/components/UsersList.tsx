@@ -1,10 +1,11 @@
 // Copyright 2025-2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {QueryErrorNotice, ResourceAvatar, getInitials} from '@thunderid/components';
+import {QueryErrorNotice, ResourceAvatar, getInitials, useEnvironmentList} from '@thunderid/components';
+import {useEnvironment} from '@thunderid/contexts';
 import {useDataGridLocaleText} from '@thunderid/hooks';
 import {useLogger} from '@thunderid/logger/react';
-import {IconButton, Tooltip, Typography, ListingTable, DataGrid} from '@wso2/oxygen-ui';
+import {IconButton, Stack, Tooltip, Typography, ListingTable, DataGrid} from '@wso2/oxygen-ui';
 import {Eye, Pencil, Trash2} from '@wso2/oxygen-ui-icons-react';
 import {useMemo, useState, useCallback} from 'react';
 import {useTranslation} from 'react-i18next';
@@ -14,6 +15,7 @@ import useGetUsers from '../api/useGetUsers';
 import UserConstants from '../constants/user-constants';
 import useUserRoutes from '../hooks/useUserRoutes';
 import type {UserWithDetails} from '../models/users';
+import toUserListPage from '../utils/toUserListPage';
 
 export default function UsersList() {
   const navigate = useNavigate();
@@ -21,8 +23,9 @@ export default function UsersList() {
   const logger = useLogger('UsersList');
   const dataGridLocaleText = useDataGridLocaleText();
   const routes = useUserRoutes();
+  const {readOnly} = useEnvironment();
 
-  const {data: userData, isLoading, error, refetch} = useGetUsers();
+  const {data: userData, isLoading, error, refetch} = useEnvironmentList('user', useGetUsers(), toUserListPage);
 
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -61,17 +64,19 @@ export default function UsersList() {
           const picture = typeof rawPicture === 'string' ? rawPicture : undefined;
 
           return (
-            <ListingTable.CellIcon
-              sx={{width: '100%'}}
-              icon={
-                <ResourceAvatar
-                  value={picture}
-                  size={30}
-                  fallback={`${UserConstants.DEFAULT_AVATAR_PREFIX}${getInitials(displayVal)}`}
-                />
-              }
-              primary={displayVal}
-            />
+            <Stack direction="row" alignItems="center" spacing={1} sx={{width: '100%', minWidth: 0}}>
+              <ListingTable.CellIcon
+                sx={{minWidth: 0}}
+                icon={
+                  <ResourceAvatar
+                    value={picture}
+                    size={30}
+                    fallback={`${UserConstants.DEFAULT_AVATAR_PREFIX}${getInitials(displayVal)}`}
+                  />
+                }
+                primary={displayVal}
+              />
+            </Stack>
           );
         },
       },
@@ -108,7 +113,7 @@ export default function UsersList() {
         hideable: false,
         renderCell: (params: DataGrid.GridRenderCellParams<UserWithDetails>) => (
           <ListingTable.RowActions>
-            {params.row.isReadOnly ? (
+            {params.row.isReadOnly === true || readOnly ? (
               <Tooltip title={t('common:status.readOnly', 'Read Only')}>
                 <IconButton size="small" disableRipple sx={{cursor: 'default'}}>
                   <Eye size={16} />
@@ -145,7 +150,7 @@ export default function UsersList() {
         ),
       },
     ],
-    [handleDeleteClick, handleEditClick, t],
+    [handleDeleteClick, handleEditClick, readOnly, t],
   );
 
   if (error) {

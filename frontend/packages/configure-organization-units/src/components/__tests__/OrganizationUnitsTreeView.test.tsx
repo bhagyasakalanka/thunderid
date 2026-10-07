@@ -7,6 +7,25 @@ import {describe, it, expect, vi, beforeEach, beforeAll} from 'vitest';
 import type {OrganizationUnitListResponse} from '../../models/responses';
 import OrganizationUnitsTreeView from '../OrganizationUnitsTreeView';
 
+const {environment} = vi.hoisted(() => ({
+  environment: {readOnly: false, appliedUnits: undefined as unknown[] | undefined},
+}));
+
+vi.mock('@thunderid/components', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@thunderid/components')>();
+  return {
+    ...actual,
+  };
+});
+
+// The organization units the gateway runs, set by a read-only test.
+vi.mock('@/hooks/useAppliedOrganizationUnits', () => ({
+  default: () =>
+    environment.appliedUnits
+      ? {data: environment.appliedUnits, isLoading: false, error: null, refetch: vi.fn()}
+      : undefined,
+}));
+
 // Mock navigate
 const mockNavigate = vi.fn();
 vi.mock('react-router', async () => {
@@ -72,6 +91,7 @@ vi.mock('@thunderid/contexts', async (importOriginal) => {
   return {
     ...actual,
     useConfig: () => stableConfig,
+    useEnvironment: () => ({...actual.useEnvironment(), readOnly: environment.readOnly}),
   };
 });
 
@@ -108,6 +128,8 @@ describe('OrganizationUnitsTreeView', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    environment.readOnly = false;
+    environment.appliedUnits = undefined;
     mockNavigate.mockReset();
     mockDeleteMutate.mockReset();
     mockDeleteReset.mockReset();
@@ -1024,6 +1046,108 @@ describe('OrganizationUnitsTreeView', () => {
 
     await waitFor(() => {
       expect(stableLogger.error).toHaveBeenCalledWith('Failed to load more root organization units', expect.anything());
+    });
+  });
+
+  describe('Gateway view', () => {
+    beforeEach(() => {
+      environment.readOnly = true;
+    });
+
+    it('should list the organization units read-only', async () => {
+      renderWithProviders(<OrganizationUnitsTreeView />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Root Organization')).toBeInTheDocument();
+      });
+
+      expect(screen.queryByText(t('organizationUnits:listing.addRootOrganizationUnit'))).not.toBeInTheDocument();
+      expect(screen.queryByLabelText(t('organizationUnits:listing.treeView.addChild'))).not.toBeInTheDocument();
+      expect(screen.queryByLabelText(t('common:actions.edit'))).not.toBeInTheDocument();
+      expect(screen.queryByLabelText(t('common:actions.delete'))).not.toBeInTheDocument();
+    });
+
+    it('should open an organization unit from its view action', async () => {
+      renderWithProviders(<OrganizationUnitsTreeView />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Root Organization')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getAllByLabelText(t('common:actions.view'))[0]);
+
+      await waitFor(() => {
+        expect(mockNavigate).toHaveBeenCalledWith('/organization-units/ou-1');
+      });
+    });
+
+    it('should leave out the add child row of an expanded organization unit', async () => {
+      mockHttpRequest.mockResolvedValue({
+        data: {
+          totalResults: 1,
+          startIndex: 1,
+          count: 1,
+          organizationUnits: [{id: 'ou-child-1', handle: 'child1', name: 'Fetched Child', parent: 'ou-1'}],
+        },
+      });
+      renderWithProviders(<OrganizationUnitsTreeView />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Root Organization')).toBeInTheDocument();
+      });
+      fireEvent.click(document.querySelectorAll('.MuiTreeItem-iconContainer')[0]);
+
+      await waitFor(() => {
+        expect(screen.getByText('Fetched Child')).toBeInTheDocument();
+      });
+      expect(
+        screen.queryByText(t('organizationUnits:listing.treeView.addChildOrganizationUnit')),
+      ).not.toBeInTheDocument();
+    });
+
+    it('should not offer to add a root organization unit when there are none', async () => {
+      mockUseGetOrganizationUnits.mockReturnValue({
+        data: {totalResults: 0, startIndex: 1, count: 0, organizationUnits: []},
+        isLoading: false,
+        error: null,
+      });
+      renderWithProviders(<OrganizationUnitsTreeView />);
+
+      await waitFor(() => {
+        expect(screen.getByText(t('organizationUnits:listing.treeView.empty'))).toBeInTheDocument();
+      });
+      expect(screen.queryByText(t('organizationUnits:listing.addRootOrganizationUnit'))).not.toBeInTheDocument();
+    });
+
+    it('should build the tree from the organization units the gateway runs', async () => {
+      environment.appliedUnits = [
+        {id: 'ou-a', handle: 'applied', name: 'Applied Root', parent: null},
+        {id: 'ou-b', handle: 'applied-child', name: 'Applied Child', parent: 'ou-a'},
+      ];
+      renderWithProviders(<OrganizationUnitsTreeView />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Applied Root')).toBeInTheDocument();
+      });
+      expect(screen.queryByText('Root Organization')).not.toBeInTheDocument();
+      expect(screen.queryByText('Applied Child')).not.toBeInTheDocument();
+
+      fireEvent.click(document.querySelectorAll('.MuiTreeItem-iconContainer')[0]);
+
+      await waitFor(() => {
+        expect(screen.getByText('Applied Child')).toBeInTheDocument();
+      });
+      expect(mockHttpRequest).not.toHaveBeenCalled();
+    });
+
+    it('should show the empty state when the gateway runs no organization units', async () => {
+      environment.appliedUnits = [];
+      renderWithProviders(<OrganizationUnitsTreeView />);
+
+      await waitFor(() => {
+        expect(screen.getByText(t('organizationUnits:listing.treeView.empty'))).toBeInTheDocument();
+      });
+      expect(screen.queryByText('Root Organization')).not.toBeInTheDocument();
     });
   });
 });

@@ -36,7 +36,7 @@ export default function EditCredentialsSettings({
 
   return (
     <Stack spacing={3}>
-      <ClientIdSection oauth2Config={oauth2Config} />
+      <ClientIdSection agentId={agent.id} oauth2Config={oauth2Config} />
       <ClientSecretSection agentId={agent.id} oauth2Config={oauth2Config} disabled={agent.isReadOnly} />
       <CertificateSection
         certificate={oauth2Config?.certificate}

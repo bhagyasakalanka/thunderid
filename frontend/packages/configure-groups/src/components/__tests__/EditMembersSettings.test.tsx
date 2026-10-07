@@ -298,4 +298,11 @@ describe('EditMembersSettings', () => {
       expect(screen.queryByText('Failed to remove member. Please try again.')).not.toBeInTheDocument();
     });
   });
+
+  it('should hide the Add Member button when read-only', () => {
+    renderWithProviders(<EditMembersSettings group={mockGroup} isReadOnly />);
+
+    expect(screen.getByTestId('manage-members-section')).toBeInTheDocument();
+    expect(screen.queryByTestId('header-action')).not.toBeInTheDocument();
+  });
 });

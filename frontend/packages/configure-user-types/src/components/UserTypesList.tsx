@@ -1,7 +1,8 @@
 // Copyright 2025-2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {QueryErrorNotice} from '@thunderid/components';
+import {QueryErrorNotice, useEnvironmentList} from '@thunderid/components';
+import {useEnvironment} from '@thunderid/contexts';
 import {useDataGridLocaleText} from '@thunderid/hooks';
 import {useLogger} from '@thunderid/logger/react';
 import {getErrorMessage} from '@thunderid/utils';
@@ -29,6 +30,7 @@ import useDeleteUserType from '../api/useDeleteUserType';
 import useGetUserTypes from '../api/useGetUserTypes';
 import useUserTypeRoutes from '../hooks/useUserTypeRoutes';
 import type {UserTypeListItem} from '../types/user-types';
+import toUserTypeListPage from '../utils/toUserTypeListPage';
 
 type GridColDef<R extends DataGrid.GridValidRowModel = DataGrid.GridValidRowModel> = DataGrid.GridColDef<R>;
 type GridRenderCellParams<R extends DataGrid.GridValidRowModel = DataGrid.GridValidRowModel> =
@@ -39,9 +41,15 @@ export default function UserTypesList() {
   const {t} = useTranslation();
   const logger = useLogger('UserTypesList');
   const routes = useUserTypeRoutes();
+  const {readOnly} = useEnvironment();
   const dataGridLocaleText = useDataGridLocaleText();
 
-  const {data: userTypesData, isLoading, error: userTypesRequestError, refetch} = useGetUserTypes();
+  const {
+    data: userTypesData,
+    isLoading,
+    error: userTypesRequestError,
+    refetch,
+  } = useEnvironmentList('user_type', useGetUserTypes(), toUserTypeListPage);
   const deleteUserTypeMutation = useDeleteUserType();
 
   const [selectedUserTypeId, setSelectedUserTypeId] = useState<string | null>(null);
@@ -89,13 +97,15 @@ export default function UserTypesList() {
         flex: 1.5,
         minWidth: 220,
         renderCell: (params: DataGrid.GridRenderCellParams<UserTypeListItem>) => (
-          <Stack justifyContent="center" sx={{height: '100%'}}>
-            <Typography variant="body2" sx={{fontWeight: 500, lineHeight: 1.3}}>
-              {params.row.displayName}
-            </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{lineHeight: 1.2}}>
-              {params.row.handle}
-            </Typography>
+          <Stack direction="row" alignItems="center" spacing={1} sx={{height: '100%'}}>
+            <Stack justifyContent="center">
+              <Typography variant="body2" sx={{fontWeight: 500, lineHeight: 1.3}}>
+                {params.row.displayName}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{lineHeight: 1.2}}>
+                {params.row.handle}
+              </Typography>
+            </Stack>
           </Stack>
         ),
       },
@@ -143,7 +153,7 @@ export default function UserTypesList() {
         hideable: false,
         renderCell: (params: GridRenderCellParams<UserTypeListItem>) => (
           <ListingTable.RowActions>
-            {params.row.isReadOnly ? (
+            {params.row.isReadOnly === true || readOnly ? (
               <Tooltip title={t('common:status.readOnly', 'Read Only')}>
                 <IconButton size="small" disableRipple sx={{cursor: 'default'}}>
                   <Eye size={16} />
@@ -180,7 +190,7 @@ export default function UserTypesList() {
         ),
       },
     ],
-    [t, handleDeleteClick, handleViewClick],
+    [t, handleDeleteClick, handleViewClick, readOnly],
   );
 
   if (userTypesRequestError) {

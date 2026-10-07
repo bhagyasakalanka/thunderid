@@ -1,10 +1,11 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {QueryErrorNotice, ResourceAvatar} from '@thunderid/components';
+import {QueryErrorNotice, ResourceAvatar, useEnvironmentList} from '@thunderid/components';
+import {useEnvironment} from '@thunderid/contexts';
 import {useDataGridLocaleText} from '@thunderid/hooks';
 import {useLogger} from '@thunderid/logger/react';
-import {Box, IconButton, Tooltip, Typography, ListingTable, DataGrid} from '@wso2/oxygen-ui';
+import {Box, IconButton, Stack, Tooltip, Typography, ListingTable, DataGrid} from '@wso2/oxygen-ui';
 import {Eye, Pencil, Trash2} from '@wso2/oxygen-ui-icons-react';
 import {useMemo, useCallback, useState, type JSX} from 'react';
 import {useTranslation} from 'react-i18next';
@@ -14,6 +15,7 @@ import useGetAgents from '../api/useGetAgents';
 import AgentConstants from '../constants/agent-constants';
 import useAgentRoutes from '../hooks/useAgentRoutes';
 import type {BasicAgent} from '../models/agent';
+import toAgentsPage from '../utils/toAgentsPage';
 
 export default function AgentsList(): JSX.Element {
   const routes = useAgentRoutes();
@@ -21,7 +23,8 @@ export default function AgentsList(): JSX.Element {
   const {t} = useTranslation();
   const logger = useLogger('AgentsList');
   const dataGridLocaleText = useDataGridLocaleText();
-  const {data, isLoading, error, refetch} = useGetAgents();
+  const {readOnly} = useEnvironment();
+  const {data, isLoading, error, refetch} = useEnvironmentList('agent', useGetAgents(), toAgentsPage);
 
   // Resolves an error through the `agents` catalog. `t` defaults to the `common` namespace, so
   // this forwards explicit `ns:` prefixes unchanged and prefixes bare keys with `agents:`, per
@@ -63,12 +66,14 @@ export default function AgentsList(): JSX.Element {
         flex: 1,
         minWidth: 200,
         renderCell: (params: DataGrid.GridRenderCellParams<BasicAgent>): JSX.Element => (
-          <ListingTable.CellIcon
-            sx={{width: '100%'}}
-            icon={<ResourceAvatar size={30} value={params.row.logoUrl} fallback={AgentConstants.DEFAULT_AVATAR} />}
-            primary={params.row.name}
-            secondary={params.row.description}
-          />
+          <Stack direction="row" alignItems="center" spacing={1} sx={{width: '100%', minWidth: 0}}>
+            <ListingTable.CellIcon
+              sx={{minWidth: 0}}
+              icon={<ResourceAvatar size={30} value={params.row.logoUrl} fallback={AgentConstants.DEFAULT_AVATAR} />}
+              primary={params.row.name}
+              secondary={params.row.description}
+            />
+          </Stack>
         ),
       },
       {
@@ -104,7 +109,7 @@ export default function AgentsList(): JSX.Element {
         hideable: false,
         renderCell: (params: DataGrid.GridRenderCellParams<BasicAgent>): JSX.Element => (
           <ListingTable.RowActions>
-            {params.row.isReadOnly ? (
+            {params.row.isReadOnly === true || readOnly ? (
               <Tooltip title={t('common:status.readOnly', 'Read Only')}>
                 <IconButton size="small" disableRipple sx={{cursor: 'default'}}>
                   <Eye size={16} />
@@ -141,7 +146,7 @@ export default function AgentsList(): JSX.Element {
         ),
       },
     ],
-    [handleDeleteClick, handleEditClick, t],
+    [handleDeleteClick, handleEditClick, readOnly, t],
   );
 
   if (error) {

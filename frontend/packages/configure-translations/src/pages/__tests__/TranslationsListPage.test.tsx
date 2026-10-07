@@ -8,6 +8,13 @@ import {useTranslation} from 'react-i18next';
 import {describe, expect, it, vi, beforeAll, beforeEach} from 'vitest';
 import TranslationsListPage from '@/pages/TranslationsListPage';
 
+const mockEnvironment = vi.hoisted(() => ({readOnly: false}));
+
+vi.mock('@thunderid/contexts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@thunderid/contexts')>()),
+  useEnvironment: () => ({readOnly: mockEnvironment.readOnly}),
+}));
+
 const mockNavigate = vi.fn();
 vi.mock('react-router', async () => {
   const actual = await vi.importActual<typeof import('react-router')>('react-router');
@@ -121,6 +128,14 @@ describe('TranslationsListPage', () => {
       render(<TranslationsListPage />);
 
       expect(screen.getByRole('button', {name: t('translations:listing.addLanguage')})).toBeInTheDocument();
+    });
+
+    it('hides the Add Language button in a gateway view', () => {
+      mockEnvironment.readOnly = true;
+      render(<TranslationsListPage />);
+
+      expect(screen.queryByRole('button', {name: t('translations:listing.addLanguage')})).not.toBeInTheDocument();
+      mockEnvironment.readOnly = false;
     });
 
     it('renders the data grid', () => {

@@ -34,6 +34,8 @@ export interface EditSchemaSettingsProps {
   properties: SchemaPropertyInput[];
   onPropertiesChange: (properties: SchemaPropertyInput[]) => void;
   agentTypeHandle: string;
+  /** Whether the schema is shown read-only, with every input disabled and no add or remove actions. */
+  disabled?: boolean;
 }
 
 /**
@@ -44,6 +46,7 @@ export default function EditSchemaSettings({
   properties,
   onPropertiesChange,
   agentTypeHandle,
+  disabled = false,
 }: EditSchemaSettingsProps): JSX.Element {
   const {t} = useTranslation();
   const [enumInput, setEnumInput] = useState<Record<string, string>>({});
@@ -137,7 +140,7 @@ export default function EditSchemaSettings({
           }}
         >
           {/* Remove button - visible on hover */}
-          {properties.length > 1 && (
+          {!disabled && properties.length > 1 && (
             <Tooltip title={t('agentTypes:removeProperty', 'Remove property')}>
               <IconButton
                 className="property-delete-btn"
@@ -157,6 +160,7 @@ export default function EditSchemaSettings({
                 <FormLabel>{t('agentTypes:propertyName')}</FormLabel>
                 <TextField
                   value={property.name}
+                  disabled={disabled}
                   onChange={(e) => handlePropertyChange(property.id, 'name', e.target.value)}
                   placeholder={t('agentTypes:propertyNamePlaceholder', 'e.g., email, age, address')}
                   size="small"
@@ -167,6 +171,7 @@ export default function EditSchemaSettings({
                 <FormLabel>{t('agentTypes:propertyType', 'Type')}</FormLabel>
                 <Select
                   value={property.type}
+                  disabled={disabled}
                   onChange={(e) => handlePropertyChange(property.id, 'type', e.target.value as PropertyType)}
                   size="small"
                 >
@@ -178,39 +183,46 @@ export default function EditSchemaSettings({
               </FormControl>
             </Box>
 
-            <I18nTextInput
-              label={t('agentTypes:displayName', 'Display Name')}
-              value={property.displayName}
-              onChange={(newValue: string) => handlePropertyChange(property.id, 'displayName', newValue)}
-              placeholder={t('agentTypes:displayNamePlaceholder', 'e.g., First Name')}
-              onTranslationCreated={invalidateI18nCache}
-              labels={{
-                triggerTooltip: t('agentTypes:displayNameI18n.tooltip', 'Configure translation'),
-                popoverTitle: t('agentTypes:displayNameI18n.title', 'Translation'),
-                createTitle: t('agentTypes:displayNameI18n.createTitle', 'Create New Translation'),
-                createTooltip: t('agentTypes:displayNameI18n.createTooltip', 'Create a new translation key'),
-                languageLabel: t('agentTypes:displayNameI18n.language', 'Language'),
-                keyLabel: t('agentTypes:displayNameI18n.i18nKey', 'Translation Key'),
-                selectKeyPlaceholder: t('agentTypes:displayNameI18n.selectKey', 'Select a translation key'),
-                valueLabel: t('agentTypes:displayNameI18n.translationValue', 'Translation Value'),
-                resolvedValueLabel: t('agentTypes:displayNameI18n.resolvedValue', 'Resolved value'),
-                keyRequiredError: t('agentTypes:displayNameI18n.keyRequired', 'Translation key is required'),
-                valueRequiredError: t('agentTypes:displayNameI18n.valueRequired', 'Translation value is required'),
-                invalidKeyFormatError: t(
-                  'agentTypes:displayNameI18n.invalidKeyFormat',
-                  'Key may only contain letters, numbers, dots, hyphens, and underscores',
-                ),
-                cancelLabel: t('common:cancel', 'Cancel'),
-                createLabel: t('common:create', 'Create'),
-                closeLabel: t('common:close', 'Close'),
-                unknownError: t('common:errors.unknown', 'An unknown error occurred'),
-              }}
-              defaultNewKey={
-                agentTypeHandle.trim() && property.name.trim()
-                  ? `${agentTypeHandle.trim()}.${property.name.trim()}`
-                  : undefined
-              }
-            />
+            {disabled ? (
+              <FormControl fullWidth>
+                <FormLabel>{t('agentTypes:displayName', 'Display Name')}</FormLabel>
+                <TextField value={property.displayName} disabled size="small" />
+              </FormControl>
+            ) : (
+              <I18nTextInput
+                label={t('agentTypes:displayName', 'Display Name')}
+                value={property.displayName}
+                onChange={(newValue: string) => handlePropertyChange(property.id, 'displayName', newValue)}
+                placeholder={t('agentTypes:displayNamePlaceholder', 'e.g., First Name')}
+                onTranslationCreated={invalidateI18nCache}
+                labels={{
+                  triggerTooltip: t('agentTypes:displayNameI18n.tooltip', 'Configure translation'),
+                  popoverTitle: t('agentTypes:displayNameI18n.title', 'Translation'),
+                  createTitle: t('agentTypes:displayNameI18n.createTitle', 'Create New Translation'),
+                  createTooltip: t('agentTypes:displayNameI18n.createTooltip', 'Create a new translation key'),
+                  languageLabel: t('agentTypes:displayNameI18n.language', 'Language'),
+                  keyLabel: t('agentTypes:displayNameI18n.i18nKey', 'Translation Key'),
+                  selectKeyPlaceholder: t('agentTypes:displayNameI18n.selectKey', 'Select a translation key'),
+                  valueLabel: t('agentTypes:displayNameI18n.translationValue', 'Translation Value'),
+                  resolvedValueLabel: t('agentTypes:displayNameI18n.resolvedValue', 'Resolved value'),
+                  keyRequiredError: t('agentTypes:displayNameI18n.keyRequired', 'Translation key is required'),
+                  valueRequiredError: t('agentTypes:displayNameI18n.valueRequired', 'Translation value is required'),
+                  invalidKeyFormatError: t(
+                    'agentTypes:displayNameI18n.invalidKeyFormat',
+                    'Key may only contain letters, numbers, dots, hyphens, and underscores',
+                  ),
+                  cancelLabel: t('common:cancel', 'Cancel'),
+                  createLabel: t('common:create', 'Create'),
+                  closeLabel: t('common:close', 'Close'),
+                  unknownError: t('common:errors.unknown', 'An unknown error occurred'),
+                }}
+                defaultNewKey={
+                  agentTypeHandle.trim() && property.name.trim()
+                    ? `${agentTypeHandle.trim()}.${property.name.trim()}`
+                    : undefined
+                }
+              />
+            )}
 
             {/* Checkbox options with info tooltips */}
             <Box sx={{display: 'flex', gap: 3}}>
@@ -223,6 +235,7 @@ export default function EditSchemaSettings({
                   control={
                     <Checkbox
                       checked={property.required}
+                      disabled={disabled}
                       onChange={(e) => handlePropertyChange(property.id, 'required', e.target.checked)}
                     />
                   }
@@ -244,7 +257,7 @@ export default function EditSchemaSettings({
                     control={
                       <Checkbox
                         checked={property.unique}
-                        disabled={property.credential}
+                        disabled={disabled || property.credential}
                         onChange={(e) => handlePropertyChange(property.id, 'unique', e.target.checked)}
                       />
                     }
@@ -267,6 +280,7 @@ export default function EditSchemaSettings({
                     control={
                       <Checkbox
                         checked={property.credential}
+                        disabled={disabled}
                         onChange={({target: {checked}}) => {
                           if (!checked) {
                             setPendingCredentialRemoveId(property.id);
@@ -308,6 +322,7 @@ export default function EditSchemaSettings({
                 <FormLabel>{t('agentTypes:regexPattern', 'Regular Expression Pattern (Optional)')}</FormLabel>
                 <TextField
                   value={property.regex}
+                  disabled={disabled}
                   onChange={(e) => handlePropertyChange(property.id, 'regex', e.target.value)}
                   placeholder={t('agentTypes:regexPlaceholder', 'e.g., ^[a-zA-Z0-9]+$')}
                   size="small"
@@ -322,6 +337,7 @@ export default function EditSchemaSettings({
                 <Box sx={{display: 'flex', gap: 1, mb: 1}}>
                   <TextField
                     value={enumInput[property.id] ?? ''}
+                    disabled={disabled}
                     onChange={(e) => setEnumInput({...enumInput, [property.id]: e.target.value})}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
@@ -333,7 +349,12 @@ export default function EditSchemaSettings({
                     size="small"
                     fullWidth
                   />
-                  <Button variant="outlined" size="small" onClick={() => handleAddEnumValue(property.id)}>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    disabled={disabled}
+                    onClick={() => handleAddEnumValue(property.id)}
+                  >
                     {t('common:actions.add', 'Add')}
                   </Button>
                 </Box>
@@ -343,7 +364,7 @@ export default function EditSchemaSettings({
                       <Chip
                         key={val}
                         label={val}
-                        onDelete={() => handleRemoveEnumValue(property.id, val)}
+                        onDelete={disabled ? undefined : () => handleRemoveEnumValue(property.id, val)}
                         size="small"
                       />
                     ))}
@@ -356,22 +377,24 @@ export default function EditSchemaSettings({
       ))}
 
       {/* Add Property Button */}
-      <Button
-        variant="text"
-        color="primary"
-        startIcon={<Plus size={16} />}
-        onClick={handleAddProperty}
-        fullWidth
-        sx={{
-          py: 1.5,
-          mb: 2,
-          border: '1px dashed',
-          borderColor: 'divider',
-          '&:hover': {border: '1px dashed', borderColor: 'primary.main'},
-        }}
-      >
-        {t('agentTypes:addProperty', 'Add Property')}
-      </Button>
+      {!disabled && (
+        <Button
+          variant="text"
+          color="primary"
+          startIcon={<Plus size={16} />}
+          onClick={handleAddProperty}
+          fullWidth
+          sx={{
+            py: 1.5,
+            mb: 2,
+            border: '1px dashed',
+            borderColor: 'divider',
+            '&:hover': {border: '1px dashed', borderColor: 'primary.main'},
+          }}
+        >
+          {t('agentTypes:addProperty', 'Add Property')}
+        </Button>
+      )}
 
       {/* Credential Removal Confirmation Dialog */}
       <Dialog

@@ -7,6 +7,16 @@ import type {NavigateFunction} from 'react-router';
 import {describe, it, expect, vi, beforeEach, afterEach} from 'vitest';
 import RolesListPage from '../RolesListPage';
 
+const {environment} = vi.hoisted(() => ({environment: {readOnly: false}}));
+
+vi.mock('@thunderid/contexts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@thunderid/contexts')>();
+  return {
+    ...actual,
+    useEnvironment: () => ({...actual.useEnvironment(), readOnly: environment.readOnly}),
+  };
+});
+
 // Mock dependencies
 vi.mock('../../components/RolesList', () => ({
   default: () => <div data-testid="roles-list">Roles List</div>,
@@ -50,6 +60,7 @@ describe('RolesListPage', () => {
 
   beforeEach(() => {
     mockNavigate = vi.fn();
+    environment.readOnly = false;
     vi.mocked(useNavigate).mockReturnValue(mockNavigate as unknown as NavigateFunction);
   });
 
@@ -79,5 +90,13 @@ describe('RolesListPage', () => {
     await waitFor(() => {
       expect(mockNavigate).toHaveBeenCalledWith('/roles/create');
     });
+  });
+
+  it('should hide the Add Role button in a gateway view', () => {
+    environment.readOnly = true;
+    render(<RolesListPage />);
+
+    expect(screen.queryByRole('button', {name: /add role/i})).not.toBeInTheDocument();
+    expect(screen.getByTestId('roles-list')).toBeInTheDocument();
   });
 });

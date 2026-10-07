@@ -41,6 +41,25 @@ const mockTheme = {
 };
 
 const mockUseGetTheme = vi.fn();
+const mockEnvironment = vi.hoisted(() => ({
+  readOnly: false,
+  gateway: undefined as {id: string} | undefined,
+  applied: undefined as Record<string, unknown> | undefined,
+}));
+
+vi.mock('@thunderid/contexts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@thunderid/contexts')>()),
+  useEnvironment: () => ({readOnly: mockEnvironment.readOnly}),
+}));
+
+// In a gateway's view the theme it applied stands in for the live read; in the draft the live read is used.
+vi.mock('@thunderid/components', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@thunderid/components')>()),
+  useEnvironmentResource: (_type: string, _id: string | undefined, live: Record<string, unknown>) =>
+    mockEnvironment.applied
+      ? {...live, data: mockEnvironment.applied, presence: {gateway: mockEnvironment.gateway, source: 'applied'}}
+      : {...live, presence: {source: 'live'}},
+}));
 
 vi.mock('@thunderid/design', () => ({
   useGetTheme: (...args: unknown[]) => mockUseGetTheme(...args) as unknown,
@@ -76,6 +95,62 @@ function TestConsumer() {
 describe('ThemeBuilderProvider', () => {
   beforeEach(() => {
     mockUseGetTheme.mockReset();
+    mockEnvironment.readOnly = false;
+    mockEnvironment.gateway = undefined;
+    mockEnvironment.applied = undefined;
+  });
+
+  describe('In a gateway view', () => {
+    const live = {data: {id: 'theme-123', displayName: 'Ocean Blue', theme: mockTheme}, isLoading: false};
+    const applied = {
+      id: 'theme-123',
+      displayName: 'Ocean Blue',
+      theme: {
+        ...mockTheme,
+        colorSchemes: {
+          ...mockTheme.colorSchemes,
+          light: {palette: {...mockTheme.colorSchemes.light.palette, primary: {main: '#00ff00'}}},
+        },
+      },
+    };
+
+    it('drafts the theme the gateway applied and drops edits', async () => {
+      mockUseGetTheme.mockReturnValue(live);
+      mockEnvironment.readOnly = true;
+      mockEnvironment.gateway = {id: 'gw-1'};
+      mockEnvironment.applied = applied;
+      const user = userEvent.setup();
+      render(
+        <ThemeBuilderProvider>
+          <TestConsumer />
+        </ThemeBuilderProvider>,
+      );
+
+      expect(screen.getByTestId('draft-primary')).toHaveTextContent('#00ff00');
+      await user.click(screen.getByText('UpdatePrimary'));
+      expect(screen.getByTestId('draft-primary')).toHaveTextContent('#00ff00');
+      expect(screen.getByTestId('isDirty')).toHaveTextContent('false');
+    });
+
+    it('takes the draft afresh when the environment changes', () => {
+      mockUseGetTheme.mockReturnValue(live);
+      const {rerender} = render(
+        <ThemeBuilderProvider>
+          <TestConsumer />
+        </ThemeBuilderProvider>,
+      );
+      expect(screen.getByTestId('draft-primary')).toHaveTextContent('#1a73e8');
+
+      mockEnvironment.readOnly = true;
+      mockEnvironment.gateway = {id: 'gw-1'};
+      mockEnvironment.applied = applied;
+      rerender(
+        <ThemeBuilderProvider>
+          <TestConsumer />
+        </ThemeBuilderProvider>,
+      );
+      expect(screen.getByTestId('draft-primary')).toHaveTextContent('#00ff00');
+    });
   });
 
   describe('Loading state', () => {

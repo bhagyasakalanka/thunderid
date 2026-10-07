@@ -2,8 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {useIsMutating} from '@tanstack/react-query';
-import {PageLoadingAnimation, QueryErrorNotice, UnsavedChangesBar} from '@thunderid/components';
+import {
+  EnvironmentDeploymentNotice,
+  PageLoadingAnimation,
+  QueryErrorNotice,
+  UnsavedChangesBar,
+  useEnvironmentResource,
+} from '@thunderid/components';
 import {arePermissionsEqual, type ResourcePermissions} from '@thunderid/configure-resource-servers';
+import {useEnvironment} from '@thunderid/contexts';
 import {useLogger} from '@thunderid/logger/react';
 import {getErrorMessage, isEqualIgnoringEmpty} from '@thunderid/utils';
 import {
@@ -61,7 +68,10 @@ export default function RoleEditPage(): JSX.Element {
   const {t} = useTranslation('roles');
   const logger = useLogger('RoleEditPage');
 
-  const {data: role, isLoading, error: fetchError, refetch} = useGetRole(roleId ?? '');
+  const liveRole = useGetRole(roleId ?? '');
+  const {data: role, isLoading, error: fetchError, refetch} = useEnvironmentResource<Role>('role', roleId, liveRole);
+  const {readOnly} = useEnvironment();
+  const isReadOnly = role?.isReadOnly === true || readOnly;
   const updateRole = useUpdateRole();
   const isRoleUpdating = useIsMutating({mutationKey: ROLE_MUTATION_KEY}) > 0;
 
@@ -174,6 +184,7 @@ export default function RoleEditPage(): JSX.Element {
   if (!role) {
     return (
       <PageContent>
+        <EnvironmentDeploymentNotice resourceType="role" resourceId={roleId} />
         <Alert severity="warning" sx={{mb: 2}}>
           {t('edit.page.notFound', 'Role not found')}
         </Alert>
@@ -193,6 +204,7 @@ export default function RoleEditPage(): JSX.Element {
 
   return (
     <PageContent>
+      <EnvironmentDeploymentNotice resourceType="role" resourceId={roleId} />
       {role.isReadOnly && (
         <Alert severity="info" sx={{mb: 2}}>
           {t('common:messages.readOnlyResource', 'This resource is read-only and cannot be modified.')}
@@ -237,7 +249,7 @@ export default function RoleEditPage(): JSX.Element {
             ) : (
               <>
                 <Typography variant="h3">{editedRole.name ?? role.name}</Typography>
-                {!role.isReadOnly && (
+                {!isReadOnly && (
                   <IconButton
                     size="small"
                     aria-label={t('edit.page.editName', 'Edit role name')}
@@ -289,7 +301,7 @@ export default function RoleEditPage(): JSX.Element {
                 <Typography component="span" variant="body2" color="text.secondary">
                   {effectiveDescription || t('edit.page.description.empty', 'No description')}
                 </Typography>
-                {!role.isReadOnly && (
+                {!isReadOnly && (
                   <IconButton
                     size="small"
                     aria-label={t('edit.page.editDescription', 'Edit role description')}
@@ -346,16 +358,16 @@ export default function RoleEditPage(): JSX.Element {
           <EditPermissionsSettings
             permissions={editedRole.permissions ?? serverPermissions}
             onPermissionsChange={handlePermissionsChange}
-            isReadOnly={role.isReadOnly}
+            isReadOnly={isReadOnly}
           />
         </TabPanel>
 
         <TabPanel value={activeTab} index={2}>
-          <EditAssignmentsSettings roleId={role.id} isReadOnly={role.isReadOnly} />
+          <EditAssignmentsSettings roleId={role.id} isReadOnly={isReadOnly} />
         </TabPanel>
 
         <TabPanel value={activeTab} index={3}>
-          <EditAdvancedSettings onDeleteClick={role.isReadOnly ? undefined : () => setDeleteDialogOpen(true)} />
+          <EditAdvancedSettings onDeleteClick={isReadOnly ? undefined : () => setDeleteDialogOpen(true)} />
         </TabPanel>
       </>
 
@@ -375,7 +387,7 @@ export default function RoleEditPage(): JSX.Element {
           saveLabel={t('edit.page.save', 'Save Changes')}
           savingLabel={t('edit.page.saving', 'Saving...')}
           isSaving={updateRole.isPending}
-          saveDisabled={isRoleUpdating || role.isReadOnly === true}
+          saveDisabled={isRoleUpdating || isReadOnly}
           error={
             updateRole.error
               ? getErrorMessage(updateRole.error, t, 'update.error', 'Failed to update role. Please try again.')

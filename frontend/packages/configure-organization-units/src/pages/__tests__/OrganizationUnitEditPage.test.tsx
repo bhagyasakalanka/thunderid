@@ -8,6 +8,19 @@ import {describe, it, expect, vi, beforeEach, beforeAll} from 'vitest';
 import type {OrganizationUnit} from '../../models/organization-unit';
 import OrganizationUnitEditPage from '../OrganizationUnitEditPage';
 
+const {environment} = vi.hoisted(() => ({
+  // What the selected environment shows: readOnly and applied are set by a gateway view test.
+  environment: {readOnly: false, applied: undefined as unknown, missing: false},
+}));
+
+vi.mock('@thunderid/contexts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@thunderid/contexts')>();
+  return {
+    ...actual,
+    useEnvironment: () => ({...actual.useEnvironment(), readOnly: environment.readOnly}),
+  };
+});
+
 // Mock navigate, useParams, and useLocation
 const mockNavigate = vi.fn();
 const mockUseLocation = vi.fn<() => {state: unknown; pathname: string; search: string; hash: string; key: string}>();
@@ -124,6 +137,10 @@ vi.mock('@thunderid/components', async (importOriginal) => {
   return {
     ...actual,
     EmojiPicker: vi.fn(() => null),
+    EnvironmentDeploymentNotice: () =>
+      environment.readOnly ? <div data-testid="environment-deployment-notice" /> : null,
+    useEnvironmentResource: (_type: string, _id: string, live: {data: unknown}) =>
+      environment.applied || environment.missing ? {...live, data: environment.applied} : live,
     UnsavedChangesBar: vi.fn(
       ({
         message,
@@ -131,6 +148,7 @@ vi.mock('@thunderid/components', async (importOriginal) => {
         saveLabel,
         savingLabel,
         isSaving,
+        saveDisabled = false,
         error = undefined,
         onReset,
         onSave,
@@ -140,6 +158,7 @@ vi.mock('@thunderid/components', async (importOriginal) => {
         saveLabel: string;
         savingLabel: string;
         isSaving: boolean;
+        saveDisabled?: boolean;
         error?: string;
         onReset: () => void;
         onSave: () => void;
@@ -150,7 +169,7 @@ vi.mock('@thunderid/components', async (importOriginal) => {
           <button type="button" onClick={onReset}>
             {resetLabel}
           </button>
-          <button type="button" onClick={onSave} disabled={isSaving}>
+          <button type="button" onClick={onSave} disabled={isSaving || saveDisabled}>
             {isSaving ? savingLabel : saveLabel}
           </button>
         </div>
@@ -229,6 +248,9 @@ describe('OrganizationUnitEditPage', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    environment.readOnly = false;
+    environment.applied = undefined;
+    environment.missing = false;
     mockOrganizationUnitId = 'ou-123';
     mockNavigate.mockReset();
     mockMutateAsync.mockReset();
@@ -1390,6 +1412,70 @@ describe('OrganizationUnitEditPage', () => {
             }) as unknown,
           }),
         );
+      });
+    });
+  });
+
+  it('should show no deployment notice in the draft', () => {
+    renderWithProviders(<OrganizationUnitEditPage />);
+
+    expect(screen.queryByTestId('environment-deployment-notice')).not.toBeInTheDocument();
+  });
+
+  it('shows the not found state with the deployment notice for an organization unit the gateway does not run', () => {
+    environment.readOnly = true;
+    environment.missing = true;
+    renderWithProviders(<OrganizationUnitEditPage />);
+
+    expect(screen.getByText(t('organizationUnits:edit.page.notFound'))).toBeInTheDocument();
+    expect(screen.getByTestId('environment-deployment-notice')).toBeInTheDocument();
+  });
+
+  describe('Gateway view', () => {
+    beforeEach(() => {
+      environment.readOnly = true;
+      environment.applied = {...mockOrganizationUnit, name: 'Applied Organization Unit', description: 'As applied'};
+    });
+
+    it('should show the organization unit as the gateway applied it, with the deployment notice', () => {
+      renderWithProviders(<OrganizationUnitEditPage />);
+
+      expect(screen.getByTestId('environment-deployment-notice')).toBeInTheDocument();
+      expect(screen.getByText('Applied Organization Unit')).toBeInTheDocument();
+      expect(screen.getByText('As applied')).toBeInTheDocument();
+      expect(screen.queryByText('This resource is read-only and cannot be modified.')).not.toBeInTheDocument();
+    });
+
+    it('should hide delete', () => {
+      renderWithProviders(<OrganizationUnitEditPage />);
+
+      fireEvent.click(screen.getByRole('tab', {name: t('organizationUnits:edit.page.tabs.advanced')}));
+
+      expect(
+        screen.queryByRole('button', {name: t('organizationUnits:edit.general.dangerZone.delete.button.label')}),
+      ).not.toBeInTheDocument();
+    });
+
+    it('should disable the appearance settings', async () => {
+      renderWithProviders(<OrganizationUnitEditPage />);
+
+      fireEvent.click(screen.getByRole('tab', {name: t('organizationUnits:edit.page.tabs.customization')}));
+
+      await waitFor(() => {
+        const comboboxes = screen.getAllByRole('combobox');
+        expect(comboboxes.length).toBeGreaterThan(0);
+        comboboxes.forEach((combobox) => expect(combobox).toBeDisabled());
+      });
+    });
+
+    it('should disable save', async () => {
+      renderWithProviders(<OrganizationUnitEditPage />);
+
+      fireEvent.click(screen.getByRole('button', {name: t('organizationUnits:edit.page.logoUpdate.label')}));
+      fireEvent.click(screen.getByText('Select Icon'));
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', {name: t('organizationUnits:edit.actions.save.label')})).toBeDisabled();
       });
     });
   });

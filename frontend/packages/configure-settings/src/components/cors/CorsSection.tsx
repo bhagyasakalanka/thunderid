@@ -1,7 +1,14 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {QueryErrorNotice, SettingsCard, UnsavedChangesBar} from '@thunderid/components';
+import {
+  EnvironmentDeploymentNotice,
+  QueryErrorNotice,
+  SettingsCard,
+  UnsavedChangesBar,
+  useEnvironmentResource,
+} from '@thunderid/components';
+import {useEnvironment} from '@thunderid/contexts';
 import {getErrorMessage} from '@thunderid/utils';
 import {Box, Button, Divider, Skeleton, Stack, Typography} from '@wso2/oxygen-ui';
 import {InfoIcon, Plus} from '@wso2/oxygen-ui-icons-react';
@@ -14,9 +21,14 @@ import useUpdateCorsConfig from '../../api/useUpdateCorsConfig';
 import useAllowedOriginsDraft from '../../hooks/useAllowedOriginsDraft';
 import {toRows} from '../../utils/allowedOriginRows';
 
+/** The server-config section this card edits, as an export names it. */
+const CORS_SECTION = 'cors';
+
 export default function CorsSection(): JSX.Element {
   const {t} = useTranslation();
-  const {data, isLoading, error, refetch} = useGetCorsConfig();
+  const {readOnly} = useEnvironment();
+  const live = useGetCorsConfig();
+  const {data, isLoading, error, refetch} = useEnvironmentResource('server_config', CORS_SECTION, live);
   const updateCors = useUpdateCorsConfig();
   const origins = useAllowedOriginsDraft(data);
 
@@ -85,6 +97,12 @@ export default function CorsSection(): JSX.Element {
         onRetry={() => void refetch()}
       />
     );
+  } else if (readOnly && !hasReadOnlyOrigins && origins.draft.length === 0) {
+    body = (
+      <Typography variant="body2" color="text.secondary" data-testid="cors-empty">
+        {t('settings:cors.empty', 'No allowed origins.')}
+      </Typography>
+    );
   } else {
     body = (
       <>
@@ -103,6 +121,7 @@ export default function CorsSection(): JSX.Element {
             <AllowedOriginRow
               key={row.id}
               testId="cors-origin-row"
+              locked={readOnly}
               type={row.type}
               value={row.value}
               error={origins.errors[row.id]}
@@ -125,18 +144,20 @@ export default function CorsSection(): JSX.Element {
           ))}
         </Stack>
 
-        <Button
-          variant="text"
-          color="primary"
-          startIcon={<Plus size={18} />}
-          onClick={() => {
-            clearSaveError();
-            origins.addRow();
-          }}
-          sx={{mt: 2}}
-        >
-          {t('settings:cors.addOrigin')}
-        </Button>
+        {!readOnly && (
+          <Button
+            variant="text"
+            color="primary"
+            startIcon={<Plus size={18} />}
+            onClick={() => {
+              clearSaveError();
+              origins.addRow();
+            }}
+            sx={{mt: 2}}
+          >
+            {t('settings:cors.addOrigin')}
+          </Button>
+        )}
 
         {hasReadOnlyOrigins && (
           <>
@@ -157,10 +178,11 @@ export default function CorsSection(): JSX.Element {
 
   return (
     <>
+      <EnvironmentDeploymentNotice resourceType="server_config" resourceId={CORS_SECTION} />
       <SettingsCard title={t('settings:cors.card.title')} description={t('settings:cors.card.description')}>
         {body}
       </SettingsCard>
-      {origins.dirty && (
+      {origins.dirty && !readOnly && (
         <UnsavedChangesBar
           message={t('settings:cors.unsavedChanges', 'You have unsaved changes')}
           resetLabel={t('settings:cors.reset', 'Reset')}

@@ -8,6 +8,18 @@ import ConnectionsList from '../ConnectionsList';
 
 const navigateMock = vi.fn();
 const useConnectionsMock = vi.hoisted(() => vi.fn());
+const mockEnvironment = vi.hoisted(() => ({readOnly: false, applied: [] as unknown[]}));
+
+vi.mock('@thunderid/contexts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@thunderid/contexts')>()),
+  useEnvironment: () => ({readOnly: mockEnvironment.readOnly}),
+}));
+
+vi.mock('@thunderid/components', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@thunderid/components')>()),
+  useEnvironmentList: (_type: string, live: Record<string, unknown>, toPage: (resources: unknown[]) => unknown) =>
+    mockEnvironment.readOnly ? {...live, data: toPage(mockEnvironment.applied)} : live,
+}));
 
 vi.mock('react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('react-router')>()),
@@ -56,6 +68,28 @@ describe('ConnectionsList', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockConnections([]);
+    mockEnvironment.readOnly = false;
+    mockEnvironment.applied = [];
+  });
+
+  it('in the draft, lists the vendors to set up and the add custom connection card', () => {
+    mockConnections([OIDC_FEDERATION]);
+    render(<ConnectionsList />);
+
+    expect(screen.getByTestId('connection-card-google')).toBeInTheDocument();
+    expect(screen.getByTestId('connection-add-custom-card')).toBeInTheDocument();
+  });
+
+  it('in a gateway view, lists only the connections the gateway runs, with no vendor setup or add custom card', () => {
+    mockEnvironment.readOnly = true;
+    mockConnections([OIDC_FEDERATION, TRUSTED_ISSUER]);
+    mockEnvironment.applied = [{id: 'c2', name: 'Acme Issuer', type: 'oidc', idJagEnabled: true}];
+    render(<ConnectionsList />);
+
+    expect(screen.getByTestId('connection-card-trusted-idp:c2')).toBeInTheDocument();
+    expect(screen.queryByTestId('connection-card-oidc:c1')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('connection-card-google')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('connection-add-custom-card')).not.toBeInTheDocument();
   });
 
   it('hides the category chips that no connection card belongs to', () => {

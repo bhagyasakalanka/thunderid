@@ -32,6 +32,8 @@ export interface TranslationJsonEditorProps {
    * The parent uses this to update its local changes state.
    */
   onChange: (changes: Record<string, string>) => void;
+  /** Shows the values without letting them be edited. */
+  readOnly?: boolean;
 }
 
 /**
@@ -74,6 +76,7 @@ export default function TranslationJsonEditor({
   isCustomNamespace,
   colorMode,
   onChange,
+  readOnly = false,
 }: TranslationJsonEditorProps): JSX.Element {
   const {t} = useTranslation('translations');
 
@@ -169,6 +172,7 @@ export default function TranslationJsonEditor({
             wordWrap: 'on',
             lineNumbers: 'off',
             folding: false,
+            readOnly,
           }}
         />
       </Box>

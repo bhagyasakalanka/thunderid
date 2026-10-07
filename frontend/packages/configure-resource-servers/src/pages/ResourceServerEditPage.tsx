@@ -1,8 +1,15 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {PageLoadingAnimation, QueryErrorNotice, SettingsCard, UnsavedChangesBar} from '@thunderid/components';
-import {useToast} from '@thunderid/contexts';
+import {
+  EnvironmentDeploymentNotice,
+  PageLoadingAnimation,
+  QueryErrorNotice,
+  SettingsCard,
+  UnsavedChangesBar,
+  useEnvironmentResource,
+} from '@thunderid/components';
+import {useEnvironment, useToast} from '@thunderid/contexts';
 import {useLogger} from '@thunderid/logger/react';
 import {getErrorMessage, isEqualIgnoringEmpty} from '@thunderid/utils';
 import {
@@ -32,6 +39,7 @@ import ResourceTree from '../components/resource-tree/ResourceTree';
 import ResourceServerDeleteDialog from '../components/ResourceServerDeleteDialog';
 import SetDefaultResourceServerDialog from '../components/SetDefaultResourceServerDialog';
 import {getResourceServerTypeLabel} from '../config/resource-server-types';
+import ResourceServerQueryKeys from '../constants/resource-server-query-keys';
 import useResourceServerRoutes from '../hooks/useResourceServerRoutes';
 import {AuthorizationEngines, isDefaultEligibleType, type AuthorizationEngine} from '../models/resource-server';
 
@@ -73,8 +81,21 @@ export default function ResourceServerEditPage(): JSX.Element {
   const {showToast} = useToast();
   const logger = useLogger('ResourceServerEditPage');
 
-  const {data: resourceServer, isLoading, error, refetch} = useGetResourceServer(resourceServerId ?? '');
-  const {data: defaultConfig, isLoading: isDefaultLoading, error: defaultError} = useGetDefaultResourceServer();
+  const {readOnly} = useEnvironment();
+  const liveResourceServer = useGetResourceServer(resourceServerId ?? '');
+  const {
+    data: resourceServer,
+    isLoading,
+    error,
+    refetch,
+    presence,
+  } = useEnvironmentResource('resource_server', resourceServerId, liveResourceServer);
+  const liveDefault = useGetDefaultResourceServer();
+  const {
+    data: defaultConfig,
+    isLoading: isDefaultLoading,
+    error: defaultError,
+  } = useEnvironmentResource('server_config', ResourceServerQueryKeys.DEFAULT_RESOURCE_SERVER, liveDefault);
   const updateRs = useUpdateResourceServer();
 
   // Resolves an error through the `resourceServers` catalog. `t` defaults to the `common`
@@ -209,6 +230,7 @@ export default function ResourceServerEditPage(): JSX.Element {
   if (!resourceServer) {
     return (
       <PageContent>
+        <EnvironmentDeploymentNotice resourceType="resource_server" resourceId={resourceServerId} />
         <Alert severity="warning" sx={{mb: 2}}>
           {t('resourceServers:edit.notFound', 'Resource server not found.')}
         </Alert>
@@ -238,9 +260,11 @@ export default function ResourceServerEditPage(): JSX.Element {
   // Only API and custom servers are eligible, as in the list menu and the creation wizard. The badge
   // above is deliberately not gated on this, so a default set outside the console still shows up.
   const isDefaultEligible = isDefaultEligibleType(resourceServer.type);
+  const isReadOnly = resourceServer.isReadOnly === true || readOnly;
 
   return (
     <PageContent>
+      <EnvironmentDeploymentNotice resourceType="resource_server" resourceId={resourceServerId} />
       {resourceServer.isReadOnly && (
         <Alert severity="info" sx={{mb: 2}}>
           {t('common:messages.readOnlyResource', 'This resource is read-only and cannot be modified.')}
@@ -278,7 +302,7 @@ export default function ResourceServerEditPage(): JSX.Element {
             ) : (
               <>
                 <Typography variant="h3">{editedFields.name ?? resourceServer.name}</Typography>
-                {!resourceServer.isReadOnly && (
+                {!isReadOnly && (
                   <IconButton
                     size="small"
                     onClick={() => {
@@ -308,7 +332,7 @@ export default function ResourceServerEditPage(): JSX.Element {
                 />
               </Tooltip>
             )}
-            {isDefaultReady && !isDefault && !isDefaultLocked && isDefaultEligible && (
+            {isDefaultReady && !isDefault && !isDefaultLocked && isDefaultEligible && !readOnly && (
               <Button variant="contained" size="small" onClick={() => setDefaultDialogOpen(true)}>
                 {t('resourceServers:actions.setAsDefault', 'Set as default')}
               </Button>
@@ -347,7 +371,7 @@ export default function ResourceServerEditPage(): JSX.Element {
                     resourceServer.description ??
                     t('resourceServers:edit.noDescription', 'No description')}
                 </Typography>
-                {!resourceServer.isReadOnly && (
+                {!isReadOnly && (
                   <IconButton
                     size="small"
                     onClick={() => {
@@ -403,6 +427,7 @@ export default function ResourceServerEditPage(): JSX.Element {
       <TabPanel value={activeTab} index={TAB_RESOURCES}>
         <Box sx={{height: 'calc(100vh - 540px)', minHeight: 300}}>
           <ResourceTree
+            key={presence.source}
             resourceServer={resourceServer}
             onRefresh={() => {
               void refetch();
@@ -413,7 +438,7 @@ export default function ResourceServerEditPage(): JSX.Element {
 
       <TabPanel value={activeTab} index={TAB_ADVANCED}>
         <AdvancedTab
-          key={resourceServer.id}
+          key={`${resourceServer.id}-${presence.source}`}
           resourceServer={resourceServer}
           identifier={editedFields.identifier ?? resourceServer.identifier ?? ''}
           authorizationEngine={
@@ -427,7 +452,7 @@ export default function ResourceServerEditPage(): JSX.Element {
           onPDPConnectionChange={(v) => handleFieldChange('pdpConnectionId', v)}
         />
 
-        {!resourceServer.isReadOnly && (
+        {!isReadOnly && (
           <SettingsCard
             title={t('resourceServers:edit.dangerZone.title', 'Danger Zone')}
             description={
@@ -482,7 +507,7 @@ export default function ResourceServerEditPage(): JSX.Element {
           saveLabel={t('common:save', 'Save')}
           savingLabel={t('common:saving', 'Saving…')}
           isSaving={updateRs.isPending}
-          saveDisabled={resourceServer.isReadOnly}
+          saveDisabled={isReadOnly}
           error={
             updateRs.error
               ? getErrorMessage(updateRs.error, tForErrors, 'edit.saveError', 'Failed to save changes.')
