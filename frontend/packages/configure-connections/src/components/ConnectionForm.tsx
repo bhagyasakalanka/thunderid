@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {EnvironmentValue} from '@thunderid/components';
+import {useEnvironment} from '@thunderid/contexts';
 import {
   Box,
   Collapse,
@@ -70,6 +71,13 @@ export default function ConnectionForm({
   onSecretReplacingChange,
 }: ConnectionFormProps): JSX.Element {
   const {t} = useTranslation('connections');
+  const {selected} = useEnvironment();
+  // The sign-in UI that receives a vendor's callback is the gateway's own, so the redirect URI a
+  // vendor is configured with is the selected gateway's. Only what is shown follows it; the value the
+  // connection stores is left as it is.
+  const environmentCallbackUrl: string | undefined = selected?.baseUrl
+    ? `${selected.baseUrl.replace(/\/+$/, '')}/gate/callback`
+    : undefined;
   const fields: ConnectionFieldDef[] = useMemo(
     () =>
       fieldsForMode(type, mode).filter(
@@ -230,7 +238,11 @@ export default function ConnectionForm({
             <ReadOnlyCopyField
               id={`connection-field-${field.name}`}
               label={label}
-              value={values[field.name] ?? ''}
+              value={
+                field.name === 'redirectUri' && environmentCallbackUrl
+                  ? environmentCallbackUrl
+                  : (values[field.name] ?? '')
+              }
               helperText={
                 field.name === 'redirectUri'
                   ? t('form.fields.redirectUri.help', {vendor: vendorDisplayName})

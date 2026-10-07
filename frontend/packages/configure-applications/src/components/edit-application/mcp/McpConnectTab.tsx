@@ -1,7 +1,7 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {SettingsCard} from '@thunderid/components';
+import {EnvironmentValue, SettingsCard} from '@thunderid/components';
 import {Box, Button, Chip, FormControl, FormLabel, Stack, TextField} from '@wso2/oxygen-ui';
 import {Bot, UserRound} from '@wso2/oxygen-ui-icons-react';
 import type {JSX} from 'react';
@@ -165,12 +165,19 @@ export default function McpConnectTab({
             />
 
             {oauth2Config?.clientId && (
-              <CopyableField
-                id="mcp-connect-client-id"
+              <EnvironmentValue
+                resourceType="application"
+                resourceId={application.id}
+                field="clientId"
                 label={clientIdLabel}
-                value={oauth2Config.clientId}
-                copyAriaLabel={`${copyLabel} ${clientIdLabel}`}
-              />
+              >
+                <CopyableField
+                  id="mcp-connect-client-id"
+                  label={clientIdLabel}
+                  value={oauth2Config.clientId}
+                  copyAriaLabel={`${copyLabel} ${clientIdLabel}`}
+                />
+              </EnvironmentValue>
             )}
 
             {isConfidentialClient && (

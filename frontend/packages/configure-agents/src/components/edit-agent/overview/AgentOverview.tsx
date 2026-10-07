@@ -3,6 +3,7 @@
 
 import {
   CopyableField,
+  EnvironmentCopyableField,
   ExternalLinkConfirmDialog,
   LangChainLogo,
   useExternalLinkConfirmation,
@@ -194,7 +195,13 @@ export default function AgentOverview({
       <Box>
         <CopyableField label={t('agents:edit.general.labels.agentId', 'Agent ID')} value={agent.id} />
         {agent.clientId && (
-          <CopyableField label={t('agents:edit.credentials.clientId.title', 'Client ID')} value={agent.clientId} />
+          <EnvironmentCopyableField
+            resourceType="agent"
+            resourceId={agent.id}
+            field="clientId"
+            label={t('agents:edit.credentials.clientId.title', 'Client ID')}
+            value={agent.clientId}
+          />
         )}
         {ownerLabel && <CopyableField label={t('agents:edit.general.labels.ownerId', 'Owner ID')} value={ownerLabel} />}
         <CopyableField

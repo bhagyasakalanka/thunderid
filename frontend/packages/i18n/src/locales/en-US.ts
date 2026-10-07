@@ -86,6 +86,7 @@ const translations = {
     'environment.value.notSet': 'Not set in {{environment}}. Applying the configuration to it is refused until it is.',
     'environment.value.notSetElsewhere':
       'Not set in {{environment}}. A new resource has its values set on {{default}}, the default gateway, only. Applying the configuration to {{environment}} is refused until it is set here.',
+    'environment.value.notSetShort': 'Not set in {{environment}}',
     'environment.value.regenerate': 'Regenerate',
     'environment.value.set': 'Set value',
 

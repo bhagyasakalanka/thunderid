@@ -5,6 +5,7 @@ import {
   AndroidLogo,
   AppleIcon,
   CopyableField,
+  EnvironmentCopyableField,
   ExpressIcon,
   ExternalLinkConfirmDialog,
   FlutterLogo,
@@ -415,7 +416,13 @@ export default function IntegrationGuides({
       <Box>
         <CopyableField label={t('applications:edit.general.labels.applicationId')} value={application.id} />
         {oauth2Config?.clientId && (
-          <CopyableField label={t('applications:edit.general.labels.clientId')} value={oauth2Config.clientId} />
+          <EnvironmentCopyableField
+            resourceType="application"
+            resourceId={application.id}
+            field="clientId"
+            label={t('applications:edit.general.labels.clientId')}
+            value={oauth2Config.clientId}
+          />
         )}
         {application.ouId && (
           <CopyableField

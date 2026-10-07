@@ -1,6 +1,7 @@
 // Copyright 2025 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
+import {EnvironmentProvider} from '@thunderid/contexts';
 import {fireEvent, render, screen} from '@thunderid/test-utils';
 import {type ComponentProps, type ReactNode, useState} from 'react';
 import {describe, expect, it, vi} from 'vitest';
@@ -142,6 +143,22 @@ describe('ConnectionForm', () => {
     expect(screen.getByTestId('connection-field-redirectUri-copy')).toBeInTheDocument();
     expect(screen.getByText('Add this exact URI to your Google Login OAuth client.')).toBeInTheDocument();
     expect(screen.getByText(/Space-separated scopes to request during sign-in\. Defaults to/)).toBeInTheDocument();
+  });
+
+  it("shows the selected environment's own callback as the redirect URI, without changing the value", () => {
+    const onFieldChange = vi.fn();
+    render(
+      <EnvironmentProvider
+        environments={[{id: 'gw-2', name: 'staging', baseUrl: 'https://staging.example.com:8097/'}]}
+        selectedId="gw-2"
+        onSelect={vi.fn()}
+      >
+        <ConnectionForm {...baseProps} mode="edit" hasStoredSecret onFieldChange={onFieldChange} />
+      </EnvironmentProvider>,
+    );
+
+    expect(getConnectionField('redirectUri')).toHaveValue('https://staging.example.com:8097/gate/callback');
+    expect(onFieldChange).not.toHaveBeenCalled();
   });
 
   it('shows the GitHub scopes default instead of the OIDC scopes default', () => {

@@ -8,6 +8,8 @@ export {default as CspOriginHint} from './CspOriginHint/CspOriginHint';
 export type {CspOriginHintProps} from './CspOriginHint/CspOriginHint';
 export {resolveCspHint} from './CspOriginHint/resolveCspHint';
 export type {CspResourceType, CspHint} from './CspOriginHint/resolveCspHint';
+export {default as EnvironmentCopyableField} from './EnvironmentValue/EnvironmentCopyableField';
+export type {EnvironmentCopyableFieldProps} from './EnvironmentValue/EnvironmentCopyableField';
 export {default as EnvironmentDeploymentNotice} from './EnvironmentValue/EnvironmentDeploymentNotice';
 export type {EnvironmentDeploymentNoticeProps} from './EnvironmentValue/EnvironmentDeploymentNotice';
 export {default as EnvironmentModeBanner} from './EnvironmentValue/EnvironmentModeBanner';
