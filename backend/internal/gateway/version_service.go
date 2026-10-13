@@ -62,6 +62,7 @@ type versionService struct {
 	versions versionStoreInterface
 	exporter export.ExportServiceInterface
 	client   gatewayClientInterface
+	names    actorNamer
 	logger   *log.Logger
 	applying gatewayLocks
 }
@@ -108,12 +109,13 @@ func (l *gatewayLocks) lock(gatewayID string) func() {
 }
 
 func newVersionService(gateways storeInterface, versions versionStoreInterface,
-	exporter export.ExportServiceInterface, client gatewayClientInterface) *versionService {
+	exporter export.ExportServiceInterface, client gatewayClientInterface, names actorNamer) *versionService {
 	return &versionService{
 		gateways: gateways,
 		versions: versions,
 		exporter: exporter,
 		client:   client,
+		names:    names,
 		logger:   log.GetLogger().With(log.String(log.LoggerKeyComponentName, "GatewayVersionService")),
 	}
 }
@@ -174,11 +176,11 @@ func (s *versionService) Capture(ctx context.Context, req CaptureRequest) (*Vers
 	content := joinBundle(documents)
 	hash := versionHash(content)
 	if kept, svcErr := s.versionWithHash(ctx, hash); svcErr != nil || kept != nil {
-		return kept, svcErr
+		return s.named(ctx, kept), svcErr
 	}
 
 	captured := Version{Hash: hash, Name: strings.TrimSpace(req.Name), Note: strings.TrimSpace(req.Note),
-		Resources: content, variables: sealed, Current: req.Current}
+		Resources: content, variables: sealed, Current: req.Current, CreatedBy: actorOf(ctx)}
 	if req.Current {
 		// The current version is kept up to date in place until a gateway holds it, so a console that
 		// captures on every change leaves one version for them rather than one each.
@@ -187,7 +189,7 @@ func (s *versionService) Capture(ctx context.Context, req CaptureRequest) (*Vers
 			// A capture of the same configuration at the same moment collides on its hash; the one
 			// refused answers with the version the other kept.
 			if kept, svcErr := s.versionWithHash(ctx, hash); svcErr == nil && kept != nil {
-				return kept, nil
+				return s.named(ctx, kept), nil
 			}
 			s.logger.Error(ctx, "Failed to replace the current version", log.Error(err))
 			return nil, &tidcommon.InternalServerError
@@ -196,7 +198,7 @@ func (s *versionService) Capture(ctx context.Context, req CaptureRequest) (*Vers
 			s.logger.Info(ctx, "Replaced the current configuration version", log.String("version", replaced.Hash),
 				log.Int("skipped", len(skipped)))
 			replaced.Skipped = skipped
-			return replaced, nil
+			return s.named(ctx, replaced), nil
 		}
 	}
 
@@ -205,7 +207,7 @@ func (s *versionService) Capture(ctx context.Context, req CaptureRequest) (*Vers
 		// Two captures of the same configuration at once collide on its hash; the one refused answers
 		// with the version the other kept.
 		if kept, svcErr := s.versionWithHash(ctx, hash); svcErr == nil && kept != nil {
-			return kept, nil
+			return s.named(ctx, kept), nil
 		}
 		s.logger.Error(ctx, "Failed to capture a version", log.Error(err))
 		return nil, &tidcommon.InternalServerError
@@ -217,7 +219,17 @@ func (s *versionService) Capture(ctx context.Context, req CaptureRequest) (*Vers
 	s.logger.Info(ctx, "Captured a configuration version", log.String("version", version.Hash),
 		log.Int("skipped", len(skipped)))
 	version.Skipped = skipped
-	return version, nil
+	return s.named(ctx, version), nil
+}
+
+// named puts the name to the user a version records, through the trusted issuer's user lookup, and
+// leaves the user out when no name is known.
+func (s *versionService) named(ctx context.Context, version *Version) *Version {
+	if version != nil {
+		s.names.fill(ctx, version.CreatedBy)
+		version.CreatedBy = shown(version.CreatedBy)
+	}
+	return version
 }
 
 // versionHash names a version by the configuration it captured, so the same configuration is always
@@ -256,6 +268,14 @@ func (s *versionService) ListVersions(ctx context.Context) ([]Version, *tidcommo
 	for i := 1; i < len(versions); i++ {
 		versions[i].Current = false
 	}
+	actors := make([]*Actor, 0, len(versions))
+	for i := range versions {
+		actors = append(actors, versions[i].CreatedBy)
+	}
+	s.names.fill(ctx, actors...)
+	for i := range versions {
+		versions[i].CreatedBy = shown(versions[i].CreatedBy)
+	}
 	return versions, nil
 }
 
@@ -269,7 +289,7 @@ func (s *versionService) GetVersion(ctx context.Context, ref string) (*Version, 
 	}
 	read := *version
 	read.References = referencesOf(version.Resources)
-	return &read, nil
+	return s.named(ctx, &read), nil
 }
 
 // current reads the configuration as it stands, the way a capture reads it, without keeping it. Its
@@ -357,6 +377,8 @@ func (s *versionService) GetApplied(ctx context.Context,
 	if applied == nil {
 		return &AppliedVersion{GatewayID: gatewayID}, nil
 	}
+	s.names.fill(ctx, applied.AppliedBy)
+	applied.AppliedBy = shown(applied.AppliedBy)
 	return applied, nil
 }
 
@@ -548,7 +570,8 @@ func (s *versionService) write(ctx context.Context, gw *Gateway, target *Version
 	if isRevert || held != target.Seq {
 		previous = held
 	}
-	if err := s.versions.SetApplied(ctx, gw.ID, target.Seq, target.Hash, previous, held); err != nil {
+	if err := s.versions.SetApplied(ctx, gw.ID, target.Seq, target.Hash, previous, held,
+		actorOf(ctx)); err != nil {
 		if errors.Is(err, errVersionRemoved) {
 			s.logger.Warn(ctx, "A version was removed or replaced while it was applied to a gateway",
 				log.String("gatewayId", gw.ID), log.Int("version", target.Seq))
