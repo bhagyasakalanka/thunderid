@@ -18,11 +18,13 @@ import {
 import {Rocket} from '@wso2/oxygen-ui-icons-react';
 import {useEffect, useMemo, useState, type JSX} from 'react';
 import {useTranslation} from 'react-i18next';
+import ChangedValuesNotice from './ChangedValuesNotice';
 import ChangeList from './ChangeList';
 import MissingValuesFields from './MissingValuesFields';
 import {useApplyCheck, useApplyVersion} from '../api/useGatewayVersions';
 import {useSetStoredValue} from '../api/useStoredValues';
 import type {ApplyResult, Change, Gateway, Version} from '../models/deploy';
+import {errorCodeOf, isForbidden, REMOVALS_NEED_CONFIRMATION} from '../utils/apiError';
 import {fromListText} from '../utils/listValue';
 import {fieldKey, missingFields, type MissingField} from '../utils/missingValues';
 
@@ -62,6 +64,9 @@ export default function ApplyPanel({
   const [values, setValues] = useState<Record<string, string>>({});
   const [isWriting, setIsWriting] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  // Set once the control plane refused the deploy for removing more than its threshold allows: the
+  // removals are then pointed out, and the next click confirms them.
+  const [confirmRemovals, setConfirmRemovals] = useState(false);
 
   const changes: Change[] = useMemo(() => check.data?.diff.changes ?? [], [check.data]);
   const active = useMemo(() => changes.filter((change: Change) => change.change !== 'unchanged'), [changes]);
@@ -71,6 +76,7 @@ export default function ApplyPanel({
     setExcluded(new Set(active.filter((change: Change) => change.excluded).map((change: Change) => change.key)));
     setValues({});
     setError(null);
+    setConfirmRemovals(false);
   }, [target, check.dataUpdatedAt, active]);
 
   const selected = useMemo(
@@ -80,6 +86,7 @@ export default function ApplyPanel({
   const fields: MissingField[] = useMemo(() => missingFields(check.data?.missing), [check.data?.missing]);
   const unfilled = fields.filter((field: MissingField) => (values[fieldKey(field)] ?? '').trim() === '');
   const canDeploy = Boolean(gateway) && check.isSuccess && selected.size > 0 && unfilled.length === 0 && !isWriting;
+  const removals = active.filter((change: Change) => change.change === 'deleted' && selected.has(change.key)).length;
 
   const toggle = (key: string): void =>
     setExcluded((previous: Set<string>) => {
@@ -106,10 +113,18 @@ export default function ApplyPanel({
       // gateway's standing choice, a change it holds back would stay held back though ticked.
       const result = await apply.mutateAsync({
         gatewayId: gateway.id,
-        data: {version: version.version, selection: [...selected]},
+        data: {
+          version: version.version,
+          selection: [...selected],
+          ...(confirmRemovals ? {confirmRemovals: true} : {}),
+        },
       });
       onDeployed(gateway, result);
     } catch (caught: unknown) {
+      if (errorCodeOf(caught) === REMOVALS_NEED_CONFIRMATION) {
+        setConfirmRemovals(true);
+        return;
+      }
       setError(caught instanceof Error ? caught : new Error(String(caught)));
     } finally {
       setIsWriting(false);
@@ -154,7 +169,9 @@ export default function ApplyPanel({
         disabled={!canDeploy}
         sx={{borderRadius: 100}}
       >
-        {t('applyPanel.submit', 'Deploy')}
+        {confirmRemovals
+          ? t('applyPanel.submitConfirm', 'Deploy and remove {{count}}', {count: removals})
+          : t('applyPanel.submit', 'Deploy')}
       </Button>
     </>
   );
@@ -176,7 +193,19 @@ export default function ApplyPanel({
             )}
             {check.isError && (
               <Alert severity="error">
-                {t('applyPanel.checkFailed', 'What the gateway would write could not be read.')}
+                {isForbidden(check.error)
+                  ? t('applyPanel.forbidden', 'Your account may not deploy to this gateway.')
+                  : t('applyPanel.checkFailed', 'What the gateway would write could not be read.')}
+              </Alert>
+            )}
+            {check.data?.changed && <ChangedValuesNotice changed={check.data.changed} />}
+            {confirmRemovals && (
+              <Alert severity="warning" data-testid="deploy-confirm-removals">
+                {t(
+                  'applyPanel.confirmRemovals',
+                  'Deploying removes {{count}} resources from {{gateway}}. Check them in the list, then deploy again to go ahead.',
+                  {count: removals, gateway: gateway?.name ?? ''},
+                )}
               </Alert>
             )}
             {fields.length > 0 && (

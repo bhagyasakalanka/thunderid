@@ -58,6 +58,16 @@ export default function DeployPage(): JSX.Element {
   );
   const deployed = (gateway: Gateway, result: ApplyResult): void => {
     setOpen(null);
+    if (result.queued) {
+      showToast(
+        t('applyPanel.queued', 'Another deploy to {{gateway}} is running; {{label}} will follow it.', {
+          gateway: gateway.name,
+          label: labelOf(result.queuedVersion),
+        }),
+        'info',
+      );
+      return;
+    }
     const failed = result.import?.summary?.failed ?? 0;
     showToast(
       failed > 0

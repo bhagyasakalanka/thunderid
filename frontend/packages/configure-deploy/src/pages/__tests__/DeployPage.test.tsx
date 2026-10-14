@@ -354,3 +354,130 @@ describe('DeployPage', () => {
     expect(screen.queryByRole('button', {name: 'Deploy'})).not.toBeInTheDocument();
   });
 });
+
+const refusal = (code: string, status = 409): Error =>
+  Object.assign(new Error(code), {response: {status, data: {code}}});
+
+describe('DeployPage: apply safety', () => {
+  const dryRunWithRemovals = {
+    gatewayId: 'gw-prod',
+    dryRun: true,
+    diff: {
+      toVersion: versions[0].version,
+      summary: {added: 0, updated: 0, deleted: 2, unchanged: 1},
+      changes: [
+        {key: 'application/app-1', resourceType: 'application', id: 'app-1', name: 'Orders', change: 'deleted'},
+        {key: 'application/app-2', resourceType: 'application', id: 'app-2', name: 'Billing', change: 'deleted'},
+        {key: 'role/r-1', resourceType: 'role', id: 'r-1', name: 'Admin', change: 'unchanged'},
+      ],
+    },
+    changed: {
+      secrets: ['APP_ORDERS_CLIENT_SECRET'],
+      references: [
+        {
+          name: 'APP_ORDERS_CLIENT_SECRET',
+          kind: 'secret',
+          resourceType: 'application',
+          resourceId: 'app-1',
+          resourceName: 'Orders',
+          field: 'clientSecret',
+        },
+      ],
+    },
+  };
+
+  it('points out the values set since the last deploy, and asks before a deploy that removes many', async () => {
+    let applies = 0;
+    routes['POST /gateways/gw-prod/apply'] = (call: Call) => {
+      const data = call.data as {dryRun?: boolean; confirmRemovals?: boolean};
+      if (data.dryRun) return dryRunWithRemovals;
+      applies += 1;
+      if (!data.confirmRemovals) return refusal('GTW-1030');
+      return {gatewayId: 'gw-prod', dryRun: false, diff: {...dryRunWithRemovals.diff}, import: {summary: {failed: 0}}};
+    };
+    render(<DeployPage />);
+
+    const newest = await screen.findByTestId(`deploy-version-${versions[0].version}`);
+    await userEvent.click(within(newest).getByRole('button', {name: 'Deploy'}));
+    const panel = await screen.findByTestId('deploy-apply-panel');
+    await userEvent.click(within(panel).getByRole('combobox', {name: 'Gateway'}));
+    await userEvent.click(await screen.findByRole('option', {name: 'Prod'}));
+    const changed = await within(panel).findByTestId('changed-values');
+    expect(within(changed).getByText('Values set since the last deploy')).toBeInTheDocument();
+    expect(within(changed).getByText('APP_ORDERS_CLIENT_SECRET')).toBeInTheDocument();
+    expect(within(changed).getByText('used by Orders')).toBeInTheDocument();
+
+    await userEvent.click(within(panel).getByRole('button', {name: 'Deploy'}));
+    const warning = await within(panel).findByTestId('deploy-confirm-removals');
+    expect(warning).toHaveTextContent('Deploying removes 2 resources from Prod.');
+    expect(screen.getByTestId('deploy-apply-panel')).toBeInTheDocument();
+    await userEvent.click(within(panel).getByRole('button', {name: 'Deploy and remove 2'}));
+
+    await waitFor(() => expect(screen.queryByTestId('deploy-apply-panel')).not.toBeInTheDocument());
+    expect(applies).toBe(2);
+    const sent = http.calls
+      .filter((call: Call) => call.url.endsWith('/gw-prod/apply') && !(call.data as {dryRun?: boolean}).dryRun)
+      .map((call: Call) => (call.data as {confirmRemovals?: boolean}).confirmRemovals);
+    expect(sent).toEqual([undefined, true]);
+  });
+
+  it('says when a deploy is queued behind one already running', async () => {
+    routes['POST /gateways/gw-prod/apply'] = (call: Call) => {
+      const data = call.data as {dryRun?: boolean};
+      if (data.dryRun) {
+        return {
+          gatewayId: 'gw-prod',
+          dryRun: true,
+          diff: {
+            toVersion: versions[0].version,
+            summary: {added: 1, updated: 0, deleted: 0, unchanged: 0},
+            changes: [{key: 'flow/f-1', resourceType: 'flow', id: 'f-1', name: 'Sign in', change: 'added'}],
+          },
+        };
+      }
+      return {
+        gatewayId: 'gw-prod',
+        dryRun: false,
+        queued: true,
+        queuedVersion: versions[0].version,
+        diff: {toVersion: versions[0].version, summary: {added: 0, updated: 0, deleted: 0, unchanged: 0}, changes: []},
+      };
+    };
+    render(<DeployPage />);
+
+    const newest = await screen.findByTestId(`deploy-version-${versions[0].version}`);
+    await userEvent.click(within(newest).getByRole('button', {name: 'Deploy'}));
+    const panel = await screen.findByTestId('deploy-apply-panel');
+    await userEvent.click(within(panel).getByRole('combobox', {name: 'Gateway'}));
+    await userEvent.click(await screen.findByRole('option', {name: 'Prod'}));
+    await userEvent.click(await within(panel).findByRole('button', {name: 'Deploy'}));
+
+    expect(await screen.findByText('Another deploy to Prod is running; v6 will follow it.')).toBeInTheDocument();
+  });
+
+  it('asks before a rollback that removes many, and sends the confirmation', async () => {
+    routes['POST /gateways/gw-dev/revert'] = (call: Call) => {
+      const data = call.data as {dryRun?: boolean; confirmRemovals?: boolean};
+      if (data.dryRun) return {...dryRunWithRemovals, gatewayId: 'gw-dev', changed: undefined};
+      if (!data.confirmRemovals) return refusal('GTW-1030');
+      return {gatewayId: 'gw-dev', dryRun: false, diff: {...dryRunWithRemovals.diff}};
+    };
+    render(<DeployPage />);
+
+    const dev = await screen.findByTestId('deploy-stage-gw-dev');
+    await userEvent.click(within(dev).getByRole('button', {name: 'Rollback'}));
+    const panel = await screen.findByTestId('deploy-revert-panel');
+    await userEvent.click(await within(panel).findByRole('button', {name: 'Roll back'}));
+    expect(await within(panel).findByTestId('deploy-confirm-removals')).toHaveTextContent(
+      'Rolling back removes 2 resources from Dev.',
+    );
+    await userEvent.click(within(panel).getByRole('button', {name: 'Roll back and remove 2'}));
+
+    await waitFor(() => expect(screen.queryByTestId('deploy-revert-panel')).not.toBeInTheDocument());
+    expect(http.calls.filter((call: Call) => call.url.endsWith('/revert')).map((call: Call) => call.data)).toEqual([
+      {dryRun: true},
+      {dryRun: false},
+      {dryRun: false, confirmRemovals: true},
+    ]);
+  });
+});

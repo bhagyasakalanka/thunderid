@@ -19,6 +19,7 @@ import {useTranslation} from 'react-i18next';
 import ChangeList from './ChangeList';
 import {useRevert} from '../api/useGatewayVersions';
 import type {ApplyResult, Change, Gateway} from '../models/deploy';
+import {errorCodeOf, REMOVALS_NEED_CONFIRMATION} from '../utils/apiError';
 
 export interface RevertPanelProps {
   gateway: Gateway;
@@ -40,10 +41,13 @@ export default function RevertPanel({
   const [preview, setPreview] = useState<ApplyResult | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const [isWriting, setIsWriting] = useState(false);
+  // Set once the control plane refused the rollback for removing more than its threshold allows.
+  const [confirmRemovals, setConfirmRemovals] = useState(false);
 
   useEffect(() => {
     setPreview(null);
     setError(null);
+    setConfirmRemovals(false);
     revert
       .mutateAsync({gatewayId: gateway.id, dryRun: true})
       .then(setPreview)
@@ -56,8 +60,12 @@ export default function RevertPanel({
     setIsWriting(true);
     setError(null);
     try {
-      onReverted(gateway, await revert.mutateAsync({gatewayId: gateway.id}));
+      onReverted(gateway, await revert.mutateAsync({gatewayId: gateway.id, confirmRemovals}));
     } catch (caught: unknown) {
+      if (errorCodeOf(caught) === REMOVALS_NEED_CONFIRMATION) {
+        setConfirmRemovals(true);
+        return;
+      }
       setError(caught instanceof Error ? caught : new Error(String(caught)));
     } finally {
       setIsWriting(false);
@@ -65,6 +73,7 @@ export default function RevertPanel({
   };
 
   const changes = (preview?.diff.changes ?? []).filter((change: Change) => change.change !== 'unchanged');
+  const removals = changes.filter((change: Change) => change.change === 'deleted').length;
   const header = (
     <Stack direction="row" alignItems="center" spacing={1.5}>
       <Box sx={{display: 'flex', color: 'error.main'}}>
@@ -90,7 +99,9 @@ export default function RevertPanel({
         disabled={!preview || isWriting}
         sx={{borderRadius: 100}}
       >
-        {t('revertPanel.submit', 'Roll back')}
+        {confirmRemovals
+          ? t('revertPanel.submitConfirm', 'Roll back and remove {{count}}', {count: removals})
+          : t('revertPanel.submit', 'Roll back')}
       </Button>
     </>
   );
@@ -135,6 +146,15 @@ export default function RevertPanel({
               </Typography>
             )}
             {preview && changes.length > 0 && <ChangeList changes={changes} />}
+            {confirmRemovals && (
+              <Alert severity="warning" data-testid="deploy-confirm-removals">
+                {t(
+                  'revertPanel.confirmRemovals',
+                  'Rolling back removes {{count}} resources from {{gateway}}. Roll back again to go ahead.',
+                  {count: removals, gateway: gateway.name},
+                )}
+              </Alert>
+            )}
             {error && (
               <Alert severity="error">
                 {error.message || t('revertPanel.failed', 'The gateway could not be rolled back.')}
