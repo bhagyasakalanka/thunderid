@@ -106,6 +106,35 @@ var (
 				"A dry run lists them.",
 		},
 	}
+	// ErrorApplyInProgress is returned when another apply or revert to the gateway was still running
+	// after this one had waited as long as an import may take.
+	ErrorApplyInProgress = tidcommon.ServiceError{
+		Type: tidcommon.ClientErrorType,
+		Code: "GTW-1029",
+		Error: tidcommon.I18nMessage{
+			Key:          "error.gatewayservice.apply_in_progress",
+			DefaultValue: "Another apply to this gateway is still running",
+		},
+		ErrorDescription: tidcommon.I18nMessage{
+			Key:          "error.gatewayservice.apply_in_progress.description",
+			DefaultValue: "Wait for it to finish, then apply again.",
+		},
+	}
+	// ErrorRemovalsNeedConfirmation is returned when an apply would remove more resources from the
+	// gateway than the deployment's threshold and was not confirmed.
+	ErrorRemovalsNeedConfirmation = tidcommon.ServiceError{
+		Type: tidcommon.ClientErrorType,
+		Code: "GTW-1030",
+		Error: tidcommon.I18nMessage{
+			Key:          "error.gatewayservice.removals_need_confirmation",
+			DefaultValue: "This apply would remove many resources from the gateway",
+		},
+		ErrorDescription: tidcommon.I18nMessage{
+			Key: "error.gatewayservice.removals_need_confirmation.description",
+			DefaultValue: "Review the removals with a dry run, then apply again with confirmRemovals set " +
+				"to go ahead.",
+		},
+	}
 	// ErrorInvalidSelection is returned when an apply's selection names a resource the diff does not
 	// report, or would leave out a resource too long to keep.
 	ErrorInvalidSelection = tidcommon.ServiceError{

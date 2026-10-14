@@ -409,6 +409,7 @@
   "gateway": {
     "max_gateways": 1,
     "max_versions": 3,
+    "removal_confirmation_threshold": 5,
     "store": "composite"
   }
 }
