@@ -37,7 +37,25 @@ const ALL_STEPS: Step[] = [Step.TYPE, Step.NAME, Step.CONFIGURE];
  * enter the credentials/endpoints and create it. The `'trusted-idp'` type renders the dedicated
  * trusted-issuer form instead of the generic configure step.
  */
-export default function ConnectionCreateWizardPage(): JSX.Element {
+/**
+ * Props for {@link ConnectionCreateWizardPage}.
+ */
+export interface ConnectionCreateWizardPageProps {
+  /**
+   * The redirect URI shown for this connection, when it is not this console's own gate.
+   *
+   * An operator copies this value into the provider's allowed-redirect list, so it has to name the
+   * deployment that will actually receive the callback. A console whose server answers that
+   * callback omits it. One that does not, because the gate belongs elsewhere, passes the address
+   * that does, since pointing a provider at a host that serves no gate fails at sign-in time with
+   * nothing here to explain why.
+   */
+  redirectUri?: string;
+}
+
+export default function ConnectionCreateWizardPage({
+  redirectUri: redirectUriOverride = undefined,
+}: ConnectionCreateWizardPageProps = {}): JSX.Element {
   const {t} = useTranslation('connections');
   const navigate = useNavigate();
   const routes = useConnectionRoutes();
@@ -61,7 +79,7 @@ export default function ConnectionCreateWizardPage(): JSX.Element {
   const meta = VENDOR_META_BY_TYPE[activeType];
   const fields = CONNECTION_FORM_FIELDS[activeType];
   const createFields = useMemo(() => fieldsForMode(activeType, 'create'), [activeType]);
-  const redirectUri = getGateCallbackUrl();
+  const redirectUri = redirectUriOverride ?? getGateCallbackUrl();
   const emptyValues = useMemo(() => emptyFormValues(fields, redirectUri), [fields, redirectUri]);
 
   // Only federated login providers carry a redirect URI to register with the provider.

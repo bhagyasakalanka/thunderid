@@ -45,8 +45,11 @@ export * from './models/responses';
 
 // Pages
 export {default as ConnectionConfigureWizardPage} from './pages/ConnectionConfigureWizardPage';
+export type {ConnectionConfigureWizardPageProps} from './pages/ConnectionConfigureWizardPage';
 export {default as ConnectionCreateWizardPage} from './pages/ConnectionCreateWizardPage';
+export type {ConnectionCreateWizardPageProps} from './pages/ConnectionCreateWizardPage';
 export {default as ConnectionDetailPage} from './pages/ConnectionDetailPage';
+export type {ConnectionDetailPageProps} from './pages/ConnectionDetailPage';
 export {default as ConnectionsListPage} from './pages/ConnectionsListPage';
 export {default as TrustedIssuerDetailPage} from './pages/TrustedIssuerDetailPage';
 

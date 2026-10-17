@@ -39,7 +39,7 @@ import resolveTemplateLink from '../../../utils/resolveTemplateLink';
 /**
  * Props for the {@link IntegrationGuides} component.
  */
-interface IntegrationGuidesProps {
+export interface IntegrationGuidesProps {
   /**
    * The application to show the overview for
    */
@@ -56,6 +56,15 @@ interface IntegrationGuidesProps {
    * Navigates to the application's Customization tab.
    */
   onGoToCustomization?: () => void;
+  /**
+   * The base URL the endpoints below are built from, when it is not this console's own server.
+   *
+   * A Data Plane console omits it: the server it talks to is the one that serves these paths. A
+   * Control Plane console passes its gateway's URL, because the application is authored here and
+   * answered there, so printing this console's own address would send a developer to a host that
+   * serves none of them.
+   */
+  runtimeBaseUrl?: string;
 }
 
 function replacePlaceholders(text: string, values: Record<string, string | undefined>): string {
@@ -183,6 +192,7 @@ export default function IntegrationGuides({
   oauth2Config = undefined,
   onGoToFlows = undefined,
   onGoToCustomization = undefined,
+  runtimeBaseUrl = undefined,
 }: IntegrationGuidesProps): JSX.Element {
   const {t} = useTranslation();
   const logger = useLogger('IntegrationGuides');
@@ -316,7 +326,7 @@ export default function IntegrationGuides({
     }
   };
 
-  const serverUrl = getServerUrl();
+  const serverUrl = runtimeBaseUrl ?? getServerUrl();
   const flowEndpoints = [
     {
       key: 'flowExecute',

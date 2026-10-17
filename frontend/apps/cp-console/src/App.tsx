@@ -6,12 +6,19 @@
 // It is separate from the Data Plane console's rather than the same one with entries hidden, because
 // the two planes differ in what they can do, not only in what they show. A Control Plane holds
 // configuration and serves no runtime: it has no /flow/execute, so a page that runs a flow cannot
-// work here and is not routed at all. Adding a user is a form, and the tryout journeys, which run
-// flows, are absent.
+// work here and is not routed at all. Adding a user is a single form, and the tryout journeys,
+// which run flows, are absent.
 //
 // Everything else is shared. The feature packages and the console's own pages, layouts and route
 // config are imported through the @console alias, so an authoring surface is written once.
 
+import RouteConfig, {ROUTE_SEGMENTS} from '@console/configs/RouteConfig';
+import AgentCreateProvider from '@console/features/agents/contexts/AgentCreate/AgentCreateProvider';
+import ApplicationCreateProvider from '@console/features/applications/contexts/ApplicationCreate/ApplicationCreateProvider';
+import OrganizationUnitDefaultFlowsSettings from '@console/features/organization-units/OrganizationUnitDefaultFlowsSettings';
+import GetStartedPage from '@console/features/welcome/pages/GetStartedPage';
+import DashboardLayout from '@console/layouts/DashboardLayout';
+import FullScreenLayout from '@console/layouts/FullScreenLayout';
 import {PageLoader} from '@thunderid/components';
 import {LayoutBuilderProvider, ThemeBuilderProvider} from '@thunderid/configure-design';
 import {GroupCreateProvider} from '@thunderid/configure-groups';
@@ -23,13 +30,6 @@ import {RoutesProvider, ToastProvider} from '@thunderid/contexts';
 import {ProtectedRoute} from '@thunderid/react-router';
 import {lazy, Suspense, type JSX} from 'react';
 import {BrowserRouter, Navigate, Outlet, Route, Routes} from 'react-router';
-import RouteConfig, {ROUTE_SEGMENTS} from '@console/configs/RouteConfig';
-import AgentCreateProvider from '@console/features/agents/contexts/AgentCreate/AgentCreateProvider';
-import ApplicationCreateProvider from '@console/features/applications/contexts/ApplicationCreate/ApplicationCreateProvider';
-import OrganizationUnitDefaultFlowsSettings from '@console/features/organization-units/OrganizationUnitDefaultFlowsSettings';
-import GetStartedPage from '@console/features/welcome/pages/GetStartedPage';
-import DashboardLayout from '@console/layouts/DashboardLayout';
-import FullScreenLayout from '@console/layouts/FullScreenLayout';
 
 const ViewAgentTypePage = lazy(() =>
   import('@thunderid/configure-agent-types').then((m) => ({default: m.ViewAgentTypePage})),
@@ -55,7 +55,6 @@ const TranslationsListPage = lazy(() =>
   import('@thunderid/configure-translations').then((m) => ({default: m.TranslationsListPage})),
 );
 const UserAddPage = lazy(() => import('@thunderid/configure-users').then((m) => ({default: m.UserAddFormPage})));
-const UserCreatePage = lazy(() => import('@thunderid/configure-users').then((m) => ({default: m.UserCreatePage})));
 const UserEditPage = lazy(() => import('@thunderid/configure-users').then((m) => ({default: m.UserEditPage})));
 const UsersListPage = lazy(() => import('@thunderid/configure-users').then((m) => ({default: m.UsersListPage})));
 const ResourceServersListPage = lazy(() =>
@@ -69,13 +68,13 @@ const CreateResourceServerPage = lazy(() =>
 );
 
 const AgentCreatePage = lazy(() => import('@console/features/agents/pages/AgentCreatePage'));
-const AgentEditPage = lazy(() =>
-  import('@console/lib/monaco-setup').then(() => import('@console/features/agents/pages/AgentEditPage')),
+const AgentEditRoute = lazy(() =>
+  import('@console/lib/monaco-setup').then(() => import('./overview/AgentEditRoute')),
 );
 const AgentsListPage = lazy(() => import('@console/features/agents/pages/AgentsListPage'));
 const ApplicationCreatePage = lazy(() => import('@console/features/applications/pages/ApplicationCreatePage'));
-const ApplicationEditPage = lazy(() =>
-  import('@console/lib/monaco-setup').then(() => import('@console/features/applications/pages/ApplicationEditPage')),
+const ApplicationEditRoute = lazy(() =>
+  import('@console/lib/monaco-setup').then(() => import('./overview/ApplicationEditRoute')),
 );
 const ApplicationsListPage = lazy(() => import('@console/features/applications/pages/ApplicationsListPage'));
 const ApplicationTemplateSelectPage = lazy(
@@ -118,13 +117,13 @@ const ConnectionsListPage = lazy(() =>
   import('@thunderid/configure-connections').then((m) => ({default: m.ConnectionsListPage})),
 );
 const ConnectionDetailPage = lazy(() =>
-  import('@thunderid/configure-connections').then((m) => ({default: m.ConnectionDetailPage})),
+  import('./connections/ConnectionRoutes').then((m) => ({default: m.ConnectionDetailRoute})),
 );
 const ConnectionConfigureWizardPage = lazy(() =>
-  import('@thunderid/configure-connections').then((m) => ({default: m.ConnectionConfigureWizardPage})),
+  import('./connections/ConnectionRoutes').then((m) => ({default: m.ConnectionConfigureRoute})),
 );
 const ConnectionCreateWizardPage = lazy(() =>
-  import('@thunderid/configure-connections').then((m) => ({default: m.ConnectionCreateWizardPage})),
+  import('./connections/ConnectionRoutes').then((m) => ({default: m.ConnectionCreateRoute})),
 );
 const PromotionsListPage = lazy(() => import('@console/features/promotions/pages/PromotionsListPage'));
 const GatewayDetailPage = lazy(() => import('@console/features/promotions/pages/GatewayDetailPage'));
@@ -220,9 +219,9 @@ export default function App(): JSX.Element {
                   element={<VerifiableCredentialEditPage />}
                 />
                 <Route path={ROUTE_SEGMENTS.applications} element={<ApplicationsListPage />} />
-                <Route path={`${ROUTE_SEGMENTS.applications}/:applicationId`} element={<ApplicationEditPage />} />
+                <Route path={`${ROUTE_SEGMENTS.applications}/:applicationId`} element={<ApplicationEditRoute />} />
                 <Route path={ROUTE_SEGMENTS.agents} element={<AgentsListPage />} />
-                <Route path={`${ROUTE_SEGMENTS.agents}/:agentId`} element={<AgentEditPage />} />
+                <Route path={`${ROUTE_SEGMENTS.agents}/:agentId`} element={<AgentEditRoute />} />
                 <Route path={ROUTE_SEGMENTS.flows} element={<FlowsListPage />} />
                 <Route path={ROUTE_SEGMENTS.resourceServers} element={<ResourceServersListPage />} />
                 <Route
@@ -299,16 +298,9 @@ export default function App(): JSX.Element {
               >
                 <Route index element={<UserAddPage />} />
               </Route>
-              <Route
-                path={RouteConfig.users.addCreate()}
-                element={
-                  <ProtectedRoute>
-                    <FullScreenLayout />
-                  </ProtectedRoute>
-                }
-              >
-                <Route index element={<UserCreatePage />} />
-              </Route>
+              {/* /users/add/create is the second step of the flow-driven journey, reached only from
+                  the flow-driven add page. This plane binds the single-form page above instead, so
+                  the step is unreachable here and the flow-driven page is not routed at all. */}
               <Route
                 path={RouteConfig.userTypes.create()}
                 element={
