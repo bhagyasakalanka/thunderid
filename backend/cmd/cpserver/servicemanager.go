@@ -77,7 +77,6 @@ import (
 	"github.com/thunder-id/thunderid/internal/system/mcp"
 	"github.com/thunder-id/thunderid/internal/system/observability"
 	"github.com/thunder-id/thunderid/internal/system/resourcedependency"
-	"github.com/thunder-id/thunderid/internal/system/security"
 	"github.com/thunder-id/thunderid/internal/system/services"
 	"github.com/thunder-id/thunderid/internal/system/sysauthz"
 	"github.com/thunder-id/thunderid/internal/user"
@@ -350,10 +349,11 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 	exporters = append(exporters, applicationExporter)
 
 	agentService, agentExporter, err := agent.Initialize(mux, entityService, inboundClientService, ouService,
-		roleService, ouAuthzService, governanceService, valueCapture, entityTypeService)
+		roleService, ouAuthzService, governanceService, valueCapture, entityTypeService,
+		agent.OwnedByUsersHeld())
 	fatalOnError(ctx, logger, err, "Failed to initialize AgentService")
 	exporters = append(exporters, agentExporter)
-	agentService.SetSystemFlowExecutor(callerOwnsAgent)
+	agentService.SetSystemFlowExecutor(noAgentCreationFlow)
 
 	// Wire the dependency registry into the consuming services (two-phase init to avoid cyclic
 	// imports). flowMgtService is both a consumer and a provider: it reports which flows reference an
@@ -519,9 +519,10 @@ func buildHashConfig() (cryptolib.HashConfig, error) {
 	}
 }
 
-// callerOwnsAgent stands in for the agent creation system flow on a plane that runs no flows, resolving
-// the owner the way the flow does: an agent created without one is owned by its caller.
-func callerOwnsAgent(ctx context.Context, _ string, _ map[string]string) (map[string]string,
+// noAgentCreationFlow stands in for the agent creation system flow on a plane that runs no flows, and
+// resolves no owner. The control plane's caller signs in through a trusted issuer and is no user any
+// deployment holds, so an agent created without an owner is left without one.
+func noAgentCreationFlow(context.Context, string, map[string]string) (map[string]string,
 	*tidcommon.ServiceError) {
-	return map[string]string{"owner": security.GetSubject(ctx)}, nil
+	return nil, nil
 }
