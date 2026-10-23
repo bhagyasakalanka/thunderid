@@ -38,10 +38,26 @@ func (c *RESTConfig) Validate() error {
 		"omit it to leave the audience unchecked")
 }
 
-// Validate checks the MCP configuration; an absent audience falls back to the derived identifier.
+// Validate checks the MCP configuration; an absent audience falls back to the derived identifier, and
+// an absent authorization server to the token issuer.
 func (c *MCPConfig) Validate() error {
+	// A client follows the advertised value to discover where to sign in, so anything but an issuer
+	// URL leaves it with nowhere to go.
+	if c.AuthorizationServer != nil && !isIssuerURL(c.AuthorizationServer) {
+		return fmt.Errorf("server.security.mcp.authorization_server must be an absolute http(s) URL without " +
+			"a query or fragment; omit it to advertise the token issuer")
+	}
 	return validateOptionalAudience("server.security.mcp.audience", c.Audience,
 		"omit it to use the server's own MCP resource identifier")
+}
+
+// isIssuerURL trims raw and reports whether it is an issuer identifier (RFC 8414): an absolute http(s)
+// URL with no query or fragment. An empty one counts too: ForceQuery catches a bare "?" and the "#"
+// check a bare "#", which leave RawQuery and Fragment empty.
+func isIssuerURL(raw *string) bool {
+	*raw = strings.TrimSpace(*raw)
+	parsed, err := url.Parse(*raw)
+	return err == nil && isHTTPURL(*raw) && parsed.RawQuery == "" && !parsed.ForceQuery && !strings.Contains(*raw, "#")
 }
 
 // validateOptionalAudience normalises and checks a configured audience; absent is always valid.

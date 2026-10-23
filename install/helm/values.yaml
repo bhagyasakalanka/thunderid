@@ -169,8 +169,12 @@ configuration:
     #     audience: ""
     #   # mcp: override the MCP resource identifier. Omit the block to let the server derive it from
     #   # public_url; the check itself is mandatory and cannot be disabled.
+    #   # authorizationServer is the authorization server the MCP metadata advertises, where a client
+    #   # discovers how to sign in. Omit it to advertise the token issuer; set it when that issuer is
+    #   # not a URL a client can reach, such as a trusted issuer named by a bare identifier.
     #   mcp:
     #     audience: ""
+    #     authorizationServer: "https://idp.example.com"
     #   trustedIssuer:
     #     issuer: "https://cp.example.com"
     #     jwksUrl: "https://cp.example.com/oauth2/jwks"

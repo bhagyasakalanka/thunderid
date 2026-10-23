@@ -64,6 +64,9 @@ server:
     {{- if hasKey . "mcp" }}
     mcp:
       audience: {{ (default dict .mcp).audience | default (include "thunderid.resourceIdentifier" $) | quote }}
+      {{- with (default dict .mcp).authorizationServer }}
+      authorization_server: {{ . | quote }}
+      {{- end }}
     {{- end }}
     {{- end }}
     {{- if and .Values.configuration.server.security .Values.configuration.server.security.directAuthSecret }}

@@ -18,6 +18,10 @@ server:
       # "resource". Mandatory per the MCP spec, so omitting it falls back to this server's own MCP
       # endpoint rather than disabling the check.
       # audience: "https://localhost:8090/mcp"
+      # The authorization server the MCP metadata advertises, where a client discovers how to sign in.
+      # Omitted, the token issuer is advertised; set it when that issuer is not a URL a client can
+      # reach, such as a trusted issuer named by a bare identifier.
+      # authorization_server: "https://idp.example.com"
 
 tls:
   min_version: "1.3"
