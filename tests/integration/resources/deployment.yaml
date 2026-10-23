@@ -93,3 +93,14 @@ oauth:
     backchannel:
       # The back-channel logout tests run their receiver on localhost.
       reject_private_addresses: false
+
+# MCP tools served from upstream MCP servers beside the built-in ones. The MCP integration tests run a
+# fake upstream on the first and one that redirects on the second; the third is never reachable. Each
+# exercises how an upstream is read, and an upstream that is down is left out of every listing.
+mcp:
+  upstreams:
+    - url: "http://localhost:18496/mcp"
+    - url: "http://127.0.0.1:18497/mcp"
+    - url: "https://127.0.0.1:18498/mcp"
+  excluded_tools:
+    - thunderid_integration_excluded_tool
