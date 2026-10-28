@@ -618,6 +618,7 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 	// The services that revoke before they write run system flows, and the engine exists only now.
 	userService.SetSystemFlowExecutor(systemFlowRunner(flowExecService, revocationSvc))
 	roleService.SetSystemFlowExecutor(systemFlowRunner(flowExecService, revocationSvc))
+	roleAssignmentService.SetSystemFlowExecutor(systemFlowRunner(flowExecService, revocationSvc))
 	groupService.SetSystemFlowExecutor(systemFlowRunner(flowExecService, revocationSvc))
 
 	// Initialize OAuth services.
