@@ -620,6 +620,7 @@ func registerServices(mux *http.ServeMux, cacheManager cache.CacheManagerInterfa
 	roleService.SetSystemFlowExecutor(systemFlowRunner(flowExecService, revocationSvc))
 	roleAssignmentService.SetSystemFlowExecutor(systemFlowRunner(flowExecService, revocationSvc))
 	groupService.SetSystemFlowExecutor(systemFlowRunner(flowExecService, revocationSvc))
+	resourceService.SetSystemFlowExecutor(systemFlowRunner(flowExecService, revocationSvc))
 
 	// Initialize OAuth services.
 	tokenValidator, dispatcher, err := oauth.Initialize(mux, actorProvider, authnProvider, jwtService, jweService,
