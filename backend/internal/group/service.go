@@ -97,6 +97,12 @@ const (
 	systemFlowInputGroup  = "targetGroupId"
 )
 
+// The system flow removing a group member runs, and the input naming the member it acts on.
+const (
+	systemFlowGroupMembershipRemoval = "system-group-membership-removal"
+	systemFlowInputMember            = "targetMemberId"
+)
+
 // newGroupServiceWithStore creates a new instance of GroupService with an externally provided store.
 func newGroupServiceWithStore(
 	store groupStoreInterface,
@@ -859,7 +865,7 @@ func (gs *groupService) AddGroupMembers(
 	ctx context.Context, groupID string, members []Member) (*Group, *tidcommon.ServiceError) {
 	log.GetLogger().With(log.String(log.LoggerKeyComponentName, loggerComponentName)).
 		Debug(ctx, "Adding members to group", log.String("id", groupID))
-	return gs.modifyGroupMembers(ctx, groupID, members,
+	return gs.modifyGroupMembers(ctx, groupID, members, nil,
 		gs.groupStore.AddGroupMembers,
 		"Failed to add members to group",
 		"Successfully added members to group",
@@ -871,11 +877,64 @@ func (gs *groupService) RemoveGroupMembers(
 	ctx context.Context, groupID string, members []Member) (*Group, *tidcommon.ServiceError) {
 	log.GetLogger().With(log.String(log.LoggerKeyComponentName, loggerComponentName)).
 		Debug(ctx, "Removing members from group", log.String("id", groupID))
-	return gs.modifyGroupMembers(ctx, groupID, members,
+	return gs.modifyGroupMembers(ctx, groupID, members, gs.revokeRemovedMembers,
 		gs.groupStore.RemoveGroupMembers,
 		"Failed to remove members from group",
 		"Successfully removed members from group",
 	)
+}
+
+// revokeRemovedMembers revokes what each removed member got from the group before the removal is
+// written, whichever entry point asked: the tokens the member carries with the permissions of the
+// roles assigned to the group; for a member group, the tokens of its members. Removing a non-member
+// changes nothing, so it revokes nothing. A refusal leaves every membership as it was. What it returns
+// finishes each revocation once the removal is written.
+func (gs *groupService) revokeRemovedMembers(ctx context.Context, groupID string,
+	members []Member) (func(context.Context) *tidcommon.ServiceError, *tidcommon.ServiceError) {
+	logger := log.GetLogger().With(log.String(log.LoggerKeyComponentName, loggerComponentName))
+	total, err := gs.groupStore.GetGroupMemberCount(ctx, groupID)
+	if err != nil {
+		logger.Error(ctx, "Failed to get group member count", log.String("id", groupID), log.Error(err))
+		return nil, &tidcommon.InternalServerError
+	}
+	present := make(map[string]bool, total)
+	for offset := 0; offset < total; offset += serverconst.MaxPageSize {
+		page, err := gs.groupStore.GetGroupMembers(ctx, groupID, serverconst.MaxPageSize, offset)
+		if err != nil {
+			logger.Error(ctx, "Failed to get group members", log.String("id", groupID), log.Error(err))
+			return nil, &tidcommon.InternalServerError
+		}
+		for _, member := range page {
+			present[member.ID] = true
+		}
+	}
+	var finishes []func(context.Context) *tidcommon.ServiceError
+	for _, member := range members {
+		if !present[member.ID] {
+			continue
+		}
+		delete(present, member.ID)
+		if gs.executeSystemFlow == nil {
+			logger.Error(ctx, "System flow executor not set; refusing the change",
+				log.String("handle", systemFlowGroupMembershipRemoval))
+			return nil, &tidcommon.InternalServerError
+		}
+		finish, svcErr := gs.executeSystemFlow(ctx, systemFlowGroupMembershipRemoval, map[string]string{
+			systemFlowInputGroup: groupID, systemFlowInputMember: member.ID,
+		})
+		if svcErr != nil {
+			return nil, svcErr
+		}
+		finishes = append(finishes, finish)
+	}
+	return func(ctx context.Context) *tidcommon.ServiceError {
+		for _, finish := range finishes {
+			if svcErr := finish(ctx); svcErr != nil {
+				return svcErr
+			}
+		}
+		return nil
+	}, nil
 }
 
 // ValidateRemoveGroupMembers runs the checks RemoveGroupMembers runs before it changes anything.
@@ -890,6 +949,8 @@ func (gs *groupService) modifyGroupMembers(
 	ctx context.Context,
 	groupID string,
 	members []Member,
+	beforeWrite func(context.Context, string, []Member) (
+		func(context.Context) *tidcommon.ServiceError, *tidcommon.ServiceError),
 	storeOp func(context.Context, string, []Member) error,
 	errMsg, successMsg string,
 ) (*Group, *tidcommon.ServiceError) {
@@ -900,6 +961,14 @@ func (gs *groupService) modifyGroupMembers(
 	}
 
 	members = normalizeMembers(members)
+	// What beforeWrite returns, if anything, is run once the write has committed.
+	var afterWrite func(context.Context) *tidcommon.ServiceError
+	if beforeWrite != nil {
+		var svcErr *tidcommon.ServiceError
+		if afterWrite, svcErr = beforeWrite(ctx, groupID, members); svcErr != nil {
+			return nil, svcErr
+		}
+	}
 
 	var capturedSvcErr *tidcommon.ServiceError
 	var updatedGroupDAO GroupDAO
@@ -954,6 +1023,11 @@ func (gs *groupService) modifyGroupMembers(
 	if err != nil {
 		logger.Error(ctx, errMsg, log.String("id", groupID), log.Error(err))
 		return nil, &tidcommon.InternalServerError
+	}
+	if afterWrite != nil {
+		if svcErr := afterWrite(ctx); svcErr != nil {
+			return nil, svcErr
+		}
 	}
 
 	updatedGroup := convertGroupDAOToGroup(updatedGroupDAO)

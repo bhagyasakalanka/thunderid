@@ -9,7 +9,10 @@ import (
 
 	"github.com/stretchr/testify/mock"
 
+	serverconst "github.com/thunder-id/thunderid/internal/system/constants"
 	tidcommon "github.com/thunder-id/thunderid/pkg/thunderidengine/common"
+	"github.com/thunder-id/thunderid/pkg/thunderidengine/providers"
+	"github.com/thunder-id/thunderid/tests/mocks/entitymock"
 )
 
 // systemFlowRuns stands in for the execution service's ExecuteSystemFlow, which a test in this package
@@ -21,6 +24,7 @@ type systemFlowRuns struct {
 	inputs    []map[string]string
 	err       *tidcommon.ServiceError
 	finishErr *tidcommon.ServiceError
+	onRun     func()
 	onFinish  func()
 }
 
@@ -28,6 +32,9 @@ func (r *systemFlowRuns) execute(_ context.Context, handle string, inputs map[st
 	func(context.Context) *tidcommon.ServiceError, *tidcommon.ServiceError) {
 	r.handles = append(r.handles, handle)
 	r.inputs = append(r.inputs, inputs)
+	if r.onRun != nil {
+		r.onRun()
+	}
 	if r.err != nil {
 		return nil, r.err
 	}
@@ -112,4 +119,100 @@ func (suite *GroupServiceTestSuite) TestDeleteGroup_WithoutAnExecutorIsRefused()
 
 	suite.Equal(&tidcommon.InternalServerError, err)
 	storeMock.AssertNotCalled(suite.T(), "DeleteGroup", mock.Anything, mock.Anything)
+}
+
+// memberRemoval returns a service around grp-001 whose only member is usr-001, with runs as its
+// executor. Every user it is asked about exists.
+func (suite *GroupServiceTestSuite) memberRemoval(runs *systemFlowRuns) (
+	*groupService, *groupStoreInterfaceMock, *[]string) {
+	storeMock := newGroupStoreInterfaceMock(suite.T())
+	entities := entitymock.NewEntityServiceInterfaceMock(suite.T())
+	var order []string
+	storeMock.On("GetGroup", mock.Anything, "grp-001").Return(GroupDAO{ID: "grp-001", Name: "test"}, nil).Maybe()
+	entities.EXPECT().GetEntitiesByIDs(mock.Anything, mock.Anything).RunAndReturn(
+		func(_ context.Context, ids []string) ([]providers.Entity, error) {
+			found := make([]providers.Entity, 0, len(ids))
+			for _, id := range ids {
+				found = append(found, providers.Entity{ID: id, Category: providers.EntityCategoryUser})
+			}
+			return found, nil
+		}).Maybe()
+	storeMock.On("GetGroupMemberCount", mock.Anything, "grp-001").Return(1, nil)
+	storeMock.On("GetGroupMembers", mock.Anything, "grp-001", serverconst.MaxPageSize, 0).
+		Return([]Member{{ID: "usr-001", Type: memberTypeEntity}}, nil)
+	storeMock.On("RemoveGroupMembers", mock.Anything, "grp-001", mock.Anything).
+		Run(func(mock.Arguments) { order = append(order, "write") }).Return(nil).Maybe()
+	service := &groupService{
+		authzService:  newAllowAllAuthz(suite.T()),
+		groupStore:    storeMock,
+		entityService: entities,
+		transactioner: &stubTransactioner{},
+	}
+	if runs != nil {
+		runs.onRun = func() { order = append(order, "flow") }
+		runs.onFinish = func() { order = append(order, "finish") }
+		service.executeSystemFlow = runs.execute
+	}
+	return service, storeMock, &order
+}
+
+// Removing a member runs the system flow with the group and the member before the write, and finishes
+// its revocation after.
+func (suite *GroupServiceTestSuite) TestRemoveGroupMembers_RunsTheSystemFlowFirst() {
+	runs := &systemFlowRuns{}
+	service, _, order := suite.memberRemoval(runs)
+
+	_, err := service.RemoveGroupMembers(context.Background(), "grp-001",
+		[]Member{{ID: "usr-001", Type: MemberTypeUser}})
+
+	suite.Nil(err)
+	suite.Equal([]string{systemFlowGroupMembershipRemoval}, runs.handles)
+	suite.Equal([]map[string]string{{systemFlowInputGroup: "grp-001", systemFlowInputMember: "usr-001"}},
+		runs.inputs)
+	suite.Equal([]string{"flow", "write", "finish"}, *order)
+}
+
+// A revocation that cannot be finished after the removal is written is reported, not passed over.
+func (suite *GroupServiceTestSuite) TestRemoveGroupMembers_UnfinishedRevocationIsReported() {
+	service, _, _ := suite.memberRemoval(&systemFlowRuns{finishErr: &tidcommon.InternalServerError})
+
+	_, err := service.RemoveGroupMembers(context.Background(), "grp-001",
+		[]Member{{ID: "usr-001", Type: MemberTypeUser}})
+
+	suite.Equal(&tidcommon.InternalServerError, err)
+}
+
+// Removing a non-member changes nothing, so it revokes nothing.
+func (suite *GroupServiceTestSuite) TestRemoveGroupMembers_ANonMemberRunsNoFlow() {
+	runs := &systemFlowRuns{}
+	service, _, _ := suite.memberRemoval(runs)
+
+	_, err := service.RemoveGroupMembers(context.Background(), "grp-001",
+		[]Member{{ID: "usr-002", Type: MemberTypeUser}})
+
+	suite.Nil(err)
+	suite.Empty(runs.handles)
+}
+
+// A refused system flow leaves every membership as it was.
+func (suite *GroupServiceTestSuite) TestRemoveGroupMembers_RefusedFlowRemovesNothing() {
+	service, storeMock, _ := suite.memberRemoval(&systemFlowRuns{err: &tidcommon.InternalServerError})
+
+	_, err := service.RemoveGroupMembers(context.Background(), "grp-001",
+		[]Member{{ID: "usr-001", Type: MemberTypeUser}})
+
+	suite.Equal(&tidcommon.InternalServerError, err)
+	storeMock.AssertNotCalled(suite.T(), "RemoveGroupMembers", mock.Anything, mock.Anything, mock.Anything)
+}
+
+// Without an executor the removal of a member is refused, so a server that forgot the wiring fails
+// closed.
+func (suite *GroupServiceTestSuite) TestRemoveGroupMembers_WithoutAnExecutorIsRefused() {
+	service, storeMock, _ := suite.memberRemoval(nil)
+
+	_, err := service.RemoveGroupMembers(context.Background(), "grp-001",
+		[]Member{{ID: "usr-001", Type: MemberTypeUser}})
+
+	suite.Equal(&tidcommon.InternalServerError, err)
+	storeMock.AssertNotCalled(suite.T(), "RemoveGroupMembers", mock.Anything, mock.Anything, mock.Anything)
 }
