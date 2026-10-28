@@ -136,10 +136,12 @@ func TestAGatewayWithAnAppliedVersionIsGivenItsFirstMaster(t *testing.T) {
 	f := newVersionFixture(t)
 	f.capture(t, "ou-a", "ou-b")
 	bob := signedIn("u-2", nil)
-	_, svcErr := f.svc.Apply(bob, "gw-1", ApplyRequest{Selection: &[]string{"organization_unit/ou-a"}})
+	_, svcErr := f.svc.Apply(bob, "gw-1", ApplyRequest{})
 	require.Nil(t, svcErr)
-	// As a gateway stood before masters were recorded.
+	// As a gateway stood before masters were recorded: a version applied, and a unit left alone.
 	delete(f.versions.masters, "gw-1")
+	f.versions.excluded = map[string]map[string]excludedResource{"gw-1": {
+		"organization_unit/ou-b": {Key: "organization_unit/ou-b", Type: "organization_unit", ID: "ou-b"}}}
 
 	master, svcErr := f.svc.GetMaster(context.Background(), "gw-1")
 
