@@ -61,6 +61,7 @@ func (s *SystemFlowTestSuite) TestBuiltInSystemFlowsAreValid() {
 		"system-application-delete", "system-application-secret-rotate", "system-user-delete",
 		"system-role-delete", "system-role-assignment-removal", "system-role-permission-removal",
 		"system-group-delete", "system-group-membership-removal", "system-action-delete",
+		"system-agent-create",
 	} {
 		s.Contains(flows, handle)
 	}

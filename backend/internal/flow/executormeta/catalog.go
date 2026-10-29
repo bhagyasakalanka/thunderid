@@ -235,7 +235,9 @@ var catalog = map[string]providers.ExecutorMeta{
 		},
 	},
 	ExecutorNameOwnerResolver: {
-		SupportedFlowTypes: []providers.FlowType{"ADMINISTRATION", "REGISTRATION"},
+		DefaultMode:        ExecutorModeOwnerSelect,
+		SupportedModes:     []string{ExecutorModeOwnerCaller, ExecutorModeOwnerSelect},
+		SupportedFlowTypes: []providers.FlowType{"ADMINISTRATION", "REGISTRATION", "SYSTEM"},
 	},
 	ExecutorNameAccessChangeValidator: {
 		SupportedModes: []string{
