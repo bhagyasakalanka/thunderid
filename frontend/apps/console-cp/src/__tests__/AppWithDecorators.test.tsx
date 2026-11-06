@@ -102,6 +102,11 @@ vi.mock('../hocs/withRuntimeUrl', () => ({
   default: <P extends object>(WrappedComponent: ComponentType<P>) => WrappedComponent,
 }));
 
+// Scoping to the selected project is covered by the App's own tests.
+vi.mock('../hocs/withProjectScope', () => ({
+  default: <P extends object>(WrappedComponent: ComponentType<P>) => WrappedComponent,
+}));
+
 describe('AppWithDecorators', () => {
   beforeEach(() => {
     vi.clearAllMocks();

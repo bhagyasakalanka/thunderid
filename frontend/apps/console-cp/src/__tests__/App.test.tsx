@@ -2,9 +2,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {render, screen, waitFor, within} from '@testing-library/react';
-import {afterEach, describe, expect, it, vi} from 'vitest';
+import {useProjectScope} from '@thunderid/contexts';
+import {afterEach, beforeAll, describe, expect, it, vi} from 'vitest';
 import App from '../App';
 import RouteConfig from '../configs/RouteConfig';
+import withProjectScope from '../hocs/withProjectScope';
+import {PROJECT_SELECTION_STORAGE_KEY} from '../hooks/useProjectSelection';
+
+/** The console as it runs, scoped to the selected project. */
+const ScopedApp = withProjectScope(App);
+
+/** A page that says which project it is scoped to. */
+function ScopedPage({testId}: {testId: string}) {
+  return <div data-testid={testId}>{useProjectScope().projectId ?? 'none'}</div>;
+}
 
 vi.mock('@thunderid/react-router', () => ({
   ProtectedRoute: ({children, loader = undefined}: {children: React.ReactNode; loader?: React.ReactNode}) => (
@@ -33,7 +44,14 @@ vi.mock('@thunderid/configure-onboarding', async (importOriginal) => ({
   TryoutSecuringApplicationPage: () => <div data-testid="tryout-securing-application-page" />,
   TryoutSecuringAIAgentsPage: () => <div data-testid="tryout-ai-agents-page" />,
   TryoutSecuringMCPPage: () => <div data-testid="tryout-mcp-page" />,
-  WelcomeRedirect: () => null,
+}));
+
+vi.mock('../pages/ProjectHomePage', () => ({
+  default: () => <div data-testid="project-home-page" />,
+}));
+
+vi.mock('../pages/OrganizationHomePage', () => ({
+  default: () => <div data-testid="organization-home-page" />,
 }));
 
 vi.mock('@thunderid/configure-gateways', () => ({
@@ -42,6 +60,10 @@ vi.mock('@thunderid/configure-gateways', () => ({
   DeployPage: () => <div data-testid="deploy-page">Deploy Page</div>,
   GatewayExplorerPage: () => <div data-testid="gateway-explorer-page">Gateway Explorer Page</div>,
   GatewayValuesPage: () => <div data-testid="gateway-values-page">Gateway Values Page</div>,
+  GatewaysOverview: () => <div data-testid="gateways-overview" />,
+  GatewayPage: () => <div data-testid="gateway-page" />,
+  useProjects: () => ({data: []}),
+  useProjectChanges: () => ({}),
 }));
 
 vi.mock('@thunderid/contexts', async (importOriginal) => ({
@@ -80,17 +102,29 @@ vi.mock('@thunderid/configure-connections', async (importOriginal) => ({
   TrustedIssuerDetailPage: () => <div data-testid="trusted-issuer-detail-page">Trusted Issuer Detail Page</div>,
 }));
 
+const resourceProject = vi.hoisted(() => ({
+  application: undefined as string | undefined,
+  agent: undefined as string | undefined,
+}));
 vi.mock('@thunderid/configure-agents', () => ({
+  useGetAgent: (id: string) => ({
+    isLoading: false,
+    data: id && resourceProject.agent !== undefined ? {id, projectId: resourceProject.agent} : undefined,
+  }),
   AgentEditPage: () => <div data-testid="agent-edit-page">Agent Edit Page</div>,
-  AgentOnboardPage: () => <div data-testid="agent-onboard-page">Agent Onboard Page</div>,
+  AgentOnboardPage: () => <ScopedPage testId="agent-onboard-page" />,
   AgentsListPage: () => <div data-testid="agents-list-page">Agents List Page</div>,
 }));
 
 vi.mock('@thunderid/configure-applications', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@thunderid/configure-applications')>()),
   ApplicationsListPage: () => <div data-testid="applications-list-page">Applications List Page</div>,
-  ApplicationCreatePage: () => <div data-testid="application-create-page">Application Create Page</div>,
+  ApplicationCreatePage: () => <ScopedPage testId="application-create-page" />,
   ApplicationEditPage: () => <div data-testid="application-edit-page">Application Edit Page</div>,
+  useGetApplication: (id: string) => ({
+    isLoading: false,
+    data: id && resourceProject.application !== undefined ? {id, projectId: resourceProject.application} : undefined,
+  }),
   ApplicationTemplateSelectPage: () => <div data-testid="application-template-select-page">Template Select Page</div>,
   ApplicationCreateProvider: ({children}: {children: React.ReactNode}) => children as React.ReactElement,
 }));
@@ -166,8 +200,39 @@ vi.mock('../layouts/FullScreenLayout', async () => {
 });
 
 describe('App', () => {
+  // Nothing imports the import and export package up front, so the first page that lazily needs it would
+  // wait for the whole package to load. Loading it once here keeps each lazy route to its own render.
+  beforeAll(async () => {
+    await import('@thunderid/configure-import-export');
+  }, 60000);
+
   afterEach(() => {
     window.history.pushState({}, '', '/');
+    localStorage.clear();
+  });
+
+  it("opens a gateway's map within a project on a full page", async () => {
+    window.history.pushState({}, '', '/projects/p-shop/deploy/gateways/gw-dev/explore');
+    render(<App />);
+    expect(await screen.findByTestId('gateway-explorer-page')).toBeInTheDocument();
+  });
+
+  it('lands on the organization home at the root, with no project selected', async () => {
+    render(<App />);
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/home');
+    });
+    expect(await screen.findByTestId('organization-home-page')).toBeInTheDocument();
+    expect(localStorage.getItem(PROJECT_SELECTION_STORAGE_KEY)).toBeNull();
+  });
+
+  it('sends a project page home at the organization level, to pick a project', async () => {
+    window.history.pushState({}, '', '/applications');
+    render(<App />);
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/home');
+    });
+    expect(screen.queryByTestId('applications-list-page')).not.toBeInTheDocument();
   });
 
   it('renders without crashing', () => {
@@ -210,7 +275,53 @@ describe('App', () => {
     });
   });
 
+  it("opens an application's page in its own project when the URL names it, with no project selected", async () => {
+    resourceProject.application = 'p-bill';
+    window.history.pushState({}, '', '/applications/a-1');
+    render(<App />);
+    expect(await screen.findByTestId('application-edit-page')).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/applications/a-1');
+    expect(localStorage.getItem(PROJECT_SELECTION_STORAGE_KEY)).toBe('p-bill');
+    resourceProject.application = undefined;
+  });
+
+  it("opens an agent's page in its own project when the URL names it, with no project selected", async () => {
+    resourceProject.agent = 'p-shop';
+    window.history.pushState({}, '', '/agents/ag-1');
+    render(<App />);
+    expect(await screen.findByTestId('agent-edit-page')).toBeInTheDocument();
+    expect(localStorage.getItem(PROJECT_SELECTION_STORAGE_KEY)).toBe('p-shop');
+    resourceProject.agent = undefined;
+  });
+
+  it('sends an application page home when the application names no project', async () => {
+    window.history.pushState({}, '', '/applications/a-404');
+    render(<App />);
+    await waitFor(() => expect(window.location.pathname).toBe('/home'));
+  });
+
+  it('creates an application in the selected project, on its full-screen page', async () => {
+    localStorage.setItem(PROJECT_SELECTION_STORAGE_KEY, 'p-shop');
+    window.history.pushState({}, '', '/applications/create');
+    render(<ScopedApp />);
+    await waitFor(() => {
+      expect(screen.getByTestId('application-create-page')).toHaveTextContent('p-shop');
+    });
+    localStorage.clear();
+  });
+
+  it('creates an agent in the selected project, on its full-screen page', async () => {
+    localStorage.setItem(PROJECT_SELECTION_STORAGE_KEY, 'p-shop');
+    window.history.pushState({}, '', '/agents/create');
+    render(<ScopedApp />);
+    await waitFor(() => {
+      expect(screen.getByTestId('agent-onboard-page')).toHaveTextContent('p-shop');
+    });
+    localStorage.clear();
+  });
+
   it('loads ApplicationEditPage lazily via the monaco-setup chain', async () => {
+    localStorage.setItem(PROJECT_SELECTION_STORAGE_KEY, 'p-shop');
     window.history.pushState({}, '', '/applications/app-123');
     render(<App />);
     await waitFor(() => {
@@ -219,6 +330,7 @@ describe('App', () => {
   });
 
   it('loads AgentEditPage lazily via the monaco-setup chain', async () => {
+    localStorage.setItem(PROJECT_SELECTION_STORAGE_KEY, 'p-shop');
     window.history.pushState({}, '', '/agents/agent-123');
     render(<App />);
     await waitFor(() => {
@@ -247,6 +359,14 @@ describe('App', () => {
     render(<App />);
     await waitFor(() => {
       expect(screen.getByTestId('import-configuration-summary-page')).toBeInTheDocument();
+    });
+  });
+
+  it('loads ProjectHomePage lazily at /projects/:projectId', async () => {
+    window.history.pushState({}, '', '/projects/p-shop');
+    render(<App />);
+    await waitFor(() => {
+      expect(screen.getByTestId('project-home-page')).toBeInTheDocument();
     });
   });
 
@@ -444,6 +564,7 @@ describe('App', () => {
   });
 
   it('loads ApplicationsListPage lazily at /applications', async () => {
+    localStorage.setItem(PROJECT_SELECTION_STORAGE_KEY, 'p-shop');
     window.history.pushState({}, '', '/applications');
     render(<App />);
     await waitFor(() => {
@@ -452,6 +573,7 @@ describe('App', () => {
   });
 
   it('loads ApplicationTemplateSelectPage lazily at /applications/types', async () => {
+    localStorage.setItem(PROJECT_SELECTION_STORAGE_KEY, 'p-shop');
     window.history.pushState({}, '', '/applications/types');
     render(<App />);
     await waitFor(() => {
@@ -460,6 +582,7 @@ describe('App', () => {
   });
 
   it('loads ApplicationCreatePage lazily at /applications/create', async () => {
+    localStorage.setItem(PROJECT_SELECTION_STORAGE_KEY, 'p-shop');
     window.history.pushState({}, '', '/applications/create');
     render(<App />);
     await waitFor(() => {
@@ -468,6 +591,7 @@ describe('App', () => {
   });
 
   it('loads AgentsListPage lazily at /agents', async () => {
+    localStorage.setItem(PROJECT_SELECTION_STORAGE_KEY, 'p-shop');
     window.history.pushState({}, '', '/agents');
     render(<App />);
     await waitFor(() => {
@@ -538,6 +662,7 @@ describe('App', () => {
   });
 
   it('loads AgentOnboardPage lazily at /agents/create', async () => {
+    localStorage.setItem(PROJECT_SELECTION_STORAGE_KEY, 'p-shop');
     window.history.pushState({}, '', '/agents/create');
     render(<App />);
     await waitFor(() => {
