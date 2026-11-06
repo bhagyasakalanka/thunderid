@@ -466,7 +466,7 @@ describe('GatewayExplorerPage', () => {
     expect(navigate).toHaveBeenCalledWith('/home');
   });
 
-  it('goes back to the environment the gateway stands for', async () => {
+  it('goes back to the gateway the gateway stands for', async () => {
     routes['GET /gateways/pipeline'] = {
       stages: [{name: 'Development', adminConsoleUrl: 'https://dev.test/console', gateway: {id: 'gw-dev'}}],
     };
@@ -474,7 +474,7 @@ describe('GatewayExplorerPage', () => {
     await screen.findByTestId('explorer-node-application/app-1');
 
     await userEvent.click(await screen.findByText('Development'));
-    expect(navigate).toHaveBeenCalledWith('/environments/gw-dev');
+    expect(navigate).toHaveBeenCalledWith('/deploy/gateways/gw-dev');
   });
 
   it('says when nothing is deployed, or the gateway is unknown', async () => {
