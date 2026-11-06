@@ -11,6 +11,7 @@ import {setCnPrefix} from '@thunderid/utils';
 import {StrictMode} from 'react';
 import * as ReactDOM from 'react-dom/client';
 import AppWithDecorators from './AppWithDecorators';
+import {forgetProjectSelection} from './hooks/useProjectSelection';
 
 // Initialize the class name prefix from runtime config (e.g., "<PRODUCT_NAME>" -> "<PRODUCT_NAME>SignIn--root")
 if (typeof window !== 'undefined') {
@@ -39,6 +40,9 @@ if (import.meta.env.DEV && typeof window !== 'undefined') {
     };
   }
 }
+
+// A fresh start, such as after a sign-in, opens the organization home with no project selected.
+forgetProjectSelection();
 
 const queryClient: QueryClient = new QueryClient({
   defaultOptions: {

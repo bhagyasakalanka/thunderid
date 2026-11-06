@@ -41,6 +41,16 @@ describe('main', () => {
     expect(mockCreateRoot).toHaveBeenCalled();
   });
 
+  it('forgets the remembered project on a fresh start, so the console opens across the organization', async () => {
+    document.body.innerHTML = '<div id="root"></div>';
+    vi.resetModules();
+    localStorage.setItem('thunderid.console-cp.selectedProject', 'p-shop');
+
+    await import('../main');
+
+    expect(localStorage.getItem('thunderid.console-cp.selectedProject')).toBe('');
+  });
+
   it('calls render on the root', async () => {
     // Set up DOM
     document.body.innerHTML = '<div id="root"></div>';

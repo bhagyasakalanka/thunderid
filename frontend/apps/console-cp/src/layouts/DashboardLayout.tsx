@@ -2,6 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {getInitials} from '@thunderid/components';
+import {
+  environmentColor,
+  environmentSectionOf,
+  useDeployRoutes,
+  usePipeline,
+  useProjectChanges,
+  type PipelineStage,
+} from '@thunderid/configure-gateways';
 import {useConfig} from '@thunderid/contexts';
 import {useLogger} from '@thunderid/logger/react';
 import {SignOutButton, User, useThunderID} from '@thunderid/react';
@@ -9,6 +17,7 @@ import {
   AppShell,
   Box,
   Button,
+  Chip,
   ColorSchemeImage,
   ColorSchemeToggle,
   Footer,
@@ -21,8 +30,15 @@ import {
 import {
   Bot,
   Building,
+  FolderKanban,
   Group,
+  ArrowLeft,
+  Circle,
+  Compass,
+  Globe,
+  History,
   Home,
+  KeyRound,
   IdCard,
   Languages,
   Layers,
@@ -32,7 +48,6 @@ import {
   MessageSquare,
   Network,
   Palette,
-  Rocket,
   Server,
   Settings,
   ShieldCheck,
@@ -44,8 +59,12 @@ import {
 } from '@wso2/oxygen-ui-icons-react';
 import {useEffect, useMemo, useState, type JSX, type ReactNode} from 'react';
 import {useTranslation} from 'react-i18next';
-import {Link as NavigateLink, Outlet, useLocation, useNavigate} from 'react-router';
+import {Link as NavigateLink, Outlet, useLocation, useMatch, useNavigate} from 'react-router';
+import EnvironmentSwitcher from './components/EnvironmentSwitcher';
+import ProjectSwitcher from './components/ProjectSwitcher';
+import SessionExpiredBanner from '../components/SessionExpiredBanner';
 import RouteConfig from '../configs/RouteConfig';
+import useProjectSelection from '../hooks/useProjectSelection';
 
 const ICON_BUTTON_SX = {
   minWidth: 40,
@@ -71,6 +90,10 @@ interface NavRoute {
   icon: JSX.Element;
   path?: string;
   children?: NavRoute[];
+  /** A short note beside the entry, such as how many of its changes are not deployed yet. */
+  badge?: string;
+  /** Done as well as going to the entry's page, such as leaving the selected project. */
+  onSelect?: () => void;
 }
 
 interface NavCategory {
@@ -146,6 +169,21 @@ function SidebarPreference({collapsed}: {collapsed: boolean}): null {
 
 export default function DashboardLayout({collapseSidebar = false}: DashboardLayoutProps): ReactNode {
   const {clearSession, discovery} = useThunderID();
+  const {selected: project, select, stale, clearStale} = useProjectSelection();
+  // A remembered project that no longer exists, such as a deleted one, no longer scopes the console.
+  useEffect(() => {
+    if (stale) clearStale();
+  }, [stale, clearStale]);
+  // How many of the project's own applications and agents the first environment does not run yet.
+  const undeployed = useProjectChanges();
+  // On one of an environment's pages, the navigation is the environment's.
+  const environmentMatch = useMatch('/projects/:projectId/environments/:gatewayId/*');
+  const environmentId = environmentMatch?.params.gatewayId;
+  const pipeline = usePipeline();
+  const deployRoutes = useDeployRoutes();
+  const stages: PipelineStage[] = pipeline.data?.stages ?? [];
+  const environmentIndex = stages.findIndex((stage: PipelineStage) => stage.gateway.id === environmentId);
+  const environment = environmentIndex < 0 ? undefined : stages[environmentIndex];
   const {isTrustedIssuerGenericOidc, getTrustedIssuerClientId, getClientUrl} = useConfig();
   const {t} = useTranslation();
   const logger = useLogger();
@@ -185,55 +223,172 @@ export default function DashboardLayout({collapseSidebar = false}: DashboardLayo
     });
   };
 
-  const appRoutes: NavCategory[] = useMemo(
-    () => [
+  const appRoutes: NavCategory[] = useMemo(() => {
+    const applications: NavRoute = {
+      id: 'applications',
+      text: t('navigation:pages.applications'),
+      icon: <LayoutGrid />,
+      path: RouteConfig.applications.list(),
+    };
+    const agents: NavRoute = {
+      id: 'agents',
+      text: t('navigation:pages.agents', 'Agents'),
+      icon: <Bot />,
+      path: RouteConfig.agents.list(),
+    };
+    const badgeOf = (count: number | undefined): string | undefined =>
+      count ? t('navigation:badges.undeployed', '{{count}} undeployed', {count}) : undefined;
+    // A selected project is all the navigation shows: its environments, then its applications and
+    // agents, which belong to projects only. The organization's sections come back once it is left.
+    if (project && environment && environmentId) {
+      const section = (name: 'overview' | 'values' | 'endpoints' | 'history' | 'explore'): string =>
+        environmentSectionOf(deployRoutes, environmentId, project.id, name);
+      const color = environmentColor(environmentIndex);
+      return [
+        {
+          routes: [
+            {
+              id: 'environment-back',
+              text: project.displayName,
+              icon: <ArrowLeft />,
+              path: RouteConfig.projects.home(project.id),
+            },
+          ],
+        },
+        {
+          category: t('navigation:categories.environment', 'Environment: {{name}}', {name: environment.name}),
+          routes: [
+            {
+              id: 'environment-overview',
+              text: t('navigation:pages.overview', 'Overview'),
+              icon: <Circle fill={color.light} stroke={color.light} />,
+              path: section('overview'),
+            },
+          ],
+        },
+        {
+          category: t('navigation:categories.configure'),
+          routes: [
+            {
+              id: 'environment-values',
+              text: t('navigation:pages.variablesAndSecrets', 'Variables & secrets'),
+              icon: <KeyRound />,
+              path: section('values'),
+            },
+          ],
+        },
+        {
+          category: t('navigation:categories.test', 'Test'),
+          routes: [
+            {
+              id: 'environment-endpoints',
+              text: t('navigation:pages.endpoints', 'Endpoints'),
+              icon: <Globe />,
+              path: section('endpoints'),
+            },
+          ],
+        },
+        {
+          category: t('navigation:categories.releases', 'Releases'),
+          routes: [
+            {
+              id: 'environment-explore',
+              text: t('navigation:pages.deployedConfiguration', 'Deployed configuration'),
+              icon: <Compass />,
+              path: section('explore'),
+            },
+            {
+              id: 'environment-history',
+              text: t('navigation:pages.deploymentHistory', 'Deployment history'),
+              icon: <History />,
+              path: section('history'),
+            },
+          ],
+        },
+      ];
+    }
+    if (project) {
+      return [
+        {
+          routes: [
+            {
+              id: 'organization',
+              text: t('navigation:pages.organizationSettings', 'Organization settings'),
+              icon: <ArrowLeft />,
+              path: RouteConfig.home.list(),
+              onSelect: () => select(''),
+            },
+          ],
+        },
+        {
+          category: t('navigation:categories.project', 'Project: {{name}}', {name: project.displayName}),
+          routes: [
+            {
+              id: 'project-environments',
+              text: t('navigation:pages.deploymentPipeline', 'Deployment pipeline'),
+              icon: <FolderKanban />,
+              path: RouteConfig.projects.home(project.id),
+            },
+          ],
+        },
+        {
+          category: t('navigation:categories.build', 'Build'),
+          routes: [
+            {...applications, badge: badgeOf(undeployed.application)},
+            {...agents, badge: badgeOf(undeployed.agent)},
+          ],
+        },
+      ];
+    }
+    // The organization's navigation, as the organization overview lays it out.
+    return [
       {
         routes: [
           {
             id: 'home',
-            text: t('navigation:pages.home'),
+            text: t('navigation:pages.overview', 'Overview'),
             icon: <Home />,
             path: RouteConfig.home.list(),
           },
         ],
       },
       {
-        category: t('navigation:categories.resources'),
-        routes: [
-          {
-            id: 'applications',
-            text: t('navigation:pages.applications'),
-            icon: <LayoutGrid />,
-            path: RouteConfig.applications.list(),
-          },
-          {
-            id: 'resource-servers',
-            text: t('navigation:pages.resourceServers', 'Resource servers'),
-            icon: <Server />,
-            path: RouteConfig.resourceServers.list(),
-          },
-        ],
-      },
-      {
-        category: t('navigation:categories.identities'),
+        category: t('navigation:categories.administration', 'Administration'),
         routes: [
           {
             id: 'users',
-            text: t('navigation:pages.users'),
+            text: t('navigation:pages.administrators', 'Administrators'),
             icon: <UsersRound />,
             path: RouteConfig.users.list(),
           },
           {
-            id: 'agents',
-            text: t('navigation:pages.agents', 'Agents'),
-            icon: <Bot />,
-            path: RouteConfig.agents.list(),
+            id: 'gateways',
+            text: t('navigation:pages.gateways', 'Deployment'),
+            icon: <Network />,
+            path: RouteConfig.gateways.list(),
           },
+          {
+            id: 'settings',
+            text: t('navigation:pages.settings'),
+            icon: <Settings />,
+            path: RouteConfig.settings.list(),
+          },
+        ],
+      },
+      {
+        category: t('navigation:categories.identitySetup', 'Identity setup'),
+        routes: [
           {
             id: 'groups',
             text: t('navigation:pages.groups'),
             icon: <Group />,
             path: RouteConfig.groups.list(),
+          },
+          {
+            id: 'user-types',
+            text: t('navigation:pages.userTypes'),
+            icon: <UserRoundCog />,
+            path: RouteConfig.userTypes.list(),
           },
           {
             id: 'roles',
@@ -242,22 +397,16 @@ export default function DashboardLayout({collapseSidebar = false}: DashboardLayo
             path: RouteConfig.roles.list(),
           },
           {
-            id: 'user-types',
-            text: t('navigation:pages.userTypes'),
-            icon: <UserRoundCog />,
-            path: RouteConfig.userTypes.list(),
-          },
-        ],
-      },
-      {
-        category: t('navigation:categories.configure'),
-        routes: [
-          {
             id: 'organization-units',
             text: t('navigation:pages.organizationUnits'),
             icon: <Building />,
             path: RouteConfig.organizationUnits.list(),
           },
+        ],
+      },
+      {
+        category: t('navigation:categories.signInExperience', 'Sign-in experience'),
+        routes: [
           {
             id: 'flows',
             text: t('navigation:pages.flows'),
@@ -270,30 +419,6 @@ export default function DashboardLayout({collapseSidebar = false}: DashboardLayo
             icon: <Layers />,
             path: RouteConfig.connections.list(),
           },
-          {
-            id: 'verifiable-credentials',
-            text: t('navigation:pages.verifiableCredentials'),
-            icon: <Wallet />,
-            children: [
-              {
-                id: 'credentials',
-                text: t('navigation:pages.credentials'),
-                icon: <IdCard />,
-                path: RouteConfig.verifiableCredentials.list(),
-              },
-              {
-                id: 'presentations',
-                text: t('navigation:pages.presentations'),
-                icon: <ShieldCheck />,
-                path: RouteConfig.verifiablePresentations.list(),
-              },
-            ],
-          },
-        ],
-      },
-      {
-        category: t('navigation:categories.customize'),
-        routes: [
           {
             id: 'design',
             text: t('navigation:pages.design', 'Design'),
@@ -328,25 +453,47 @@ export default function DashboardLayout({collapseSidebar = false}: DashboardLayo
         ],
       },
       {
-        category: t('navigation:categories.system'),
+        category: t('navigation:categories.apisAndCredentials', 'APIs and credentials'),
         routes: [
           {
-            id: 'gateways',
-            text: t('navigation:pages.gateways', 'Deployment'),
-            icon: <Network />,
-            path: RouteConfig.gateways.list(),
+            id: 'resource-servers',
+            text: t('navigation:pages.resourceServers', 'Resource servers'),
+            icon: <Server />,
+            path: RouteConfig.resourceServers.list(),
           },
           {
-            id: 'settings',
-            text: t('navigation:pages.settings'),
-            icon: <Settings />,
-            path: RouteConfig.settings.list(),
+            id: 'verifiable-credentials',
+            text: t('navigation:pages.verifiableCredentials'),
+            icon: <Wallet />,
+            children: [
+              {
+                id: 'credentials',
+                text: t('navigation:pages.credentials'),
+                icon: <IdCard />,
+                path: RouteConfig.verifiableCredentials.list(),
+              },
+              {
+                id: 'presentations',
+                text: t('navigation:pages.presentations'),
+                icon: <ShieldCheck />,
+                path: RouteConfig.verifiablePresentations.list(),
+              },
+            ],
           },
         ],
       },
-    ],
-    [t],
-  );
+    ];
+  }, [
+    t,
+    project,
+    undeployed.application,
+    undeployed.agent,
+    environment,
+    environmentId,
+    environmentIndex,
+    deployRoutes,
+    select,
+  ]);
 
   const {pathname} = useLocation();
 
@@ -406,16 +553,17 @@ export default function DashboardLayout({collapseSidebar = false}: DashboardLayo
           </Header.Brand>
           <Header.Spacer />
           <Header.Actions>
-            <Button
-              variant="contained"
-              size="small"
-              startIcon={<Rocket size={16} />}
-              onClick={() => void navigate(RouteConfig.deploy.list())}
-              sx={{borderRadius: 100, mr: 1}}
-              data-testid="header-deploy"
-            >
-              {t('deploy:header.title', 'Deploy')}
-            </Button>
+            <ProjectSwitcher />
+            <EnvironmentSwitcher />
+            {environment && (
+              <Chip
+                size="small"
+                variant="outlined"
+                label={t('common:header.readOnly', 'Configuration read-only')}
+                sx={{mr: 1}}
+                data-testid="header-read-only"
+              />
+            )}
             <ColorSchemeToggle />
             <User>
               {(user) => {
@@ -475,9 +623,21 @@ export default function DashboardLayout({collapseSidebar = false}: DashboardLayo
                       ))}
                     </Sidebar.Item>
                   ) : (
-                    <Sidebar.Item key={route.id} id={route.id} link={<NavigateLink to={route.path ?? ''} />}>
+                    <Sidebar.Item
+                      key={route.id}
+                      id={route.id}
+                      link={<NavigateLink to={route.path ?? ''} onClick={route.onSelect} />}
+                    >
                       <Sidebar.ItemIcon>{route.icon}</Sidebar.ItemIcon>
-                      <Sidebar.ItemLabel>{route.text}</Sidebar.ItemLabel>
+                      {/* With a badge the label keeps its whole width and the badge follows it. */}
+                      <Sidebar.ItemLabel sx={route.badge ? {flex: '0 0 auto', overflow: 'visible'} : undefined}>
+                        {route.text}
+                      </Sidebar.ItemLabel>
+                      {route.badge && (
+                        <Sidebar.ItemBadge color="warning" sx={{ml: 1, flexShrink: 0, '& .MuiChip-label': {px: 0.75}}}>
+                          {route.badge}
+                        </Sidebar.ItemBadge>
+                      )}
                     </Sidebar.Item>
                   ),
                 )}
@@ -491,6 +651,7 @@ export default function DashboardLayout({collapseSidebar = false}: DashboardLayo
       </AppShell.Sidebar>
 
       <AppShell.Main>
+        <SessionExpiredBanner />
         <Outlet />
       </AppShell.Main>
 

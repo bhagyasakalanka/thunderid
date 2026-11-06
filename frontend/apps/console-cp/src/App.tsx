@@ -6,7 +6,6 @@ import {ApplicationCreateProvider} from '@thunderid/configure-applications';
 import {LayoutBuilderProvider, ThemeBuilderProvider} from '@thunderid/configure-design';
 import {GroupCreateProvider} from '@thunderid/configure-groups';
 import type {NotificationChannel} from '@thunderid/configure-notification-templates';
-import {WelcomeRedirect} from '@thunderid/configure-onboarding';
 import {OrganizationUnitProvider} from '@thunderid/configure-organization-units';
 import {RoleCreateProvider} from '@thunderid/configure-roles';
 import {TranslationCreateProvider} from '@thunderid/configure-translations';
@@ -21,6 +20,7 @@ import {
 import {ProtectedRoute} from '@thunderid/react-router';
 import {lazy, Suspense, type JSX} from 'react';
 import {BrowserRouter, Navigate, Outlet, Route, Routes} from 'react-router';
+import InProject from './components/InProject';
 import RouteConfig, {ROUTE_SEGMENTS} from './configs/RouteConfig';
 import DashboardLayout from './layouts/DashboardLayout';
 import FullScreenLayout from './layouts/FullScreenLayout';
@@ -62,7 +62,7 @@ const NotificationTemplateCreatePage = lazy(() =>
 );
 const UserAddPage = lazy(() => import('@thunderid/configure-users').then((m) => ({default: m.UserAddPage})));
 const UserEditPage = lazy(() => import('@thunderid/configure-users').then((m) => ({default: m.UserEditPage})));
-const UsersListPage = lazy(() => import('@thunderid/configure-users').then((m) => ({default: m.UsersListPage})));
+const UsersListPage = lazy(() => import('./pages/AdministratorsListPage'));
 const ResourceServersListPage = lazy(() =>
   import('@thunderid/configure-resource-servers').then((m) => ({default: m.ResourceServersListPage})),
 );
@@ -107,7 +107,9 @@ const FlowsListPage = lazy(() => import('@thunderid/configure-flows').then((m) =
 const CreateGroupPage = lazy(() => import('@thunderid/configure-groups').then((m) => ({default: m.CreateGroupPage})));
 const GroupEditPage = lazy(() => import('@thunderid/configure-groups').then((m) => ({default: m.GroupEditPage})));
 const GroupsListPage = lazy(() => import('@thunderid/configure-groups').then((m) => ({default: m.GroupsListPage})));
-const HomePage = lazy(() => import('@thunderid/configure-onboarding').then((m) => ({default: m.HomePage})));
+const OrganizationHomePage = lazy(() => import('./pages/OrganizationHomePage'));
+const ProjectHomePage = lazy(() => import('./pages/ProjectHomePage'));
+const ProjectExplorerPage = lazy(() => import('./pages/ProjectExplorerPage'));
 const ExportPage = lazy(() =>
   import('./lib/monaco-setup').then(() =>
     import('@thunderid/configure-import-export').then((m) => ({default: m.ExportPage})),
@@ -210,7 +212,6 @@ export default function App(): JSX.Element {
       <RoutesProvider paths={RouteConfig}>
         <AdministrationProvider administration={CONTROL_PLANE_ADMINISTRATION}>
           <ToastProvider>
-            <WelcomeRedirect />
             <Suspense fallback={<PageLoader />}>
               <Routes>
                 <Route
@@ -221,8 +222,9 @@ export default function App(): JSX.Element {
                     </ProtectedRoute>
                   }
                 >
-                  <Route index element={<HomePage />} />
-                  <Route path={ROUTE_SEGMENTS.home} element={<HomePage />} />
+                  <Route index element={<Navigate to={RouteConfig.home.list()} replace />} />
+                  <Route path={ROUTE_SEGMENTS.home} element={<OrganizationHomePage />} />
+                  <Route path={`${ROUTE_SEGMENTS.projects}/:projectId`} element={<ProjectHomePage />} />
                   <Route path={ROUTE_SEGMENTS.users} element={<UsersListPage />} />
                   <Route path={`${ROUTE_SEGMENTS.users}/:userId`} element={<UserEditPage />} />
                   <Route path={ROUTE_SEGMENTS.userTypes} element={<UserTypesListPage />} />
@@ -250,10 +252,38 @@ export default function App(): JSX.Element {
                     path={`${ROUTE_SEGMENTS.verifiableCredentials}/:vcId`}
                     element={<VerifiableCredentialEditPage />}
                   />
-                  <Route path={ROUTE_SEGMENTS.applications} element={<ApplicationsListPage />} />
-                  <Route path={`${ROUTE_SEGMENTS.applications}/:applicationId`} element={<ApplicationEditPage />} />
-                  <Route path={ROUTE_SEGMENTS.agents} element={<AgentsListPage />} />
-                  <Route path={`${ROUTE_SEGMENTS.agents}/:agentId`} element={<AgentEditPage />} />
+                  <Route
+                    path={ROUTE_SEGMENTS.applications}
+                    element={
+                      <InProject>
+                        <ApplicationsListPage />
+                      </InProject>
+                    }
+                  />
+                  <Route
+                    path={`${ROUTE_SEGMENTS.applications}/:applicationId`}
+                    element={
+                      <InProject resource="application">
+                        <ApplicationEditPage />
+                      </InProject>
+                    }
+                  />
+                  <Route
+                    path={ROUTE_SEGMENTS.agents}
+                    element={
+                      <InProject>
+                        <AgentsListPage />
+                      </InProject>
+                    }
+                  />
+                  <Route
+                    path={`${ROUTE_SEGMENTS.agents}/:agentId`}
+                    element={
+                      <InProject resource="agent">
+                        <AgentEditPage />
+                      </InProject>
+                    }
+                  />
                   <Route path={ROUTE_SEGMENTS.flows} element={<FlowsListPage />} />
                   <Route path={ROUTE_SEGMENTS.resourceServers} element={<ResourceServersListPage />} />
                   <Route
@@ -335,6 +365,16 @@ export default function App(): JSX.Element {
                   <Route path="gateways/:gatewayId/values" element={<GatewayValuesPage />} />
                 </Route>
                 <Route
+                  path={`${ROUTE_SEGMENTS.projects}/:projectId/${ROUTE_SEGMENTS.environments}/:gatewayId/explore`}
+                  element={
+                    <ProtectedRoute>
+                      <FullScreenLayout />
+                    </ProtectedRoute>
+                  }
+                >
+                  <Route index element={<ProjectExplorerPage />} />
+                </Route>
+                <Route
                   path={RouteConfig.userTypes.create()}
                   element={
                     <ProtectedRoute>
@@ -376,10 +416,24 @@ export default function App(): JSX.Element {
                   }
                 >
                   <Route path={RouteConfig.applications.types()} element={<DashboardLayout />}>
-                    <Route index element={<ApplicationTemplateSelectPage />} />
+                    <Route
+                      index
+                      element={
+                        <InProject>
+                          <ApplicationTemplateSelectPage />
+                        </InProject>
+                      }
+                    />
                   </Route>
                   <Route path={RouteConfig.applications.create()} element={<FullScreenLayout />}>
-                    <Route index element={<ApplicationCreatePage />} />
+                    <Route
+                      index
+                      element={
+                        <InProject>
+                          <ApplicationCreatePage />
+                        </InProject>
+                      }
+                    />
                   </Route>
                 </Route>
                 <Route
@@ -390,7 +444,14 @@ export default function App(): JSX.Element {
                     </ProtectedRoute>
                   }
                 >
-                  <Route index element={<AgentOnboardPage />} />
+                  <Route
+                    index
+                    element={
+                      <InProject>
+                        <AgentOnboardPage />
+                      </InProject>
+                    }
+                  />
                 </Route>
                 <Route
                   path={RouteConfig.resourceServers.create()}
@@ -495,10 +556,31 @@ export default function App(): JSX.Element {
                       </ApplicationCreateProvider>
                     }
                   >
-                    <Route path="get-started/applications/types" element={<ApplicationTemplateSelectPage />} />
-                    <Route path="get-started/applications/create" element={<ApplicationCreatePage />} />
+                    <Route
+                      path="get-started/applications/types"
+                      element={
+                        <InProject>
+                          <ApplicationTemplateSelectPage />
+                        </InProject>
+                      }
+                    />
+                    <Route
+                      path="get-started/applications/create"
+                      element={
+                        <InProject>
+                          <ApplicationCreatePage />
+                        </InProject>
+                      }
+                    />
                   </Route>
-                  <Route path="get-started/agents/create" element={<AgentOnboardPage />} />
+                  <Route
+                    path="get-started/agents/create"
+                    element={
+                      <InProject>
+                        <AgentOnboardPage />
+                      </InProject>
+                    }
+                  />
                 </Route>
                 <Route
                   path={RouteConfig.design.list()}

@@ -1,8 +1,12 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {render, screen, userEvent, waitFor} from '@thunderid/test-utils';
+import {useProjectScope} from '@thunderid/contexts';
+import {render, screen, userEvent, waitFor, within} from '@thunderid/test-utils';
+import {useEffect} from 'react';
 import {afterEach, describe, it, expect, vi, beforeEach} from 'vitest';
+import SelectedProjectScope from '../../components/SelectedProjectScope';
+import {PROJECT_SELECTION_STORAGE_KEY} from '../../hooks/useProjectSelection';
 import DashboardLayout from '../DashboardLayout';
 
 const mockNavigate = vi.fn();
@@ -26,6 +30,44 @@ interface MockUseGetApplicationsResult {
 const mockUseGetApplications = vi.fn<(params: unknown) => MockUseGetApplicationsResult>();
 let mockDiscovery: {wellKnown?: {end_session_endpoint?: string}} | undefined;
 let mockIsTrustedIssuerGenericOidc = false;
+let mockProjects: {id: string; displayName: string}[] = [];
+let mockProjectChanges: Record<string, number> = {};
+
+let mockPath = '/';
+vi.mock('@thunderid/configure-gateways', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@thunderid/configure-gateways')>();
+  return {
+    environmentColor: actual.environmentColor,
+    environmentSectionOf: actual.environmentSectionOf,
+    useDeployRoutes: () => actual.defaultDeployRoutePaths,
+    usePipeline: () => ({
+      data: {stages: [{name: 'Development', gateway: {id: 'gw-dev', name: 'dev', baseUrl: 'https://dev.test'}}]},
+    }),
+    useProjects: () => ({data: mockProjects, isSuccess: true}),
+    useProjectChanges: () => mockProjectChanges,
+    useProjectScope: actual.useProjectScope,
+    useProjectStatuses: () => ({
+      byGateway: {
+        'gw-dev': {
+          project: {versions: [{hash: 'h37', number: 37, resources: 2}], pending: 4, required: 1},
+          shared: {pending: 0, byType: []},
+          needed: {differing: 0},
+        },
+      },
+      isLoading: false,
+    }),
+    useVersions: () => ({data: [{version: 'h42', number: 42}]}),
+  };
+});
+
+/** What the pages under the layout are scoped to. */
+function ScopedOutlet() {
+  return (
+    <div data-testid="outlet">
+      Outlet Content<span data-testid="outlet-project">{useProjectScope().projectId ?? 'none'}</span>
+    </div>
+  );
+}
 
 vi.mock('@thunderid/configure-applications', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@thunderid/configure-applications')>()),
@@ -60,6 +102,7 @@ vi.mock('@thunderid/contexts', async (importOriginal) => {
       isTrustedIssuerGenericOidc: () => mockIsTrustedIssuerGenericOidc,
       getTrustedIssuerClientId: () => 'test-client-id',
       getClientUrl: () => 'https://localhost:5191/console',
+      getServerUrl: () => 'https://localhost:8090',
     }),
   };
 });
@@ -86,13 +129,14 @@ vi.mock('react-router', async () => {
   const actual = await vi.importActual<typeof import('react-router')>('react-router');
   return {
     ...actual,
-    Outlet: () => <div data-testid="outlet">Outlet Content</div>,
+    Outlet: () => <ScopedOutlet />,
     Link: ({children, to}: {children: React.ReactNode; to: string}) => (
       <a href={to} data-testid="router-link">
         {children}
       </a>
     ),
     useNavigate: () => mockNavigate,
+    useMatch: (pattern: string) => actual.matchPath(pattern, mockPath),
   };
 });
 
@@ -103,6 +147,10 @@ describe('DashboardLayout', () => {
     mockUserData.mockReturnValue({name: 'Test User', email: 'test@example.com'});
     mockIsTrustedIssuerGenericOidc = false;
     mockDiscovery = undefined;
+    mockProjects = [];
+    mockProjectChanges = {};
+    mockPath = '/';
+    localStorage.clear();
     mockUseGetApplications.mockReturnValue({
       data: {applications: []},
       isLoading: false,
@@ -122,33 +170,265 @@ describe('DashboardLayout', () => {
 
     expect(screen.getByTestId('outlet')).toBeInTheDocument();
     expect(screen.getByTestId('outlet')).toHaveTextContent('Outlet Content');
+    expect(screen.getByTestId('outlet-project')).toHaveTextContent('none');
+  });
+
+  it('offers no project selector while there are no projects', () => {
+    render(<DashboardLayout />);
+
+    expect(screen.queryByTestId('project-switcher')).not.toBeInTheDocument();
+  });
+
+  it("selects a project from the header's project selector and opens its environments", async () => {
+    mockProjects = [
+      {id: 'p-shop', displayName: 'Shop'},
+      {id: 'p-billing', displayName: 'Billing'},
+    ];
+    render(
+      <SelectedProjectScope>
+        <DashboardLayout />
+      </SelectedProjectScope>,
+    );
+
+    // No project is selected at first: the console starts at the organization.
+    expect(screen.getByTestId('outlet-project')).toHaveTextContent('none');
+    await userEvent.click(screen.getByRole('button', {name: 'common:header.openProject'}));
+    await userEvent.click(await screen.findByRole('menuitem', {name: 'Billing'}));
+
+    expect(mockNavigate).toHaveBeenCalledWith('/projects/p-billing');
+    expect(localStorage.getItem(PROJECT_SELECTION_STORAGE_KEY)).toBe('p-billing');
+    await waitFor(() => expect(screen.getByTestId('outlet-project')).toHaveTextContent('p-billing'));
+  });
+
+  it("lists the selected project's applications and agents under it, with what is not deployed yet", () => {
+    mockProjects = [{id: 'p-shop', displayName: 'Shop'}];
+    mockProjectChanges = {application: 2};
+    localStorage.setItem(PROJECT_SELECTION_STORAGE_KEY, 'p-shop');
+    render(
+      <SelectedProjectScope>
+        <DashboardLayout />
+      </SelectedProjectScope>,
+    );
+
+    expect(screen.getByTestId('outlet-project')).toHaveTextContent('p-shop');
+    expect(screen.getByText('navigation:categories.project')).toBeInTheDocument();
+    expect(screen.getByText('navigation:pages.deploymentPipeline')).toBeInTheDocument();
+    expect(screen.getByText('navigation:categories.build')).toBeInTheDocument();
+    expect(screen.getAllByText('navigation:pages.applications')).toHaveLength(1);
+    expect(screen.getAllByText('navigation:pages.agents')).toHaveLength(1);
+    // Nothing of the organization's is listed inside a project.
+    expect(screen.queryByText('navigation:pages.home')).not.toBeInTheDocument();
+    expect(screen.queryByText('navigation:pages.groups')).not.toBeInTheDocument();
+    expect(screen.queryByText('navigation:categories.identities')).not.toBeInTheDocument();
+    expect(screen.getByText('navigation:badges.undeployed')).toBeInTheDocument();
+  });
+
+  it('keeps the whole label beside an undeployed badge, the badge after it', () => {
+    mockProjects = [{id: 'p-shop', displayName: 'Shop'}];
+    mockProjectChanges = {application: 1};
+    localStorage.setItem(PROJECT_SELECTION_STORAGE_KEY, 'p-shop');
+    render(
+      <SelectedProjectScope>
+        <DashboardLayout />
+      </SelectedProjectScope>,
+    );
+
+    const label = screen.getByText('navigation:pages.applications').closest('.MuiListItemText-root')!;
+    const badge = screen.getByText('navigation:badges.undeployed').closest('.MuiChip-root')!;
+    expect(getComputedStyle(label).flexShrink).toBe('0');
+    expect(getComputedStyle(label).overflow).toBe('visible');
+    expect(getComputedStyle(badge).flexShrink).toBe('0');
+    expect(label.compareDocumentPosition(badge) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("shows the environment's own navigation on its pages, back to the project", () => {
+    mockProjects = [{id: 'p-shop', displayName: 'Shop'}];
+    localStorage.setItem(PROJECT_SELECTION_STORAGE_KEY, 'p-shop');
+    mockPath = '/projects/p-shop/environments/gw-dev/values';
+    render(
+      <SelectedProjectScope>
+        <DashboardLayout />
+      </SelectedProjectScope>,
+    );
+
+    // The way back names the project, as the header's selector does.
+    expect(screen.getAllByText('Shop').length).toBeGreaterThan(1);
+    expect(screen.getByText('navigation:categories.environment')).toBeInTheDocument();
+    for (const page of [
+      'navigation:pages.overview',
+      'navigation:pages.variablesAndSecrets',
+      'navigation:pages.endpoints',
+      'navigation:pages.deployedConfiguration',
+      'navigation:pages.deploymentHistory',
+    ]) {
+      expect(screen.getByText(page)).toBeInTheDocument();
+    }
+    expect(screen.queryByText('navigation:pages.applications')).not.toBeInTheDocument();
+  });
+
+  it("switches between the project's configuration and its environments from the header", async () => {
+    mockProjects = [{id: 'p-shop', displayName: 'Shop'}];
+    localStorage.setItem(PROJECT_SELECTION_STORAGE_KEY, 'p-shop');
+    render(
+      <SelectedProjectScope>
+        <DashboardLayout />
+      </SelectedProjectScope>,
+    );
+
+    const switcher = screen.getByTestId('environment-switcher');
+    expect(switcher).toHaveTextContent('common:header.projectConfiguration');
+    expect(screen.queryByTestId('header-read-only')).not.toBeInTheDocument();
+    await userEvent.click(switcher);
+    expect(await screen.findByText('v37 · common:header.changesBehind')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('menuitem', {name: /DEVELOPMENT/}));
+    expect(mockNavigate).toHaveBeenCalledWith('/projects/p-shop/environments/gw-dev');
+  });
+
+  it('shows only the projects entry in the header at the organization level, with no environment switcher', () => {
+    mockProjects = [{id: 'p-shop', displayName: 'Shop'}];
+    mockPath = '/home';
+    render(
+      <SelectedProjectScope>
+        <DashboardLayout />
+      </SelectedProjectScope>,
+    );
+
+    expect(screen.getByRole('button', {name: 'common:header.openProject'})).toBeInTheDocument();
+    expect(screen.queryByTestId('environment-switcher')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('header-read-only')).not.toBeInTheDocument();
+  });
+
+  it('names the environment open, and says its configuration is read-only there', () => {
+    mockProjects = [{id: 'p-shop', displayName: 'Shop'}];
+    localStorage.setItem(PROJECT_SELECTION_STORAGE_KEY, 'p-shop');
+    mockPath = '/projects/p-shop/environments/gw-dev';
+    render(
+      <SelectedProjectScope>
+        <DashboardLayout />
+      </SelectedProjectScope>,
+    );
+
+    expect(screen.getByTestId('environment-switcher')).toHaveTextContent('DEVELOPMENT');
+    expect(screen.getByTestId('header-read-only')).toHaveTextContent('common:header.readOnly');
+  });
+
+  it('leads out of a project to the organization from the top of its navigation', () => {
+    mockProjects = [{id: 'p-shop', displayName: 'Shop'}];
+    localStorage.setItem(PROJECT_SELECTION_STORAGE_KEY, 'p-shop');
+    render(
+      <SelectedProjectScope>
+        <DashboardLayout />
+      </SelectedProjectScope>,
+    );
+
+    expect(screen.getByText('navigation:pages.organizationSettings')).toBeInTheDocument();
+  });
+
+  it('keeps a project selected while the remembered one was found stale, as opening its page does', async () => {
+    mockProjects = [{id: 'p-shop', displayName: 'Shop'}];
+    localStorage.setItem(PROJECT_SELECTION_STORAGE_KEY, 'p-gone');
+    // A project's page selects its project in an effect that runs before the layout's.
+    function OpenShop(): null {
+      useEffect(() => {
+        localStorage.setItem(PROJECT_SELECTION_STORAGE_KEY, 'p-shop');
+      }, []);
+      return null;
+    }
+
+    render(
+      <SelectedProjectScope>
+        <OpenShop />
+        <DashboardLayout />
+      </SelectedProjectScope>,
+    );
+
+    await waitFor(() => expect(localStorage.getItem(PROJECT_SELECTION_STORAGE_KEY)).toBe('p-shop'));
+  });
+
+  it('forgets a remembered project that no longer exists', async () => {
+    mockProjects = [{id: 'p-shop', displayName: 'Shop'}];
+    localStorage.setItem(PROJECT_SELECTION_STORAGE_KEY, 'p-gone');
+    render(
+      <SelectedProjectScope>
+        <DashboardLayout />
+      </SelectedProjectScope>,
+    );
+
+    await waitFor(() => expect(localStorage.getItem(PROJECT_SELECTION_STORAGE_KEY)).toBe(''));
+    expect(screen.getByTestId('outlet-project')).toHaveTextContent('none');
+  });
+
+  it('leaves the selected project for the organization', async () => {
+    mockProjects = [{id: 'p-shop', displayName: 'Shop'}];
+    localStorage.setItem(PROJECT_SELECTION_STORAGE_KEY, 'p-shop');
+    render(
+      <SelectedProjectScope>
+        <DashboardLayout />
+      </SelectedProjectScope>,
+    );
+
+    await userEvent.click(screen.getByRole('button', {name: 'common:header.leaveProject'}));
+
+    expect(mockNavigate).toHaveBeenCalledWith('/home');
+    await waitFor(() => expect(screen.getByTestId('outlet-project')).toHaveTextContent('none'));
+    expect(screen.queryByText('navigation:categories.project')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', {name: 'common:header.openProject'})).toBeInTheDocument();
+  });
+
+  it('switches to another project from the selected one', async () => {
+    mockProjects = [
+      {id: 'p-shop', displayName: 'Shop'},
+      {id: 'p-billing', displayName: 'Billing'},
+    ];
+    localStorage.setItem(PROJECT_SELECTION_STORAGE_KEY, 'p-shop');
+    render(
+      <SelectedProjectScope>
+        <DashboardLayout />
+      </SelectedProjectScope>,
+    );
+
+    await userEvent.click(screen.getByRole('combobox', {name: 'common:header.project'}));
+    const options = within(await screen.findByRole('listbox')).getAllByRole('option');
+    // Only projects are listed: leaving one is the close button's.
+    expect(options.map((option) => option.textContent)).toEqual(['Shop', 'Billing']);
+    await userEvent.click(options[1]);
+
+    expect(mockNavigate).toHaveBeenCalledWith('/projects/p-billing');
+    await waitFor(() => expect(screen.getByTestId('outlet-project')).toHaveTextContent('p-billing'));
   });
 
   it('renders navigation categories', () => {
     render(<DashboardLayout />);
 
-    // Check for category labels
-    expect(screen.getByText('navigation:categories.identities')).toBeInTheDocument();
-    expect(screen.getByText('navigation:categories.resources')).toBeInTheDocument();
+    // The organization's navigation, grouped as its overview lays it out.
+    for (const category of [
+      'navigation:categories.administration',
+      'navigation:categories.identitySetup',
+      'navigation:categories.signInExperience',
+      'navigation:categories.apisAndCredentials',
+    ]) {
+      expect(screen.getByText(category)).toBeInTheDocument();
+    }
+    expect(screen.getByText('navigation:pages.overview')).toBeInTheDocument();
   });
 
-  it('opens the Deploy page from the header, not from the navigation', async () => {
+  it('offers no Deploy in the header or the navigation', () => {
     render(<DashboardLayout />);
 
     expect(screen.queryByRole('link', {name: /deploy/i})).not.toBeInTheDocument();
-    await userEvent.click(screen.getByTestId('header-deploy'));
-
-    expect(mockNavigate).toHaveBeenCalledWith('/deploy');
+    expect(screen.queryByTestId('header-deploy')).not.toBeInTheDocument();
   });
 
   it('renders navigation items', () => {
     render(<DashboardLayout />);
 
     // Check for navigation items using translation keys
-    expect(screen.getByText('navigation:pages.users')).toBeInTheDocument();
+    expect(screen.getByText('navigation:pages.administrators')).toBeInTheDocument();
     expect(screen.getByText('navigation:pages.userTypes')).toBeInTheDocument();
-    expect(screen.getByText('navigation:pages.applications')).toBeInTheDocument();
     expect(screen.getByText('navigation:pages.connections')).toBeInTheDocument();
+    // Applications and agents belong to projects, so the organization lists neither.
+    expect(screen.queryByText('navigation:pages.applications')).not.toBeInTheDocument();
+    expect(screen.queryByText('navigation:pages.agents')).not.toBeInTheDocument();
     expect(screen.getByText('navigation:pages.flows')).toBeInTheDocument();
     expect(screen.getByText('navigation:pages.gateways')).toBeInTheDocument();
   });
@@ -156,7 +436,7 @@ describe('DashboardLayout', () => {
   it.each([false, true])('keeps navigation icon sizes consistent when collapseSidebar is %s', (collapseSidebar) => {
     render(<DashboardLayout collapseSidebar={collapseSidebar} />);
 
-    const applicationIcon = screen.getByRole('button', {name: 'navigation:pages.applications'}).querySelector('svg');
+    const applicationIcon = screen.getByRole('button', {name: 'navigation:pages.connections'}).querySelector('svg');
     expect(applicationIcon).toBeInTheDocument();
 
     const navigationIcons = screen.getByRole('navigation').querySelectorAll('.MuiListItemIcon-root svg');
