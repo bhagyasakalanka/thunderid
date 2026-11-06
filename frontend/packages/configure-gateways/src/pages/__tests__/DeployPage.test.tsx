@@ -922,7 +922,7 @@ describe('DeployPage: apply safety', () => {
 
     answer = refusal('GTW-9999', 403);
     await userEvent.click(within(panel).getByRole('button', {name: 'Deploy'}));
-    expect(await within(panel).findByText('Your account may not deploy to this gateway.')).toBeInTheDocument();
+    expect(await within(panel).findByText('Your account may not deploy to Prod.')).toBeInTheDocument();
   });
 
   it('says another deploy is running when a rollback finds the gateway busy', async () => {

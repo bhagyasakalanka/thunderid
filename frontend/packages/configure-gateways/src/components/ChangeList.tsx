@@ -5,6 +5,7 @@ import {Box, Button, Checkbox, Chip, Collapse, FormControlLabel, Stack, Typograp
 import {ChevronDown, ChevronUp} from '@wso2/oxygen-ui-icons-react';
 import {useState, type JSX} from 'react';
 import {useTranslation} from 'react-i18next';
+import ChangeFlags from './ChangeFlags';
 import ChangeLines from './ChangeLines';
 import type {Change, ChangeKind} from '../models/deploy';
 
@@ -74,7 +75,9 @@ export default function ChangeList({
   if (active.length === 0) {
     return (
       <Typography variant="body2" color="text.secondary">
-        {t('changes.none', 'The gateway already runs this version as it is.')}
+        {target
+          ? t('changes.noneAt', '{{target}} already runs this version as it is.', {target})
+          : t('changes.none', 'The gateway already runs this version as it is.')}
       </Typography>
     );
   }
@@ -93,64 +96,12 @@ export default function ChangeList({
         label={kinds[change.change]}
         sx={{height: 18, fontSize: 11}}
       />
-      {change.sourceExcluded && (
-        <Chip
-          size="small"
-          label={
-            source
-              ? t('changes.heldBackOn', 'Held back on {{target}}', {target: source})
-              : t('changes.heldBack', 'Held back')
-          }
-          data-testid="change-source-held-back"
-          title={t('changes.sourceHeldBackHint', '{{source}} does not run this change, so it cannot be promoted.', {
-            source: source ?? '',
-          })}
-          sx={{height: 18, fontSize: 11, bgcolor: 'action.selected', color: 'text.secondary'}}
-        />
-      )}
-      {change.failed && (
-        <Chip
-          size="small"
-          color="error"
-          variant="outlined"
-          label={
-            target
-              ? t('changes.refusedOn', 'Refused by {{target}} last time', {target})
-              : t('changes.refused', 'Refused last time')
-          }
-          data-testid="change-refused"
-          sx={{height: 18, fontSize: 11}}
-        />
-      )}
-      {change.heldBack && (
-        <Chip
-          size="small"
-          label={t('changes.heldBackHere', 'Left out before')}
-          data-testid="change-held-back"
-          title={t(
-            'changes.heldBackHereHint',
-            'An earlier deploy left this out, so it stays out until you tick it. Ticking it deploys it and stops leaving it out.',
-          )}
-          sx={{height: 18, fontSize: 11, bgcolor: 'action.selected', color: 'text.secondary'}}
-        />
-      )}
-      {change.valueChanged && (
-        <Chip
-          size="small"
-          label={t('changes.valueChanged', 'Value changed')}
-          data-testid="change-value-changed"
-          title={t('changes.valueChangedHint', 'A value it refers to was set again, so it is written to read it.')}
-          sx={{height: 18, fontSize: 11, bgcolor: 'action.selected', color: 'text.secondary'}}
-        />
-      )}
-      {required?.has(change.key) && (
-        <Chip
-          size="small"
-          label={t('changes.neededBy', 'Needed by {{name}}', {name: nameOf(required.get(change.key) ?? '')})}
-          data-testid="change-needed-by"
-          sx={{height: 18, fontSize: 11, bgcolor: 'action.selected', color: 'text.secondary'}}
-        />
-      )}
+      <ChangeFlags
+        change={change}
+        target={target}
+        source={source}
+        neededBy={required?.has(change.key) ? nameOf(required.get(change.key) ?? '') : undefined}
+      />
     </Stack>
   );
   return (

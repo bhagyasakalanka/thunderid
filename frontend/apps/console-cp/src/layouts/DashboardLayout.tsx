@@ -32,7 +32,6 @@ import {
   MessageSquare,
   Network,
   Palette,
-  Rocket,
   Server,
   Settings,
   ShieldCheck,
@@ -406,16 +405,6 @@ export default function DashboardLayout({collapseSidebar = false}: DashboardLayo
           </Header.Brand>
           <Header.Spacer />
           <Header.Actions>
-            <Button
-              variant="contained"
-              size="small"
-              startIcon={<Rocket size={16} />}
-              onClick={() => void navigate(RouteConfig.deploy.list())}
-              sx={{borderRadius: 100, mr: 1}}
-              data-testid="header-deploy"
-            >
-              {t('deploy:header.title', 'Deploy')}
-            </Button>
             <ColorSchemeToggle />
             <User>
               {(user) => {
