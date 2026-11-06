@@ -27,6 +27,8 @@ export {default as useDeployRoutes, defaultDeployRoutePaths, environmentSectionO
 export {default as DeployPage} from './pages/DeployPage';
 export {default as GatewayExplorerPage} from './pages/GatewayExplorerPage';
 export {default as GatewayValuesPage} from './pages/GatewayValuesPage';
+export {default as EnvironmentPage} from './pages/EnvironmentPage';
+export type {EnvironmentPageProps} from './pages/EnvironmentPage';
 export {environmentColor} from './constants/environment-colors';
 export {default as FullScreenHeader} from './components/FullScreenHeader';
 export {default as DeployCard} from './components/DeployCard';

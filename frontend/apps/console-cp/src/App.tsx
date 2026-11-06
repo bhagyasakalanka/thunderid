@@ -109,6 +109,7 @@ const GroupEditPage = lazy(() => import('@thunderid/configure-groups').then((m) 
 const GroupsListPage = lazy(() => import('@thunderid/configure-groups').then((m) => ({default: m.GroupsListPage})));
 const OrganizationHomePage = lazy(() => import('./pages/OrganizationHomePage'));
 const ProjectHomePage = lazy(() => import('./pages/ProjectHomePage'));
+const ProjectEnvironmentPage = lazy(() => import('./pages/ProjectEnvironmentPage'));
 const ProjectExplorerPage = lazy(() => import('./pages/ProjectExplorerPage'));
 const ExportPage = lazy(() =>
   import('./lib/monaco-setup').then(() =>
@@ -136,6 +137,7 @@ const GatewayDetailPage = lazy(() =>
   import('@thunderid/configure-gateways').then((m) => ({default: m.GatewayDetailPage})),
 );
 const DeployPage = lazy(() => import('@thunderid/configure-gateways').then((m) => ({default: m.DeployPage})));
+const EnvironmentPage = lazy(() => import('@thunderid/configure-gateways').then((m) => ({default: m.EnvironmentPage})));
 const GatewayExplorerPage = lazy(() =>
   import('@thunderid/configure-gateways').then((m) => ({default: m.GatewayExplorerPage})),
 );
@@ -293,6 +295,23 @@ export default function App(): JSX.Element {
                   <Route path={ROUTE_SEGMENTS.settings} element={<SettingsPage />} />
                   <Route path={ROUTE_SEGMENTS.gateways} element={<GatewaysListPage />} />
                   <Route path={`${ROUTE_SEGMENTS.gateways}/:gatewayId`} element={<GatewayDetailPage />} />
+                  <Route path={`${ROUTE_SEGMENTS.environments}/:gatewayId`} element={<EnvironmentPage />} />
+                  <Route
+                    path={`${ROUTE_SEGMENTS.projects}/:projectId/${ROUTE_SEGMENTS.environments}/:gatewayId`}
+                    element={<ProjectEnvironmentPage />}
+                  />
+                  <Route
+                    path={`${ROUTE_SEGMENTS.projects}/:projectId/${ROUTE_SEGMENTS.environments}/:gatewayId/values`}
+                    element={<ProjectEnvironmentPage section="values" />}
+                  />
+                  <Route
+                    path={`${ROUTE_SEGMENTS.projects}/:projectId/${ROUTE_SEGMENTS.environments}/:gatewayId/endpoints`}
+                    element={<ProjectEnvironmentPage section="endpoints" />}
+                  />
+                  <Route
+                    path={`${ROUTE_SEGMENTS.projects}/:projectId/${ROUTE_SEGMENTS.environments}/:gatewayId/history`}
+                    element={<ProjectEnvironmentPage section="history" />}
+                  />
                 </Route>
                 {/* Organization Units - wrapped in OrganizationUnitProvider to preserve tree state across navigation */}
                 <Route
