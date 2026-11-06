@@ -266,7 +266,25 @@ describe('DashboardLayout', () => {
     expect(screen.queryByText('navigation:pages.applications')).not.toBeInTheDocument();
   });
 
-  it('shows only the projects entry in the header at the organization level', () => {
+  it("switches between the project's configuration and its gateways from the header", async () => {
+    mockProjects = [{id: 'p-shop', displayName: 'Shop'}];
+    localStorage.setItem(PROJECT_SELECTION_STORAGE_KEY, 'p-shop');
+    render(
+      <SelectedProjectScope>
+        <DashboardLayout />
+      </SelectedProjectScope>,
+    );
+
+    const switcher = screen.getByTestId('gateway-switcher');
+    expect(switcher).toHaveTextContent('common:header.projectConfiguration');
+    expect(screen.queryByTestId('header-read-only')).not.toBeInTheDocument();
+    await userEvent.click(switcher);
+    expect(await screen.findByText('v37 · common:header.changesBehind')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('menuitem', {name: /DEVELOPMENT/}));
+    expect(mockNavigate).toHaveBeenCalledWith('/projects/p-shop/deploy/gateways/gw-dev');
+  });
+
+  it('shows only the projects entry in the header at the organization level, with no gateway switcher', () => {
     mockProjects = [{id: 'p-shop', displayName: 'Shop'}];
     mockPath = '/home';
     render(
@@ -276,10 +294,11 @@ describe('DashboardLayout', () => {
     );
 
     expect(screen.getByRole('button', {name: 'common:header.openProject'})).toBeInTheDocument();
+    expect(screen.queryByTestId('gateway-switcher')).not.toBeInTheDocument();
     expect(screen.queryByTestId('header-read-only')).not.toBeInTheDocument();
   });
 
-  it('says the configuration is read-only on an open gateway', () => {
+  it('names the gateway open, and says its configuration is read-only there', () => {
     mockProjects = [{id: 'p-shop', displayName: 'Shop'}];
     localStorage.setItem(PROJECT_SELECTION_STORAGE_KEY, 'p-shop');
     mockPath = '/projects/p-shop/deploy/gateways/gw-dev';
@@ -289,6 +308,7 @@ describe('DashboardLayout', () => {
       </SelectedProjectScope>,
     );
 
+    expect(screen.getByTestId('gateway-switcher')).toHaveTextContent('DEVELOPMENT');
     expect(screen.getByTestId('header-read-only')).toHaveTextContent('common:header.readOnly');
   });
 

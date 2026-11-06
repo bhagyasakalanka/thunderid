@@ -60,7 +60,9 @@ import {
 import {useEffect, useMemo, useState, type JSX, type ReactNode} from 'react';
 import {useTranslation} from 'react-i18next';
 import {Link as NavigateLink, Outlet, useLocation, useMatch, useNavigate} from 'react-router';
+import GatewaySwitcher from './components/GatewaySwitcher';
 import ProjectSwitcher from './components/ProjectSwitcher';
+import SessionExpiredBanner from '../components/SessionExpiredBanner';
 import RouteConfig from '../configs/RouteConfig';
 import useProjectSelection from '../hooks/useProjectSelection';
 
@@ -542,6 +544,7 @@ export default function DashboardLayout({collapseSidebar = false}: DashboardLayo
           <Header.Spacer />
           <Header.Actions>
             <ProjectSwitcher />
+            <GatewaySwitcher />
             {gateway && (
               <Chip
                 size="small"
@@ -638,6 +641,7 @@ export default function DashboardLayout({collapseSidebar = false}: DashboardLayo
       </AppShell.Sidebar>
 
       <AppShell.Main>
+        <SessionExpiredBanner />
         <Outlet />
       </AppShell.Main>
 

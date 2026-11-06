@@ -211,7 +211,12 @@ describe('App', () => {
     localStorage.clear();
   });
 
-  it("opens a gateway's map within a project on a full page", async () => {
+  it("opens a gateway's sections within a project, and its map on a full page", async () => {
+    window.history.pushState({}, '', '/projects/p-shop/deploy/gateways/gw-dev/values');
+    const {unmount} = render(<App />);
+    expect(await screen.findByTestId('gateway-page')).toBeInTheDocument();
+    unmount();
+
     window.history.pushState({}, '', '/projects/p-shop/deploy/gateways/gw-dev/explore');
     render(<App />);
     expect(await screen.findByTestId('gateway-explorer-page')).toBeInTheDocument();
@@ -367,6 +372,14 @@ describe('App', () => {
     render(<App />);
     await waitFor(() => {
       expect(screen.getByTestId('project-home-page')).toBeInTheDocument();
+    });
+  });
+
+  it("loads a gateway's page within its project at /projects/:projectId/deploy/gateways/:gatewayId", async () => {
+    window.history.pushState({}, '', '/projects/p-shop/deploy/gateways/gw-dev');
+    render(<App />);
+    await waitFor(() => {
+      expect(screen.getByTestId('gateway-page')).toBeInTheDocument();
     });
   });
 

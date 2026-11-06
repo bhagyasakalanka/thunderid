@@ -27,6 +27,8 @@ export {default as useDeployRoutes, defaultDeployRoutePaths, gatewaySectionOf} f
 export {default as DeployPage} from './pages/DeployPage';
 export {default as GatewayExplorerPage} from './pages/GatewayExplorerPage';
 export {default as GatewayValuesPage} from './pages/GatewayValuesPage';
+export {default as GatewayPage} from './pages/GatewayPage';
+export type {GatewayPageProps} from './pages/GatewayPage';
 export {gatewayColor} from './constants/gateway-colors';
 export {default as FullScreenHeader} from './components/FullScreenHeader';
 export {default as DeployCard} from './components/DeployCard';
