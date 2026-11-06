@@ -1,7 +1,7 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {AccessStatusIndicator, QueryErrorNotice, ResourceAvatar} from '@thunderid/components';
+import {AccessStatusIndicator, QueryErrorNotice, ResourceAvatar, ResourceDeployStatus} from '@thunderid/components';
 import {useDataGridLocaleText} from '@thunderid/hooks';
 import {useLogger} from '@thunderid/logger/react';
 import {Box, IconButton, Tooltip, Typography, ListingTable, DataGrid} from '@wso2/oxygen-ui';
@@ -120,6 +120,16 @@ export default function AgentsList(): JSX.Element {
           <Typography variant="body2" sx={{fontFamily: 'monospace', fontSize: '0.875rem'}}>
             {params.row.ouHandle ?? params.row.ouId ?? '-'}
           </Typography>
+        ),
+      },
+      {
+        field: 'deployment',
+        headerName: t('agents:listing.columns.deployment', 'Deployment'),
+        flex: 0.6,
+        minWidth: 150,
+        sortable: false,
+        renderCell: (params: DataGrid.GridRenderCellParams<BasicAgent>): JSX.Element => (
+          <ResourceDeployStatus resourceType="agent" id={params.row.id} />
         ),
       },
       {

@@ -8,6 +8,7 @@ import {
   PageLoadingAnimation,
   QueryErrorNotice,
   ResourceAvatar,
+  ResourceDeployStatus,
   UnsavedChangesBar,
 } from '@thunderid/components';
 import {useGetAgentType, useGetAgentTypes} from '@thunderid/configure-agent-types';
@@ -122,6 +123,10 @@ export default function AgentEditPage(): JSX.Element {
   const isSchemaResolving = isTypesLoading || isTypeLoading;
 
   const [activeTab, setActiveTab] = useState(0);
+  // A link can open a tab by its key, such as `?tab=advanced` for the owner.
+  const [requestedTab, setRequestedTab] = useState<string | null>(() =>
+    new URLSearchParams(location.search).get('tab'),
+  );
   const [editedAgent, setEditedAgent] = useState<Partial<Agent>>({});
   const [sectionResetKey, setSectionResetKey] = useState(0);
   const [isEditingDescription, setIsEditingDescription] = useState(false);
@@ -453,6 +458,12 @@ export default function AgentEditPage(): JSX.Element {
     }
   };
 
+  if (requestedTab) {
+    const requested = tabs.findIndex((tab) => tab.key === requestedTab);
+    if (requested >= 0) setActiveTab(requested);
+    setRequestedTab(null);
+  }
+
   const safeActiveTab = activeTab >= tabs.length ? 0 : activeTab;
 
   return (
@@ -464,6 +475,7 @@ export default function AgentEditPage(): JSX.Element {
         </Alert>
       )}
       <AccessStatusBanner status={agent.status} category="agent" sx={{mb: 2}} />
+      <ResourceDeployStatus resourceType="agent" id={agent.id} variant="notice" sx={{mb: 2}} />
       <PageTitle>
         <PageTitle.BackButton component={<Link to={routes.agents.list()} />}>
           {t('agents:edit.page.back', 'Back to agents')}

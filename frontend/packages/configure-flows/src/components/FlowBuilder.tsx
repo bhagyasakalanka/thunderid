@@ -1,7 +1,7 @@
 // Copyright 2025-2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {GradientBorderButton, QueryErrorNotice} from '@thunderid/components';
+import {GradientBorderButton, QueryErrorNotice, ResourceDeployStatus} from '@thunderid/components';
 import {useEmailProviders, useIdentityProviders, useSMSProviders} from '@thunderid/configure-connections';
 import {Alert, Box, Snackbar, Stack} from '@wso2/oxygen-ui';
 import type {Edge, Node, NodeChange} from '@xyflow/react';
@@ -388,9 +388,12 @@ function FlowBuilder() {
   // persisted — the user may have kept editing while the save request was in
   // flight, and those edits must stay dirty. History is intentionally NOT
   // reset here: undoing past a save point simply makes the flow dirty again.
+  // A save is read back, which settles the graph once more (normalized fields, node internals); that
+  // settle is taken as the clean baseline too, unless the user interacts first.
   const handleSaved = useCallback((savedCanvas: {nodes: Node[]; edges: Edge[]}) => {
     hasInteractedRef.current = true;
     setSavedSignature(computeGraphSignature(savedCanvas.nodes, savedCanvas.edges));
+    setIsBaselineRebasePending(true);
   }, []);
 
   // Flow save hook
@@ -765,6 +768,7 @@ function FlowBuilder() {
             onEdgesChange={onEdgesChange}
             onEdgeClick={sso.handleEdgeClick}
             flowTitle={flowName}
+            flowStatus={flowId ? <ResourceDeployStatus resourceType="flow" id={flowId} /> : undefined}
             flowHandle={flowHandle}
             onFlowTitleChange={handleFlowNameChange}
             triggerAutoLayoutOnLoad={needsAutoLayout}

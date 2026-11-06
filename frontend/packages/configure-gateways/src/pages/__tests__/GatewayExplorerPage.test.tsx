@@ -96,6 +96,77 @@ beforeEach(() => {
 });
 
 describe('GatewayExplorerPage', () => {
+  it('marks what the gateway refused, and tells how the selected resource got there', async () => {
+    routes['GET /gateways/gw-dev/master'] = {
+      gatewayId: 'gw-dev',
+      number: 3,
+      master: 'm-3',
+      summary: {deployed: 4, failed: 1, removed: 0},
+      entries: [
+        {
+          key: 'application/app-1',
+          resourceType: 'application',
+          id: 'app-1',
+          name: 'Orders',
+          state: 'failed',
+          sourceVersion: hash,
+          origin: 'dev',
+          failure: {code: 'APP-1001', message: 'the flow is not there'},
+          at: '2026-10-12T13:55:00Z',
+        },
+        {key: 'flow/f-1', resourceType: 'flow', id: 'f-1', name: 'Sign in', state: 'deployed', sourceVersion: hash},
+      ],
+    };
+    routes['GET /gateways/gw-dev/master/resources/application/app-1'] = {
+      gatewayId: 'gw-dev',
+      key: 'application/app-1',
+      history: [
+        {master: 'm-3', number: 3, entry: {key: 'application/app-1', resourceType: 'application', state: 'failed'}},
+        {
+          master: 'm-2',
+          number: 2,
+          entry: {
+            key: 'application/app-1',
+            resourceType: 'application',
+            state: 'deployed',
+            sourceVersion: 'abcdef1234',
+          },
+        },
+        {
+          // A master can come back to the same content, and so the same hash, later in the history.
+          master: 'm-2',
+          number: 1,
+          entry: {
+            key: 'application/app-1',
+            resourceType: 'application',
+            state: 'deployed',
+            sourceVersion: '9876543210',
+          },
+        },
+      ],
+    };
+    http = fakeHttp(routes);
+    const consoleError = vi.spyOn(console, 'error');
+    render(<GatewayExplorerPage />);
+
+    const tile = await screen.findByTestId('explorer-node-application/app-1');
+    expect(await within(tile).findByTestId('explorer-node-refused')).toHaveTextContent('Refused');
+    expect(within(screen.getByTestId('explorer-node-flow/f-1')).queryByTestId('explorer-node-refused')).toBeNull();
+
+    await userEvent.click(tile);
+    const deployment = await screen.findByTestId('explorer-deployment');
+    expect(within(deployment).getByTestId('explorer-entry-state')).toHaveTextContent(
+      `Refused · from ${hash.slice(0, 7)} · dev`,
+    );
+    expect(deployment).toHaveTextContent('APP-1001: the flow is not there');
+    const history = await within(deployment).findByTestId('explorer-history');
+    expect(history).toHaveTextContent('Deployed');
+    expect(history).toHaveTextContent('abcdef1');
+    expect(history).toHaveTextContent('9876543');
+    expect(consoleError.mock.calls.map((call: unknown[]) => call.join(' ')).join('\n')).not.toContain('same key');
+    consoleError.mockRestore();
+  });
+
   it('pans by dragging and by the wheel, zooms by its buttons, and keeps a selection a drag ends on', async () => {
     render(<GatewayExplorerPage />);
     await screen.findByTestId('explorer-node-application/app-1');
@@ -294,14 +365,25 @@ describe('GatewayExplorerPage', () => {
     ).toBeInTheDocument();
   });
 
-  it('switches to another gateway and goes back to Deploy', async () => {
+  it('switches to another gateway and goes back home', async () => {
     render(<GatewayExplorerPage />);
     await screen.findByTestId('explorer-node-application/app-1');
 
     await userEvent.click(screen.getByRole('button', {name: 'Prod'}));
     expect(navigate).toHaveBeenCalledWith('/deploy/gateways/gw-prod/explore');
-    await userEvent.click(screen.getByText('Deploy'));
-    expect(navigate).toHaveBeenCalledWith('/deploy');
+    await userEvent.click(screen.getByText('Home'));
+    expect(navigate).toHaveBeenCalledWith('/home');
+  });
+
+  it('goes back to the environment the gateway stands for', async () => {
+    routes['GET /gateways/pipeline'] = {
+      stages: [{name: 'Development', adminConsoleUrl: 'https://dev.test/console', gateway: {id: 'gw-dev'}}],
+    };
+    render(<GatewayExplorerPage />);
+    await screen.findByTestId('explorer-node-application/app-1');
+
+    await userEvent.click(await screen.findByText('Development'));
+    expect(navigate).toHaveBeenCalledWith('/environments/gw-dev');
   });
 
   it('says when nothing is deployed, or the gateway is unknown', async () => {

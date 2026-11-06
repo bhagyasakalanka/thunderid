@@ -3,6 +3,7 @@
 
 /* eslint-disable @typescript-eslint/no-unsafe-return */
 import userEvent from '@testing-library/user-event';
+import {DeployStatusProvider} from '@thunderid/components';
 import {ProjectScopeProvider} from '@thunderid/contexts';
 import {fireEvent, render, screen, waitFor} from '@thunderid/test-utils';
 import type {ComponentProps, ReactNode} from 'react';
@@ -328,7 +329,7 @@ describe('AgentEditPage', () => {
       expect(screen.queryByText('Test Agent')).not.toBeInTheDocument();
     });
 
-    it("shows the agent when it belongs to the selected project", () => {
+    it('shows the agent when it belongs to the selected project', () => {
       mockUseGetAgent.mockReturnValue({
         data: {...baseAgent, projectId: 'project-a'},
         isLoading: false,
@@ -409,6 +410,31 @@ describe('AgentEditPage', () => {
       expect(screen.getByRole('tab', {name: 'Attributes'})).toBeInTheDocument();
       expect(screen.getByRole('tab', {name: /Access/i})).toBeInTheDocument();
       expect(screen.getByRole('tab', {name: /Advanced/i})).toBeInTheDocument();
+    });
+
+    it('opens the tab a link names, such as the Advanced tab for the owner', () => {
+      mockUseLocation.mockReturnValue({state: null, search: '?tab=advanced'});
+
+      render(<AgentEditPage />);
+
+      expect(screen.getByRole('tab', {name: /Advanced/i})).toHaveAttribute('aria-selected', 'true');
+    });
+
+    it('says where the agent is along the deploy path, such as a refusal and its reason', () => {
+      render(
+        <DeployStatusProvider
+          value={{
+            statusOf: (type: string) =>
+              type === 'agent' ? {state: 'refused', target: 'Dev', reason: 'AGT-1039: Owner not found'} : undefined,
+            openDeploy: vi.fn(),
+          }}
+        >
+          <AgentEditPage />
+        </DeployStatusProvider>,
+      );
+
+      expect(screen.getByTestId('resource-deploy-status')).toHaveTextContent('Refused by Dev');
+      expect(screen.getByTestId('resource-deploy-status')).toHaveTextContent('AGT-1039: Owner not found');
     });
 
     it('does not render icons on any tab', () => {

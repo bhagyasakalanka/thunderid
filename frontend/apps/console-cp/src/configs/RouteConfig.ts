@@ -33,6 +33,10 @@ export interface ConsoleRoutePaths {
   settings: {
     list: () => string;
   };
+  projects: {
+    /** A project's home: the environments its configuration is deployed and promoted through. */
+    home: (projectId: string) => string;
+  };
 }
 
 /**
@@ -103,6 +107,8 @@ export const ROUTE_SEGMENTS = {
   settings: 'settings',
   gateways: 'gateways',
   deploy: 'deploy',
+  projects: 'projects',
+  environments: 'environments',
 } as const;
 
 const RouteConfig: RouteConfig = {
@@ -220,6 +226,9 @@ const RouteConfig: RouteConfig = {
   settings: {
     list: () => `/${ROUTE_SEGMENTS.settings}`,
   },
+  projects: {
+    home: (projectId: string) => `/${ROUTE_SEGMENTS.projects}/${encodeURIComponent(projectId)}`,
+  },
   gateways: {
     list: () => `/${ROUTE_SEGMENTS.gateways}`,
     detail: (gatewayId) => `/${ROUTE_SEGMENTS.gateways}/${gatewayId}`,
@@ -228,6 +237,9 @@ const RouteConfig: RouteConfig = {
     list: () => `/${ROUTE_SEGMENTS.deploy}`,
     explore: (gatewayId: string) => `/${ROUTE_SEGMENTS.deploy}/gateways/${encodeURIComponent(gatewayId)}/explore`,
     values: (gatewayId: string) => `/${ROUTE_SEGMENTS.deploy}/gateways/${encodeURIComponent(gatewayId)}/values`,
+    environment: (gatewayId: string, projectId?: string) =>
+      `${projectId ? RouteConfig.projects.home(projectId) : ''}/${ROUTE_SEGMENTS.environments}/${encodeURIComponent(gatewayId)}`,
+    project: (projectId: string) => RouteConfig.projects.home(projectId),
   },
 };
 
