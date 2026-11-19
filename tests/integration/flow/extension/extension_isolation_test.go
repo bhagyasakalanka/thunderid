@@ -41,8 +41,10 @@ const (
 var extIsoEnrichAnswer = `{"actionStatus":"SUCCESS","email":"` + extIsoSpoofEmail + `","pin":"` + extIsoSpoofPin +
 	`","userID":"` + extIsoSpoofUserID + `","groups":["` + extIsoSpoofGroup + `"],"tier":"` + extIsoTier + `"}`
 
-// extIsoSpoofValues are the values of extIsoEnrichAnswer no identity, claim or session may carry.
-var extIsoSpoofValues = []string{extIsoSpoofEmail, extIsoSpoofPin, extIsoSpoofUserID, extIsoSpoofGroup}
+// extIsoSpoofValues are the values of extIsoEnrichAnswer no identity, claim or session may carry, as they
+// appear in JSON. The pin is matched as the quoted string the extension answers with, since its digits
+// alone also turn up inside a number, such as a token's iat.
+var extIsoSpoofValues = []string{extIsoSpoofEmail, `"` + extIsoSpoofPin + `"`, extIsoSpoofUserID, extIsoSpoofGroup}
 
 var (
 	extIsoOU = testutils.OrganizationUnit{

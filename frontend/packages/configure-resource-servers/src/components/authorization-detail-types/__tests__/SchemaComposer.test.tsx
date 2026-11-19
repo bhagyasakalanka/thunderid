@@ -74,9 +74,10 @@ const cardOrder = (): (string | null)[] =>
 
 // dnd-kit animates a drop, and a drag started before it ends is lost. Until it ends, a placeholder copy of
 // the dragged field stays in the card, with the field's drop gaps, so their test IDs match twice. dnd-kit
-// removes the placeholder when the animation ends, which a fixed delay can miss on a slow machine.
+// removes the placeholder when the animation ends, which a fixed delay can miss on a slow machine, and
+// which can take longer than waitFor's default second on a loaded one.
 const dropAnimation = (): Promise<void> =>
-  waitFor(() => expect(document.querySelector('[data-dnd-placeholder]')).toBeNull());
+  waitFor(() => expect(document.querySelector('[data-dnd-placeholder]')).toBeNull(), {timeout: 5000});
 
 const lastSchema = (mock: ReturnType<typeof vi.fn>): Record<string, unknown> =>
   mock.mock.calls[mock.mock.calls.length - 1][0] as Record<string, unknown>;
